@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+./.conda/bin/pytest tests -q
+./.conda/bin/mkdocs build --strict
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  git add site/
+fi

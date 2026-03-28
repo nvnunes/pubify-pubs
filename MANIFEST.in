@@ -1,0 +1,15 @@
+exclude .DS_Store .coverage coverage.xml
+recursive-exclude * __pycache__ *.py[cod] .DS_Store
+recursive-exclude * .ipynb_checkpoints/*
+recursive-exclude * build/*
+prune src/*.egg-info
+prune build
+prune dist
+prune .pytest_cache
+prune .mypy_cache
+prune .ruff_cache
+prune htmlcov
+prune .venv
+prune .conda
+prune .idea
+prune .vscode
