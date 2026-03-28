@@ -79,19 +79,11 @@
             
             <li class="nav-item" data-bs-level="1"><a href="#api-reference" class="nav-link">API Reference</a>
               <ul class="nav flex-column">
-            <li class="nav-item" data-bs-level="2"><a href="#main" class="nav-link">main</a>
+            <li class="nav-item" data-bs-level="2"><a href="#workspace-discovery" class="nav-link">Workspace Discovery</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#find_workspace_root" class="nav-link">find_workspace_root</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            <li class="nav-item" data-bs-level="2"><a href="#figure" class="nav-link">figure</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            <li class="nav-item" data-bs-level="2"><a href="#data" class="nav-link">data</a>
+            <li class="nav-item" data-bs-level="2"><a href="#decorators" class="nav-link">Decorators</a>
               <ul class="nav flex-column">
               </ul>
             </li>
@@ -107,27 +99,15 @@
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#external_data" class="nav-link">external_data</a>
+            <li class="nav-item" data-bs-level="2"><a href="#publication-data-helpers" class="nav-link">Publication Data Helpers</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#publication_data_path" class="nav-link">publication_data_path</a>
+            <li class="nav-item" data-bs-level="2"><a href="#export-model" class="nav-link">Export Model</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#save_publication_data_npz" class="nav-link">save_publication_data_npz</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            <li class="nav-item" data-bs-level="2"><a href="#load_publication_data_npz" class="nav-link">load_publication_data_npz</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            <li class="nav-item" data-bs-level="2"><a href="#figureexport" class="nav-link">FigureExport</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            <li class="nav-item" data-bs-level="2"><a href="#panel" class="nav-link">panel</a>
+            <li class="nav-item" data-bs-level="2"><a href="#cli-entrypoint" class="nav-link">CLI Entrypoint</a>
               <ul class="nav flex-column">
               </ul>
             </li>
@@ -140,22 +120,8 @@
 
 <h1 id="api-reference">API Reference</h1>
 <p>This page is generated from the public Python docstrings.</p>
-<h2 id="main">main</h2>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Run the <code>pubs</code> CLI and return its process exit code.</p>
-
-
-    </div>
-
-</div><h2 id="find_workspace_root">find_workspace_root</h2>
+<h2 id="workspace-discovery">Workspace Discovery</h2>
+<h3 id="find_workspace_root">find_workspace_root</h3>
 
 
 <div class="doc doc-object doc-function">
@@ -170,7 +136,8 @@
 
     </div>
 
-</div><h2 id="figure">figure</h2>
+</div><h2 id="decorators">Decorators</h2>
+<h3 id="figure">figure</h3>
 
 
 <div class="doc doc-object doc-function">
@@ -185,7 +152,7 @@
 
     </div>
 
-</div><h2 id="data">data</h2>
+</div><h3 id="data">data</h3>
 
 
 <div class="doc doc-object doc-module">
@@ -275,7 +242,7 @@
 
     </div>
 
-</div><h2 id="external_data">external_data</h2>
+</div><h3 id="external_data">external_data</h3>
 
 
 <div class="doc doc-object doc-function">
@@ -290,7 +257,8 @@
 
     </div>
 
-</div><h2 id="publication_data_path">publication_data_path</h2>
+</div><h2 id="publication-data-helpers">Publication Data Helpers</h2>
+<h3 id="publication_data_path">publication_data_path</h3>
 
 
 <div class="doc doc-object doc-function">
@@ -305,7 +273,7 @@
 
     </div>
 
-</div><h2 id="save_publication_data_npz">save_publication_data_npz</h2>
+</div><h3 id="save_publication_data_npz">save_publication_data_npz</h3>
 
 
 <div class="doc doc-object doc-function">
@@ -320,7 +288,7 @@
 
     </div>
 
-</div><h2 id="load_publication_data_npz">load_publication_data_npz</h2>
+</div><h3 id="load_publication_data_npz">load_publication_data_npz</h3>
 
 
 <div class="doc doc-object doc-function">
@@ -335,7 +303,49 @@
 
     </div>
 
-</div><h2 id="figureexport">FigureExport</h2>
+</div><h2 id="export-model">Export Model</h2>
+<h3 id="figurepanel">FigurePanel</h3>
+
+
+<div class="doc doc-object doc-class">
+
+
+
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>One exported panel plus optional per-panel <code>pubify-mpl</code> export overrides.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div><h3 id="figureexport">FigureExport</h3>
 
 
 <div class="doc doc-object doc-class">
@@ -376,7 +386,7 @@
 
     </div>
 
-</div><h2 id="panel">panel</h2>
+</div><h3 id="panel">panel</h3>
 
 
 <div class="doc doc-object doc-function">
@@ -387,6 +397,22 @@
     <div class="doc doc-contents first">
 
         <p>Wrap one panel with optional per-panel <code>pubify-mpl</code> export overrides.</p>
+
+
+    </div>
+
+</div><h2 id="cli-entrypoint">CLI Entrypoint</h2>
+<h3 id="main">main</h3>
+
+
+<div class="doc doc-object doc-function">
+
+
+
+
+    <div class="doc doc-contents first">
+
+        <p>Run the <code>pubs</code> CLI and return its process exit code.</p>
 
 
     </div>

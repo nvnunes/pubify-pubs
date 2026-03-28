@@ -2,62 +2,78 @@
 
 This page is generated from the public Python docstrings.
 
-## main
+## Workspace Discovery
 
-::: pubify_pubs.main
-    options:
-      show_source: false
-
-## find_workspace_root
+### find_workspace_root
 
 ::: pubify_pubs.find_workspace_root
     options:
       show_source: false
 
-## figure
+## Decorators
+
+### figure
 
 ::: pubify_pubs.figure
     options:
       show_source: false
 
-## data
+### data
 
 ::: pubify_pubs.data
     options:
       show_source: false
 
-## external_data
+### external_data
 
 ::: pubify_pubs.external_data
     options:
       show_source: false
 
-## publication_data_path
+## Publication Data Helpers
+
+### publication_data_path
 
 ::: pubify_pubs.publication_data_path
     options:
       show_source: false
 
-## save_publication_data_npz
+### save_publication_data_npz
 
 ::: pubify_pubs.save_publication_data_npz
     options:
       show_source: false
 
-## load_publication_data_npz
+### load_publication_data_npz
 
 ::: pubify_pubs.load_publication_data_npz
     options:
       show_source: false
 
-## FigureExport
+## Export Model
+
+### FigurePanel
+
+::: pubify_pubs.export.FigurePanel
+    options:
+      show_source: false
+
+### FigureExport
 
 ::: pubify_pubs.export.FigureExport
     options:
       show_source: false
 
-## panel
+### panel
 
 ::: pubify_pubs.panel
+    options:
+      show_source: false
+
+## CLI Entrypoint
+
+### main
+
+::: pubify_pubs.main
     options:
       show_source: false

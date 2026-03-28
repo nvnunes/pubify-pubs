@@ -79,6 +79,50 @@
             
             <li class="nav-item" data-bs-level="1"><a href="#pubify-pubs-docs" class="nav-link">pubify-pubs Docs</a>
               <ul class="nav flex-column">
+            <li class="nav-item" data-bs-level="2"><a href="#requirements" class="nav-link">Requirements</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#workspace-model" class="nav-link">Workspace Model</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#publication-layout" class="nav-link">Publication Layout</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#quick-start" class="nav-link">Quick Start</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#typical-workflow" class="nav-link">Typical Workflow</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#figures-and-loaders" class="nav-link">Figures And Loaders</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#pinned-publication-data" class="nav-link">Pinned Publication Data</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#generated-figures-and-tex-assets" class="nav-link">Generated Figures And TeX Assets</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#mirror-sync-model" class="nav-link">Mirror Sync Model</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#cli" class="nav-link">CLI</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#python-api" class="nav-link">Python API</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
               </ul>
             </li>
         </ul>
@@ -87,9 +131,174 @@
                     <div class="col-md-9" role="main">
 
 <h1 id="pubify-pubs-docs">pubify-pubs Docs</h1>
+<p><code>pubify-pubs</code> is a local-first publication workflow package built around <code>pubify-mpl</code>.</p>
+<p>It is meant for host workspaces that keep publication content, publication-local TeX sources, and pinned inputs under version control, while the package owns the generic workflow around:</p>
 <ul>
-<li><a href="api/">API reference</a></li>
-</ul></div>
+<li>workspace discovery through <code>pubify.conf</code></li>
+<li>publication discovery and validation</li>
+<li>figure export into publication-local <code>tex/autofigures/</code></li>
+<li>LaTeX builds against the publication-local <code>tex/</code> tree</li>
+<li>conservative mirror sync</li>
+<li>data pinning</li>
+<li>publication bootstrapping through the <code>pubs</code> CLI</li>
+</ul>
+<p>This package does not own your publications. A host workspace does.</p>
+<h2 id="requirements">Requirements</h2>
+<ul>
+<li>Python 3.10+</li>
+<li><code>pubify-mpl</code></li>
+<li>a working LaTeX installation for <code>pubs &lt;publication-id&gt; build</code></li>
+</ul>
+<p>The build step runs <code>latexmk</code> against the publication-local TeX tree. If exported figures use LaTeX text rendering through <code>pubify-mpl</code>, LaTeX must also be available during Python-side export.</p>
+<h2 id="workspace-model">Workspace Model</h2>
+<p><code>pubify-pubs</code> treats a configured host workspace as the source of truth.</p>
+<p>A workspace is rooted by <code>pubify.conf</code>:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">publications_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">papers</span>
+<span class="nt">data_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">output/papers</span>
+</code></pre></div>
+<p>The package discovers that file by walking upward from the current working directory.</p>
+<p>The workspace contract is:</p>
+<ul>
+<li><code>publications_root</code> points at publication folders owned by the host workspace</li>
+<li><code>data_root</code> points at pinned publication-local data owned by the host workspace</li>
+<li>package code lives independently from both</li>
+</ul>
+<p>Keeping publication content and pinned data separate is intentional. It lets host workspaces keep publication source trees readable while still giving the workflow a stable place to store pinned inputs.</p>
+<h2 id="publication-layout">Publication Layout</h2>
+<p>A typical publication looks like:</p>
+<div class="highlight"><pre><span></span><code>papers/&lt;publication-id&gt;/
+  figures.py
+  pub.yaml
+  tex/
+    main.tex
+    autofigures/
+    build/
+</code></pre></div>
+<p>Key files:</p>
+<ul>
+<li><code>figures.py</code></li>
+<li>publication entrypoint</li>
+<li>defines loaders with <code>@data(...)</code> or <code>@external_data(...)</code></li>
+<li>defines exported figure functions with <code>@figure</code></li>
+<li><code>pub.yaml</code></li>
+<li>publication-local workflow settings</li>
+<li>controls <code>main_tex</code>, <code>mirror_root</code>, <code>external_data_roots</code>, <code>sync_excludes</code>, <code>pubify-mpl-template</code>, and <code>pubify-mpl-defaults</code></li>
+<li><code>tex/</code></li>
+<li>canonical local TeX tree for the publication</li>
+<li><code>tex/autofigures/</code></li>
+<li>framework-owned generated figure directory</li>
+<li><code>tex/build/</code></li>
+<li>local build output directory</li>
+</ul>
+<h2 id="quick-start">Quick Start</h2>
+<p>Initialize a new publication from a workspace root:</p>
+<div class="highlight"><pre><span></span><code>pubs<span class="w"> </span>init<span class="w"> </span>my-paper
+</code></pre></div>
+<p>Then iterate with:</p>
+<div class="highlight"><pre><span></span><code>pubs<span class="w"> </span>my-paper<span class="w"> </span>check
+pubs<span class="w"> </span>my-paper<span class="w"> </span><span class="nb">export</span>
+pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"> </span>--export-if-stale
+</code></pre></div>
+<p>That creates a minimal publication skeleton and installs package-owned support files into the publication-local TeX tree.</p>
+<h2 id="typical-workflow">Typical Workflow</h2>
+<ol>
+<li>Keep publication-local TeX sources under <code>papers/&lt;publication-id&gt;/tex/</code>.</li>
+<li>Define loaders and figure functions in <code>figures.py</code>.</li>
+<li>Run <code>pubs &lt;publication-id&gt; check</code> to load and validate the publication definition.</li>
+<li>Run <code>pubs &lt;publication-id&gt; export</code> to regenerate <code>tex/autofigures/</code>.</li>
+<li>Run <code>pubs &lt;publication-id&gt; build</code> to compile the publication.</li>
+<li>If a synced mirror is configured, use <code>diff</code>, <code>push</code>, or <code>pull</code> as needed.</li>
+<li>When an external loader input should become publication-local and reproducible, pin it with <code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code>.</li>
+</ol>
+<h2 id="figures-and-loaders">Figures And Loaders</h2>
+<p>Prefer <code>@data(...)</code> for pinned publication-local inputs under the configured workspace <code>data_root</code>. Use <code>@external_data(...)</code> only for explicit external roots declared in <code>pub.yaml</code>.</p>
+<p>Both data decorators require relative paths. They reject absolute paths and path traversal.</p>
+<p>Host publications import from the extracted package namespace directly:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pubify_pubs.data</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">load_publication_data_npz</span><span class="p">,</span>
+    <span class="n">publication_data_path</span><span class="p">,</span>
+    <span class="n">save_publication_data_npz</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pubify_pubs.decorators</span><span class="w"> </span><span class="kn">import</span> <span class="n">data</span><span class="p">,</span> <span class="n">external_data</span><span class="p">,</span> <span class="n">figure</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pubify_pubs.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">FigureExport</span><span class="p">,</span> <span class="n">panel</span>
+</code></pre></div>
+<p><code>@figure</code> marks a callable as a logical publication figure. Exported figure functions may return:</p>
+<ul>
+<li>a Matplotlib <code>Figure</code></li>
+<li>a Matplotlib <code>Axes</code></li>
+<li>a sequence of figures or axes</li>
+<li>a <code>FigureExport</code> value for explicit multi-panel control</li>
+</ul>
+<h2 id="pinned-publication-data">Pinned Publication Data</h2>
+<p><code>pubify-pubs</code> includes helpers for publication-owned binary data:</p>
+<ul>
+<li><code>publication_data_path(...)</code></li>
+<li><code>save_publication_data_npz(...)</code></li>
+<li><code>load_publication_data_npz(...)</code></li>
+</ul>
+<p>These helpers resolve data under:</p>
+<div class="highlight"><pre><span></span><code>&lt;data_root&gt;/&lt;publication-id&gt;/...
+</code></pre></div>
+<p>They are intentionally small and explicit. Format-owned helpers should generally come in save/load pairs when the package owns the format handling.</p>
+<h2 id="generated-figures-and-tex-assets">Generated Figures And TeX Assets</h2>
+<p><code>tex/autofigures/</code> is the framework-owned generated figure directory.</p>
+<ul>
+<li>full <code>export</code> treats it as an authoritative snapshot and clears stale generated files first</li>
+<li>targeted <code>export</code> stays incremental</li>
+<li>TeX should reference generated figures explicitly by path such as <code>autofigures/&lt;name&gt;.pdf</code></li>
+</ul>
+<p>Manual and static publication assets remain ordinary publication-local TeX files. They do not belong in <code>tex/autofigures/</code>.</p>
+<h2 id="mirror-sync-model">Mirror Sync Model</h2>
+<p>The local publication TeX tree is canonical.</p>
+<p>Managed source files are publication-local TeX sources under <code>tex/</code>, excluding:</p>
+<ul>
+<li>generated figures in <code>tex/autofigures/</code></li>
+<li>build artifacts in <code>tex/build/</code></li>
+<li>publication-local sync exclusions from <code>pub.yaml</code></li>
+</ul>
+<p>Generated figures are delivered one-way from local <code>tex/autofigures/</code> to mirror <code>autofigures/</code>. They are not part of the hash-managed source sync model.</p>
+<p>The mirror commands are conservative by design:</p>
+<ul>
+<li><code>diff</code> compares local, mirror, and last-synced state</li>
+<li><code>push</code> updates managed mirror files from local state</li>
+<li><code>pull</code> updates managed local files from mirror state without deletions</li>
+</ul>
+<h2 id="cli">CLI</h2>
+<p>The installed command is <code>pubs</code>.</p>
+<p>Top-level commands:</p>
+<ul>
+<li><code>pubs list</code></li>
+<li><code>pubs init &lt;publication-id&gt;</code></li>
+</ul>
+<p>Publication commands:</p>
+<ul>
+<li><code>pubs &lt;publication-id&gt; check</code></li>
+<li><code>pubs &lt;publication-id&gt; shell</code></li>
+<li><code>pubs &lt;publication-id&gt; export [&lt;figure-id&gt; [&lt;subfig-idx&gt;]]</code></li>
+<li><code>pubs &lt;publication-id&gt; data [list]</code></li>
+<li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
+<li><code>pubs &lt;publication-id&gt; figure [list]</code></li>
+<li><code>pubs &lt;publication-id&gt; ignore &lt;relative-path&gt;</code></li>
+<li><code>pubs &lt;publication-id&gt; build [--export|--export-if-stale]</code></li>
+<li><code>pubs &lt;publication-id&gt; push [--force]</code></li>
+<li><code>pubs &lt;publication-id&gt; pull [--force]</code></li>
+<li><code>pubs &lt;publication-id&gt; diff [list|&lt;relative-path&gt;]</code></li>
+</ul>
+<p>The shell command opens a publication-scoped interactive session with command history and reload behavior for <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers.</p>
+<h2 id="python-api">Python API</h2>
+<p>The public Python API is intentionally small.</p>
+<p>Primary entrypoints:</p>
+<ul>
+<li><code>find_workspace_root(...)</code></li>
+<li><code>figure</code>, <code>data</code>, <code>external_data</code></li>
+<li><code>publication_data_path(...)</code></li>
+<li><code>save_publication_data_npz(...)</code></li>
+<li><code>load_publication_data_npz(...)</code></li>
+<li><code>FigureExport</code></li>
+<li><code>FigurePanel</code></li>
+<li><code>panel(...)</code></li>
+</ul>
+<p>See the <a href="api/">API reference</a> for the docstring-driven reference pages.</p></div>
             </div>
         </div>
 
@@ -171,5 +380,5 @@
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-28 22:46:50.482123+00:00
+Build Date UTC : 2026-03-28 22:53:45.128783+00:00
 -->
