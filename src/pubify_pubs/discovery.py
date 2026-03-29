@@ -225,6 +225,7 @@ def _discover_loaders(module: ModuleType) -> dict[str, LoaderSpec]:
         loader_id = _strip_prefix(member.__name__, "load_")
         if loader_id in loaders:
             raise ValueError(f"Duplicate loader id '{loader_id}'")
+        _validate_loader_signature(loader_id, member, metadata["style"], dict(metadata["paths"]))
         loaders[loader_id] = LoaderSpec(
             loader_id=loader_id,
             func=member,
@@ -251,6 +252,36 @@ def _discover_figures(module: ModuleType) -> dict[str, FigureSpec]:
             dependency_ids=_figure_dependency_ids(member),
         )
     return figures
+
+
+def _validate_loader_signature(
+    loader_id: str,
+    func: object,
+    style: str,
+    paths: dict[str, str],
+) -> None:
+    params = tuple(inspect.signature(func).parameters.values())
+    if not params or params[0].name != "ctx":
+        raise ValueError(f"Loader '{func.__name__}' must accept ctx as its first parameter")
+
+    resolved_params = params[1:]
+    if style == "single":
+        if len(resolved_params) != 1:
+            raise ValueError(
+                f"Loader '{loader_id}' must accept exactly one resolved path parameter after ctx"
+            )
+        return
+
+    if style == "named":
+        expected_names = tuple(paths)
+        param_names = tuple(param.name for param in resolved_params)
+        if param_names != expected_names:
+            raise ValueError(
+                f"Loader '{loader_id}' must accept named path parameters {expected_names} after ctx"
+            )
+        return
+
+    raise ValueError(f"Unsupported loader style for loader '{loader_id}': {style}")
 
 
 def _figure_dependency_ids(func: object) -> tuple[str, ...]:

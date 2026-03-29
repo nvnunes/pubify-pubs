@@ -282,7 +282,7 @@ def _resolve_loader(ctx: RunContext, loader_id: str) -> object:
     elif loader.style == "named":
         resolved = loader.func(
             ctx,
-            {
+            **{
                 name: _resolve_loader_path(root, relative_path, loader_id)
                 for name, relative_path in loader.relative_paths.items()
             },

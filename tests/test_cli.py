@@ -156,9 +156,9 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "    return path.read_text(encoding='utf-8')",
                 "",
                 "@data(model='bundle/model.txt', meta='bundle/meta.txt')",
-                "def load_bundle(ctx, paths):",
+                "def load_bundle(ctx, model, meta):",
                 "    CALLS['bundle'] += 1",
-                "    return '|'.join(paths[name].read_text(encoding='utf-8') for name in sorted(paths))",
+                "    return '|'.join(path.read_text(encoding='utf-8') for path in (meta, model))",
                 "",
                 "@figure",
                 "def plot_single(ctx, training):",
@@ -267,8 +267,8 @@ def test_data_decorator_supports_single_path_form() -> None:
 
 def test_data_decorator_supports_named_multi_path_form() -> None:
     @data(model="bundle.pt", meta="bundle.json", nocache=True)
-    def load_bundle(ctx, paths):
-        return paths
+    def load_bundle(ctx, model, meta):
+        return model, meta
 
     assert load_bundle.__pubs_loader__ == {
         "kind": "data",
@@ -551,8 +551,8 @@ def test_external_data_decorator_supports_single_path_form() -> None:
 
 def test_external_data_decorator_supports_named_multi_path_form() -> None:
     @external_data("shared", model="bundle.pt", meta="bundle.json", nocache=True)
-    def load_bundle(ctx, paths):
-        return paths
+    def load_bundle(ctx, model, meta):
+        return model, meta
 
     assert load_bundle.__pubs_loader__ == {
         "kind": "external_data",
@@ -637,6 +637,25 @@ def test_find_workspace_root_works_from_nested_directory(repo: Path) -> None:
 def test_missing_figures_entrypoint_fails_clearly(repo: Path) -> None:
     (repo / "papers" / "demo" / "figures.py").unlink()
     with pytest.raises(FileNotFoundError, match="Missing figures entrypoint:"):
+        load_publication_definition(repo, "demo")
+
+
+def test_named_path_loader_requires_named_parameters_after_ctx(repo: Path) -> None:
+    (repo / "papers" / "demo" / "figures.py").write_text(
+        "\n".join(
+            [
+                "from pubify_pubs.decorators import data",
+                "",
+                "@data(model='bundle/model.txt', meta='bundle/meta.txt')",
+                "def load_bundle(ctx, paths):",
+                "    return paths",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="must accept named path parameters"):
         load_publication_definition(repo, "demo")
 
 
@@ -1929,16 +1948,16 @@ def test_data_list_shows_external_rows_and_does_not_validate_paths(
             "    return path",
             "",
             "@data(model='bundle/model.txt', meta='bundle/meta.txt')",
-            "def load_bundle(ctx, paths):",
-            "    return paths",
+            "def load_bundle(ctx, model, meta):",
+            "    return model, meta",
             "",
             "@external_data('scratch', 'training.npy')",
             "def load_external_training(ctx, path):",
             "    return path",
             "",
             "@external_data('scratch', model='bundle/model.txt', meta='bundle/meta.txt')",
-            "def load_external_bundle(ctx, paths):",
-            "    return paths",
+            "def load_external_bundle(ctx, model, meta):",
+            "    return model, meta",
             "",
             "@figure",
             "def plot_unused(ctx):",
@@ -1974,16 +1993,16 @@ def test_data_list_repeats_loader_id_for_multi_path_rows_and_keeps_per_loader_ro
             "from pubify_pubs.decorators import external_data, figure",
             "",
             "@external_data('scratch', model_dir='models', tiptop_dir='tiptop')",
-            "def load_one(ctx, paths):",
-            "    return paths",
+            "def load_one(ctx, model_dir, tiptop_dir):",
+            "    return model_dir, tiptop_dir",
             "",
             "@external_data('scratch', model_dir='models', tiptop_dir='tiptop')",
-            "def load_two(ctx, paths):",
-            "    return paths",
+            "def load_two(ctx, model_dir, tiptop_dir):",
+            "    return model_dir, tiptop_dir",
             "",
             "@external_data('scratch', tiptop_dir='tiptop')",
-            "def load_three(ctx, paths):",
-            "    return paths",
+            "def load_three(ctx, tiptop_dir):",
+            "    return tiptop_dir",
             "",
             "@figure",
             "def plot_unused(ctx):",
@@ -2132,8 +2151,8 @@ def test_data_pin_named_paths_preserves_nocache_and_copies_directories(
             "from pubify_pubs.decorators import external_data, figure",
             "",
             "@external_data('scratch', model_dir='models', meta_dir='meta', nocache=True)",
-            "def load_bundle(ctx, paths):",
-            "    return paths",
+            "def load_bundle(ctx, model_dir, meta_dir):",
+            "    return model_dir, meta_dir",
             "",
             "@external_data('scratch', 'other.txt')",
             "def load_other(ctx, path):",
@@ -2404,8 +2423,8 @@ def test_external_data_multi_path_resolves_named_paths_from_configured_root(repo
             "from pubify_pubs.decorators import external_data, figure",
             "",
             "@external_data('shared', model='bundle/model.txt', meta='bundle/meta.txt')",
-            "def load_bundle(ctx, paths):",
-            "    return '|'.join(paths[name].read_text(encoding='utf-8') for name in sorted(paths))",
+            "def load_bundle(ctx, model, meta):",
+            "    return '|'.join(path.read_text(encoding='utf-8') for path in (meta, model))",
             "",
             "@figure",
             "def plot_single(ctx, bundle):",
