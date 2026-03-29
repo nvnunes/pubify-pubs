@@ -158,6 +158,23 @@ from pubify_pubs.export import FigureExport, panel
 
 If one panel needs a different subcaption estimate, `panel(..., subcaption_lines=...)` overrides the figure-level default for that panel only.
 
+For custom text that pubify cannot discover generically, pass a `prepare_copy` callback through `FigureExport(..., kwargs={...})` and use the resolved style payload:
+
+```python
+def prepare_copy(fig_copy, style):
+    sky_ax = fig_copy.axes[0]
+    for text in iter_custom_tick_labels(sky_ax):
+        text.set_fontfamily(style.font_family)
+        text.set_fontsize(style.tick_labelsize_pt)
+
+return FigureExport(
+    panels=(panel(fig),),
+    kwargs={"prepare_copy": prepare_copy},
+)
+```
+
+One-argument callbacks still work, but the two-argument form is preferred for figure-specific styling adjustments.
+
 ## Pinned Publication Data
 
 `pubify-pubs` includes helpers for publication-owned binary data:

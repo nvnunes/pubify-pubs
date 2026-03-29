@@ -256,6 +256,19 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 <li>default estimated subcaption line count for panels</li>
 </ul>
 <p>If one panel needs a different subcaption estimate, <code>panel(..., subcaption_lines=...)</code> overrides the figure-level default for that panel only.</p>
+<p>For custom text that pubify cannot discover generically, pass a <code>prepare_copy</code> callback through <code>FigureExport(..., kwargs={...})</code> and use the resolved style payload:</p>
+<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">prepare_copy</span><span class="p">(</span><span class="n">fig_copy</span><span class="p">,</span> <span class="n">style</span><span class="p">):</span>
+    <span class="n">sky_ax</span> <span class="o">=</span> <span class="n">fig_copy</span><span class="o">.</span><span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="k">for</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">iter_custom_tick_labels</span><span class="p">(</span><span class="n">sky_ax</span><span class="p">):</span>
+        <span class="n">text</span><span class="o">.</span><span class="n">set_fontfamily</span><span class="p">(</span><span class="n">style</span><span class="o">.</span><span class="n">font_family</span><span class="p">)</span>
+        <span class="n">text</span><span class="o">.</span><span class="n">set_fontsize</span><span class="p">(</span><span class="n">style</span><span class="o">.</span><span class="n">tick_labelsize_pt</span><span class="p">)</span>
+
+<span class="k">return</span> <span class="n">FigureExport</span><span class="p">(</span>
+    <span class="n">panels</span><span class="o">=</span><span class="p">(</span><span class="n">panel</span><span class="p">(</span><span class="n">fig</span><span class="p">),),</span>
+    <span class="n">kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;prepare_copy&quot;</span><span class="p">:</span> <span class="n">prepare_copy</span><span class="p">},</span>
+<span class="p">)</span>
+</code></pre></div>
+<p>One-argument callbacks still work, but the two-argument form is preferred for figure-specific styling adjustments.</p>
 <h2 id="pinned-publication-data">Pinned Publication Data</h2>
 <p><code>pubify-pubs</code> includes helpers for publication-owned binary data:</p>
 <ul>
@@ -417,5 +430,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-29 05:52:36.070026+00:00
+Build Date UTC : 2026-03-29 23:30:01.881556+00:00
 -->

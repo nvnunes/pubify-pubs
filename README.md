@@ -164,6 +164,26 @@ from pubify_pubs.export import FigureExport, panel
 
 If panels differ materially, `panel(..., subcaption_lines=...)` can override the figure-level subcaption count per panel.
 
+For figures with custom text artists that pubify cannot discover generically, pass a `prepare_copy` callback through `FigureExport(..., kwargs={...})`:
+
+```python
+def build_skymap():
+    fig, ax = make_skymap()
+
+    def prepare_copy(fig_copy, style):
+        sky_ax = fig_copy.axes[0]
+        for text in iter_custom_tick_labels(sky_ax):
+            text.set_fontfamily(style.font_family)
+            text.set_fontsize(style.tick_labelsize_pt)
+
+    return FigureExport(
+        panels=(panel(fig),),
+        kwargs={"prepare_copy": prepare_copy},
+    )
+```
+
+`prepare_copy(fig_copy)` still works. The preferred modern form is `prepare_copy(fig_copy, style)`, where `style` carries the resolved pubify styling values for text, lines, ticks, and spines.
+
 ## Pinned Publication Data
 
 `pubify-pubs` includes helpers for publication-owned binary data:
