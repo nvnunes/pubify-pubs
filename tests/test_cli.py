@@ -63,6 +63,7 @@ class FakeReadline:
         self.history: list[str] = []
         self.read_paths: list[str] = []
         self.write_paths: list[str] = []
+        self.auto_history_values: list[bool] = []
         self.__doc__ = ""
 
     def parse_and_bind(self, binding: str) -> None:
@@ -88,6 +89,9 @@ class FakeReadline:
 
     def add_history(self, line: str) -> None:
         self.history.append(line)
+
+    def set_auto_history(self, enabled: bool) -> None:
+        self.auto_history_values.append(enabled)
 
 
 @pytest.fixture(autouse=True)
@@ -1225,6 +1229,28 @@ def test_cli_shell_history_is_trimmed_to_recent_entries(
     assert lines[-1] == "quit"
 
 
+def test_cli_shell_persists_history_when_readline_already_contains_latest_entry(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    init_publication(load_publication_definition(repo, "demo"))
+    history_path = repo / "papers" / "demo" / ".pubs-history"
+    history_path.write_text("check\n", encoding="utf-8")
+    fake_readline = FakeReadline()
+    commands = iter(["export single", "quit"])
+
+    def fake_input(prompt: str) -> str:
+        line = next(commands)
+        fake_readline.history.append(line)
+        return line
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: fake_readline)
+
+    assert main(["demo", "shell"]) == 0
+    assert history_path.read_text(encoding="utf-8").splitlines() == ["check", "export single", "quit"]
+
+
 def test_configure_shell_readline_binds_arrow_keys_for_gnu_and_libedit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1236,6 +1262,7 @@ def test_configure_shell_readline_binds_arrow_keys_for_gnu_and_libedit(
     assert '"\\e[D": backward-char' in gnu_readline.bindings
     assert '"\\eOC": forward-char' in gnu_readline.bindings
     assert '"\\eOD": backward-char' in gnu_readline.bindings
+    assert gnu_readline.auto_history_values == [False]
 
     libedit_readline = FakeReadline()
     libedit_readline.__doc__ = "libedit readline compatibility"
@@ -1245,6 +1272,7 @@ def test_configure_shell_readline_binds_arrow_keys_for_gnu_and_libedit(
     assert "bind ^[[D ed-prev-char" in libedit_readline.bindings
     assert "bind ^[OC ed-next-char" in libedit_readline.bindings
     assert "bind ^[OD ed-prev-char" in libedit_readline.bindings
+    assert libedit_readline.auto_history_values == [False]
 
 
 def test_subfigure_index_is_one_based(repo: Path) -> None:

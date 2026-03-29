@@ -529,6 +529,12 @@ def _configure_shell_readline() -> object | None:
     except ImportError:
         return None
     try:
+        set_auto_history = getattr(readline, "set_auto_history", None)
+        if callable(set_auto_history):
+            set_auto_history(False)
+    except Exception:
+        pass
+    try:
         readline.parse_and_bind("set editing-mode emacs")
     except Exception:
         pass
@@ -596,19 +602,19 @@ def _remember_shell_history_entry(
     line: str,
 ) -> None:
     try:
-        last_line = None
+        history_lines = _read_shell_history_file(history_path)
+        if history_lines and history_lines[-1] == line:
+            return
+
         if readline_module is not None:
             history_length = readline_module.get_current_history_length()
-            if history_length > 0:
-                last_line = readline_module.get_history_item(history_length)
-        if last_line is None:
-            history_lines = _read_shell_history_file(history_path)
-            if history_lines:
-                last_line = history_lines[-1]
-        if last_line == line:
-            return
-        if readline_module is not None:
-            readline_module.add_history(line)
+            last_line = (
+                readline_module.get_history_item(history_length)
+                if history_length > 0
+                else None
+            )
+            if last_line != line:
+                readline_module.add_history(line)
         history_path.parent.mkdir(parents=True, exist_ok=True)
         with history_path.open("a", encoding="utf-8") as handle:
             handle.write(f"{line}\n")
