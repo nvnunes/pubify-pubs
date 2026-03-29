@@ -8,7 +8,13 @@ import matplotlib.pyplot as plt
 import pytest
 
 from pubify_pubs.config import PublicationConfig, PubifyMplConfig, load_publication_config
-from pubify_pubs.export import FigureExport, export_figure, normalize_figure_result, panel
+from pubify_pubs.export import (
+    FigureExport,
+    export_figure,
+    normalize_figure_result,
+    panel,
+    save_pubify_figure,
+)
 
 
 class UnsupportedObject:
@@ -96,6 +102,66 @@ def test_load_publication_config_parses_pubify_mpl_keys(tmp_path: Path) -> None:
     assert config.pubify_mpl.defaults["hide_labels"] is True
 
 
+def test_export_figure_sets_skip_clone_by_default(
+    paper_config: PublicationConfig,
+    tmp_path: Path,
+) -> None:
+    backend = FakePubifyBackend()
+    fig = plt.figure()
+
+    export_figure(
+        paper_config,
+        tex_root=tmp_path / "tex",
+        output_dir=tmp_path / "out",
+        figure_id="demo",
+        result=FigureExport(panels=(panel(fig),)),
+        mode_extension=".pdf",
+        backend=backend,
+    )
+
+    assert backend.save_calls[0][4]["skip_clone"] is True
+
+
+def test_export_figure_allows_skip_clone_override(
+    paper_config: PublicationConfig,
+    tmp_path: Path,
+) -> None:
+    backend = FakePubifyBackend()
+    fig = plt.figure()
+
+    export_figure(
+        paper_config,
+        tex_root=tmp_path / "tex",
+        output_dir=tmp_path / "out",
+        figure_id="demo",
+        result=FigureExport(panels=(panel(fig, skip_clone=False),)),
+        mode_extension=".pdf",
+        backend=backend,
+    )
+
+    assert backend.save_calls[0][4]["skip_clone"] is False
+
+
+def test_save_pubify_figure_sets_skip_clone_by_default(tmp_path: Path) -> None:
+    backend = FakePubifyBackend()
+    fig = plt.figure()
+
+    save_pubify_figure(
+        fig,
+        layout="onewide",
+        filename=tmp_path / "demo.pdf",
+        template={
+            "textwidth_in": 6.75,
+            "textheight_in": 9.7,
+            "base_fontsize_pt": 10,
+        },
+        prepare_root=tmp_path / "prepare",
+        backend=backend,
+    )
+
+    assert backend.save_calls[0][4]["skip_clone"] is True
+
+
 def test_normalize_simple_returns_uses_publication_default_layout(paper_config: PublicationConfig) -> None:
     fig = plt.figure()
     ax1 = plt.figure().subplots()
@@ -175,7 +241,7 @@ def test_export_figure_single_panel_uses_shared_layout_and_kwargs(
     assert layout == "twowide"
     assert filename == output_dir / "compare.png"
     assert template == paper_config.pubify_mpl.template
-    assert kwargs == {"dpi": 144, "hide_labels": True, "caption_lines": 2}
+    assert kwargs == {"dpi": 144, "hide_labels": True, "caption_lines": 2, "skip_clone": True}
 
 
 def test_export_figure_uses_publication_default_layout_when_explicit_layout_is_omitted(
@@ -262,6 +328,7 @@ def test_export_figure_allows_generic_kwargs_alongside_first_class_caption_field
         "hide_labels": True,
         "caption_lines": 2,
         "hide_annotations": True,
+        "skip_clone": True,
     }
 
 
@@ -299,6 +366,7 @@ def test_export_figure_multi_panel_supports_per_panel_overrides(
         "hide_labels": False,
         "caption_lines": 1,
         "subcaption_lines": 1,
+        "skip_clone": True,
     }
     assert backend.save_calls[1][4] == {
         "dpi": 144,
@@ -306,6 +374,7 @@ def test_export_figure_multi_panel_supports_per_panel_overrides(
         "caption_lines": 1,
         "subcaption_lines": 2,
         "hide_cbar": True,
+        "skip_clone": True,
     }
 
 

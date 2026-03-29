@@ -136,6 +136,7 @@ def export_figure(
         if current_panel.subcaption_lines is not None:
             pubify_kwargs["subcaption_lines"] = current_panel.subcaption_lines
         pubify_kwargs.update(current_panel.overrides)
+        pubify_kwargs.setdefault("skip_clone", True)
         backend.save_fig(
             current_panel.figure,
             layout,
@@ -169,6 +170,7 @@ def save_pubify_figure(
         raise ValueError("save_pubify_figure requires an absolute filename")
     path.parent.mkdir(parents=True, exist_ok=True)
     backend.prepare(prepare_root, template=template)
+    kwargs.setdefault("skip_clone", True)
     backend.save_fig(figure, layout, path, template=template, **kwargs)
 
 
