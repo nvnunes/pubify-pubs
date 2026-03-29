@@ -14,6 +14,8 @@ WORKSPACE_CONFIG_FILENAME = "pubify.conf"
 DEFAULT_PUBIFY_DEFAULTS = {
     "layout": "one",
 }
+DEFAULT_PREVIEW_BACKEND = "preview"
+ALLOWED_PREVIEW_BACKENDS = {"preview", "vscode"}
 
 
 @dataclass(frozen=True)
@@ -55,12 +57,21 @@ class PublicationConfig:
 
 
 @dataclass(frozen=True)
+class PreviewConfig:
+    """Workspace-level preview backend settings loaded from ``pubify.conf``."""
+
+    publication: str = DEFAULT_PREVIEW_BACKEND
+    figure: str = DEFAULT_PREVIEW_BACKEND
+
+
+@dataclass(frozen=True)
 class WorkspaceConfig:
     """Workspace-level publication roots loaded from ``pubify.conf``."""
 
     workspace_root: Path
     publications_root: Path
     data_root: Path
+    preview: PreviewConfig
 
 
 def load_publication_config(path: Path, folder_publication_id: str) -> PublicationConfig:
@@ -154,10 +165,12 @@ def load_workspace_config(workspace_root: Path) -> WorkspaceConfig:
     raw = _parse_simple_yaml(config_path.read_text(encoding="utf-8"))
     publications_root = _require_workspace_relative_root(raw, config_path, "publications_root")
     data_root = _require_workspace_relative_root(raw, config_path, "data_root")
+    preview = _load_preview_config(raw, config_path)
     return WorkspaceConfig(
         workspace_root=root,
         publications_root=publications_root,
         data_root=data_root,
+        preview=preview,
     )
 
 
@@ -299,6 +312,31 @@ def _require_workspace_relative_root(
     if not resolved.is_absolute():
         resolved = (config_path.parent / resolved).resolve()
     return resolved
+
+
+def _load_preview_config(raw: dict[str, object], config_path: Path) -> PreviewConfig:
+    preview_raw = raw.get("preview", {})
+    if not isinstance(preview_raw, dict):
+        raise ValueError(f"{config_path}: preview must be a mapping when set")
+
+    publication = _validate_preview_backend(
+        preview_raw.get("publication", DEFAULT_PREVIEW_BACKEND),
+        config_path,
+        "preview.publication",
+    )
+    figure = _validate_preview_backend(
+        preview_raw.get("figure", DEFAULT_PREVIEW_BACKEND),
+        config_path,
+        "preview.figure",
+    )
+    return PreviewConfig(publication=publication, figure=figure)
+
+
+def _validate_preview_backend(value: object, config_path: Path, key: str) -> str:
+    if not isinstance(value, str) or value not in ALLOWED_PREVIEW_BACKENDS:
+        allowed = ", ".join(sorted(ALLOWED_PREVIEW_BACKENDS))
+        raise ValueError(f"{config_path}: {key} must be one of: {allowed}")
+    return value
 
 
 def _parse_simple_yaml(text: str) -> dict[str, object]:

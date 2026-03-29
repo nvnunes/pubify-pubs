@@ -21,6 +21,7 @@ from pubify_pubs.decorators import data, external_data, figure
 from pubify_pubs.discovery import find_workspace_root, list_publication_ids, load_publication_definition
 from pubify_pubs.mirror import diff_publication, pull_publication, push_publication
 from pubify_pubs.runtime import build_publication, check_publication, init_publication, run_figures
+from pubify_pubs.config import load_workspace_config
 
 
 class FakePubifyBackend:
@@ -420,6 +421,58 @@ def test_save_publication_data_npz_supports_workspace_root_override(tmp_path: Pa
         assert np.array_equal(saved["values"], np.array([4.0]))
 
 
+def test_workspace_config_defaults_preview_backends(repo: Path) -> None:
+    workspace = load_workspace_config(repo)
+
+    assert workspace.preview.publication == "preview"
+    assert workspace.preview.figure == "preview"
+
+
+def test_workspace_config_parses_nested_preview_backends(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "pkg"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    (workspace_root / "pubify.conf").write_text(
+        "\n".join(
+            [
+                "publications_root: papers",
+                "data_root: output/papers",
+                "preview:",
+                "  publication: vscode",
+                "  figure: preview",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    workspace = load_workspace_config(workspace_root)
+
+    assert workspace.preview.publication == "vscode"
+    assert workspace.preview.figure == "preview"
+
+
+def test_workspace_config_rejects_invalid_preview_backend(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "pkg"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    (workspace_root / "pubify.conf").write_text(
+        "\n".join(
+            [
+                "publications_root: papers",
+                "data_root: output/papers",
+                "preview:",
+                "  publication: finder",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="preview.publication must be one of: preview, vscode"):
+        load_workspace_config(workspace_root)
+
+
 def test_load_publication_data_npz_returns_plain_dict_of_arrays(repo: Path) -> None:
     source = repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
     source.parent.mkdir(parents=True, exist_ok=True)
@@ -554,6 +607,12 @@ def test_parser_supports_documented_surface() -> None:
     assert figure_list_args.subject == "demo"
     assert figure_list_args.arg2 == "figure"
     assert figure_list_args.arg3 == "list"
+    figure_preview_args = parser.parse_args(["demo", "figure", "compare", "preview", "2"])
+    assert figure_preview_args.subject == "demo"
+    assert figure_preview_args.arg2 == "figure"
+    assert figure_preview_args.arg3 == "compare"
+    assert figure_preview_args.arg4 == "preview"
+    assert figure_preview_args.arg5 == "2"
     pin_args = parser.parse_args(["demo", "data", "training", "pin"])
     assert pin_args.subject == "demo"
     assert pin_args.arg2 == "data"
@@ -673,15 +732,263 @@ def test_cli_figures_alias_prints_figure_inventory_without_help_exposure(
     ]
 
 
-def test_cli_preview_is_rejected_as_unsupported_command(
+def test_cli_preview_opens_built_pdf(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[tuple[list[Path], str]] = []
+    pdf_path = repo / "papers" / "demo" / "tex" / "build" / "main.pdf"
+    pdf_path.write_text("pdf", encoding="utf-8")
+
+    monkeypatch.setattr(
+        core_cli,
+        "_open_publication_previews",
+        lambda paths, *, backend: opened.append((list(paths), backend)),
+    )
+
+    assert main(["demo", "preview"]) == 0
+    captured = capsys.readouterr()
+    assert opened == [([pdf_path], "preview")]
+    assert captured.out.strip() == str(pdf_path)
+
+
+def test_cli_preview_requires_existing_built_pdf(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(SystemExit):
-        main(["demo", "preview", "single"])
-
+    assert main(["demo", "preview"]) == 1
     captured = capsys.readouterr()
-    assert "unsupported command 'preview'" in captured.err
+    assert "Built publication PDF does not exist:" in captured.err
+
+
+def test_cli_figure_preview_opens_exported_single_pdf(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[tuple[list[Path], str]] = []
+    figure_path = repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"
+    figure_path.parent.mkdir(parents=True, exist_ok=True)
+    figure_path.write_text("pdf", encoding="utf-8")
+
+    monkeypatch.setattr(
+        core_cli,
+        "_open_publication_previews",
+        lambda paths, *, backend: opened.append((list(paths), backend)),
+    )
+
+    assert main(["demo", "figure", "single", "preview"]) == 0
+    captured = capsys.readouterr()
+    assert opened == [([figure_path], "preview")]
+    assert captured.out.strip() == "tex/autofigures/single.pdf"
+
+
+def test_cli_figure_preview_opens_all_exported_multipanel_pdfs(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[tuple[list[Path], str]] = []
+    root = repo / "papers" / "demo" / "tex" / "autofigures"
+    root.mkdir(parents=True, exist_ok=True)
+    left = root / "compare_1.pdf"
+    right = root / "compare_2.pdf"
+    left.write_text("pdf", encoding="utf-8")
+    right.write_text("pdf", encoding="utf-8")
+
+    monkeypatch.setattr(
+        core_cli,
+        "_open_publication_previews",
+        lambda paths, *, backend: opened.append((list(paths), backend)),
+    )
+
+    assert main(["demo", "figure", "compare", "preview"]) == 0
+    captured = capsys.readouterr()
+    assert opened == [([left, right], "preview")]
+    assert captured.out.splitlines() == [
+        "tex/autofigures/compare_1.pdf",
+        "tex/autofigures/compare_2.pdf",
+    ]
+
+
+def test_cli_figure_preview_opens_requested_subfigure_pdf(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[tuple[list[Path], str]] = []
+    root = repo / "papers" / "demo" / "tex" / "autofigures"
+    root.mkdir(parents=True, exist_ok=True)
+    left = root / "compare_1.pdf"
+    right = root / "compare_2.pdf"
+    left.write_text("pdf", encoding="utf-8")
+    right.write_text("pdf", encoding="utf-8")
+
+    monkeypatch.setattr(
+        core_cli,
+        "_open_publication_previews",
+        lambda paths, *, backend: opened.append((list(paths), backend)),
+    )
+
+    assert main(["demo", "figure", "compare", "preview", "2"]) == 0
+    captured = capsys.readouterr()
+    assert opened == [([right], "preview")]
+    assert captured.out.strip() == "tex/autofigures/compare_2.pdf"
+
+
+def test_cli_figure_preview_rejects_out_of_range_subfigure_index(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = repo / "papers" / "demo" / "tex" / "autofigures"
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "compare_1.pdf").write_text("pdf", encoding="utf-8")
+    (root / "compare_2.pdf").write_text("pdf", encoding="utf-8")
+
+    assert main(["demo", "figure", "compare", "preview", "3"]) == 1
+    captured = capsys.readouterr()
+    assert "requested subfigure 3" in captured.err
+
+
+def test_cli_figure_preview_requires_exported_pdf(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["demo", "figure", "single", "preview"]) == 1
+    captured = capsys.readouterr()
+    assert "Exported figure PDF does not exist for 'single'." in captured.err
+
+
+def test_cli_preview_uses_vscode_backend_when_configured(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[tuple[list[Path], str]] = []
+    pdf_path = repo / "papers" / "demo" / "tex" / "build" / "main.pdf"
+    pdf_path.write_text("pdf", encoding="utf-8")
+    (repo / "pubify.conf").write_text(
+        "\n".join(
+            [
+                "publications_root: papers",
+                "data_root: output/papers",
+                "preview:",
+                "  publication: vscode",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        core_cli,
+        "_open_publication_previews",
+        lambda paths, *, backend: opened.append((list(paths), backend)),
+    )
+
+    assert main(["demo", "preview"]) == 0
+    assert opened == [([pdf_path], "vscode")]
+
+
+def test_cli_figure_preview_uses_vscode_backend_when_configured(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[tuple[list[Path], str]] = []
+    figure_path = repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"
+    figure_path.parent.mkdir(parents=True, exist_ok=True)
+    figure_path.write_text("pdf", encoding="utf-8")
+    (repo / "pubify.conf").write_text(
+        "\n".join(
+            [
+                "publications_root: papers",
+                "data_root: output/papers",
+                "preview:",
+                "  figure: vscode",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        core_cli,
+        "_open_publication_previews",
+        lambda paths, *, backend: opened.append((list(paths), backend)),
+    )
+
+    assert main(["demo", "figure", "single", "preview"]) == 0
+    assert opened == [([figure_path], "vscode")]
+
+
+def test_open_publication_previews_uses_preview_backend_on_macos(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+    pdf_path = tmp_path / "demo.pdf"
+    pdf_path.write_text("pdf", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        commands.append(command)
+        return object()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    core_cli._open_publication_previews([pdf_path], backend="preview")
+
+    assert commands == [["open", "-a", "Preview", str(pdf_path.resolve())]]
+
+
+def test_open_publication_previews_uses_vscode_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands: list[list[str]] = []
+    pdf_path = tmp_path / "demo.pdf"
+    pdf_path.write_text("pdf", encoding="utf-8")
+
+    def fake_run(command: list[str], **kwargs: object) -> object:
+        commands.append(command)
+        return object()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    core_cli._open_publication_previews([pdf_path], backend="vscode")
+
+    assert commands == [["code", "-n", str(pdf_path.resolve())]]
+
+
+def test_open_publication_previews_rejects_preview_backend_off_macos(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf_path = tmp_path / "demo.pdf"
+    pdf_path.write_text("pdf", encoding="utf-8")
+    monkeypatch.setattr(sys, "platform", "linux")
+
+    with pytest.raises(RuntimeError, match="supported only on macOS"):
+        core_cli._open_publication_previews([pdf_path], backend="preview")
+
+
+def test_open_publication_previews_reports_missing_vscode_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf_path = tmp_path / "demo.pdf"
+    pdf_path.write_text("pdf", encoding="utf-8")
+
+    def missing_code(*args: object, **kwargs: object) -> object:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(subprocess, "run", missing_code)
+
+    with pytest.raises(RuntimeError, match="Could not find the VS Code `code` command on PATH"):
+        core_cli._open_publication_previews([pdf_path], backend="vscode")
 
 
 def test_cli_shell_runs_paper_scoped_commands(
@@ -691,27 +998,41 @@ def test_cli_shell_runs_paper_scoped_commands(
 ) -> None:
     init_publication(load_publication_definition(repo, "demo"))
     prompts: list[str] = []
-    commands = iter(["check", "export single", "data list", "diff list", "build", "quit"])
+    commands = iter(["check", "export single", "figure single preview 1", "data list", "diff list", "build", "preview", "quit"])
 
     def fake_input(prompt: str) -> str:
         prompts.append(prompt)
         return next(commands)
 
     def fake_build(paper_definition: object) -> object:
+        build_path = repo / "papers" / "demo" / "tex" / "build" / "main.pdf"
+        build_path.parent.mkdir(parents=True, exist_ok=True)
+        build_path.write_text("pdf", encoding="utf-8")
         return None
+
+    previewed: list[tuple[list[Path], str]] = []
 
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
     monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    monkeypatch.setattr(
+        core_cli,
+        "_open_publication_previews",
+        lambda paths, *, backend: previewed.append((list(paths), backend)),
+    )
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
-    assert prompts == ["demo> "] * 6
+    assert prompts == ["demo> "] * 8
     assert "demo: ok" in captured.out
     assert "tex/autofigures/single.pdf" in captured.out
     assert "pinned   " in captured.out
     assert "main.tex" in captured.out
     assert str(repo / "papers" / "demo" / "tex" / "build" / "main.pdf") in captured.out
+    assert previewed == [
+        ([repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"], "preview"),
+        ([repo / "papers" / "demo" / "tex" / "build" / "main.pdf"], "preview"),
+    ]
 
 
 def test_cli_shell_help_and_rejects_top_level_commands(
@@ -727,6 +1048,8 @@ def test_cli_shell_help_and_rejects_top_level_commands(
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
     assert "Shell commands for demo:" in captured.out
+    assert "  figure [list|<figure-id> preview [<subfig-idx>]]" in captured.out
+    assert "  preview" in captured.out
     assert "  reload" in captured.out
     assert "Error: unsupported shell command 'list'" in captured.err
     assert "Error: unsupported shell command 'init'" in captured.err
@@ -3256,7 +3579,8 @@ def test_no_arg_invocation_prints_multiline_help_block(
     assert "  pubs list" in captured.err
     assert "  pubs init <publication-id>" in captured.err
     assert "  pubs <publication-id> shell" in captured.err
-    assert "preview" not in captured.err
+    assert "  pubs <publication-id> build [--export|--export-if-stale]" in captured.err
+    assert "  pubs <publication-id> preview" in captured.err
     assert "  pubs <publication-id> data [list]" in captured.err
     assert "  pubs <publication-id> data <loader-id> pin" in captured.err
     assert "  pubs <publication-id> diff [list|<relative-path>]" in captured.err

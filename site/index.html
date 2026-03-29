@@ -155,6 +155,9 @@
 <p>A workspace is rooted by <code>pubify.conf</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="nt">publications_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">papers</span>
 <span class="nt">data_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">output/papers</span>
+<span class="nt">preview</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">publication</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview</span>
+<span class="w">  </span><span class="nt">figure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview</span>
 </code></pre></div>
 <p>The package discovers that file by walking upward from the current working directory.</p>
 <p>The workspace contract is:</p>
@@ -164,6 +167,19 @@
 <li>package code lives independently from both</li>
 </ul>
 <p>Keeping publication content and pinned data separate is intentional. It lets host workspaces keep publication source trees readable while still giving the workflow a stable place to store pinned inputs.</p>
+<p>The optional <code>preview</code> section configures how PDFs are opened:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">preview</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">publication</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vscode</span>
+<span class="w">  </span><span class="nt">figure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview</span>
+</code></pre></div>
+<p>Supported backend values are:</p>
+<ul>
+<li><code>preview</code></li>
+<li>opens PDFs in macOS Preview via <code>open -a Preview</code></li>
+<li><code>vscode</code></li>
+<li>opens PDFs in a separate VS Code window via <code>code -n</code></li>
+</ul>
+<p>If <code>preview</code> is omitted, both commands default to <code>preview</code>.</p>
 <h2 id="publication-layout">Publication Layout</h2>
 <p>A typical publication looks like:</p>
 <div class="highlight"><pre><span></span><code>papers/&lt;publication-id&gt;/
@@ -277,14 +293,24 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 <li><code>pubs &lt;publication-id&gt; export [&lt;figure-id&gt; [&lt;subfig-idx&gt;]]</code></li>
 <li><code>pubs &lt;publication-id&gt; data [list]</code></li>
 <li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
-<li><code>pubs &lt;publication-id&gt; figure [list]</code></li>
+<li><code>pubs &lt;publication-id&gt; figure [list|&lt;figure-id&gt; preview]</code></li>
 <li><code>pubs &lt;publication-id&gt; ignore &lt;relative-path&gt;</code></li>
 <li><code>pubs &lt;publication-id&gt; build [--export|--export-if-stale]</code></li>
+<li><code>pubs &lt;publication-id&gt; preview</code></li>
 <li><code>pubs &lt;publication-id&gt; push [--force]</code></li>
 <li><code>pubs &lt;publication-id&gt; pull [--force]</code></li>
 <li><code>pubs &lt;publication-id&gt; diff [list|&lt;relative-path&gt;]</code></li>
 </ul>
 <p>The shell command opens a publication-scoped interactive session with command history and reload behavior for <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers.</p>
+<p>Preview behavior is workspace-configured:</p>
+<ul>
+<li><code>pubs &lt;publication-id&gt; preview</code></li>
+<li>opens the built publication PDF derived from <code>main_tex</code></li>
+<li>uses <code>preview.publication</code></li>
+<li><code>pubs &lt;publication-id&gt; figure &lt;figure-id&gt; preview</code></li>
+<li>opens exported PDFs from <code>tex/autofigures/</code></li>
+<li>uses <code>preview.figure</code></li>
+</ul>
 <h2 id="python-api">Python API</h2>
 <p>The public Python API is intentionally small.</p>
 <p>Primary entrypoints:</p>
@@ -380,5 +406,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-28 22:53:45.128783+00:00
+Build Date UTC : 2026-03-29 00:21:18.239361+00:00
 -->

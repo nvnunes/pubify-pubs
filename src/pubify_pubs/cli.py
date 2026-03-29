@@ -4,10 +4,11 @@ import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 import shlex
 import sys
 
-from pubify_pubs.config import add_sync_exclude
+from pubify_pubs.config import add_sync_exclude, load_workspace_config
 from pubify_pubs.discovery import (
     PublicationDefinition,
     PublicationPaths,
@@ -63,6 +64,7 @@ class PublicationCommand:
     command: str
     arg3: str | None = None
     arg4: str | None = None
+    arg5: str | None = None
     force: bool = False
     export_before_build: bool = False
     export_if_stale: bool = False
@@ -89,12 +91,13 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "  pubs <publication-id> check\n"
             "  pubs <publication-id> shell\n"
-            "  pubs <publication-id> figure [list]\n"
+            "  pubs <publication-id> figure [list|<figure-id> preview [<subfig-idx>]]\n"
             "  pubs <publication-id> export [<figure-id> [<subfig-idx>]]\n"
             "  pubs <publication-id> data [list]\n"
             "  pubs <publication-id> data <loader-id> pin\n"
             "  pubs <publication-id> ignore <relative-path>\n"
             "  pubs <publication-id> build [--export|--export-if-stale]\n"
+            "  pubs <publication-id> preview\n"
             "  pubs <publication-id> push [--force]\n"
             "  pubs <publication-id> pull [--force]\n"
             "  pubs <publication-id> diff [list|<relative-path>]"
@@ -105,6 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("arg2", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument("arg3", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument("arg4", nargs="?", help=argparse.SUPPRESS)
+    parser.add_argument("arg5", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--export", dest="export_before_build", action="store_true")
     parser.add_argument("--export-if-stale", action="store_true")
@@ -120,7 +124,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.subject == "list":
             workspace_root = find_workspace_root()
             _reject_build_flags(parser, "list", args.export_before_build, args.export_if_stale)
-            if any(value is not None for value in (args.arg2, args.arg3, args.arg4)):
+            if any(value is not None for value in (args.arg2, args.arg3, args.arg4, args.arg5)):
                 parser.error("list does not accept additional arguments")
             for publication_id in list_publication_ids(workspace_root):
                 print(publication_id)
@@ -131,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
             _reject_build_flags(parser, "init", args.export_before_build, args.export_if_stale)
             if args.arg2 is None:
                 parser.error("init requires <publication-id>")
-            if args.arg3 is not None or args.arg4 is not None:
+            if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
                 parser.error("init accepts only <publication-id>")
             publication_root = init_publication_by_id(workspace_root, args.arg2)
             print(publication_root)
@@ -157,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
             "figure",
             "ignore",
             "build",
+            "preview",
             "push",
             "pull",
             "diff",
@@ -169,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
             _reject_build_flags(parser, "shell", args.export_before_build, args.export_if_stale)
             if args.force:
                 parser.error("shell does not accept --force")
-            if args.arg3 is not None or args.arg4 is not None:
+            if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
                 parser.error("shell does not accept additional arguments")
             return run_publication_shell(workspace_root, publication_id, publication)
 
@@ -177,6 +182,7 @@ def main(argv: list[str] | None = None) -> int:
             command=command,
             arg3=args.arg3,
             arg4=args.arg4,
+            arg5=args.arg5,
             force=args.force,
             export_before_build=args.export_before_build,
             export_if_stale=args.export_if_stale,
@@ -191,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
 
         parser.error(f"Unsupported command: {command}")
         return 2
-    except (FileNotFoundError, ImportError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
+    except (FileNotFoundError, ImportError, IndexError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
@@ -318,23 +324,35 @@ def _run_publication_command(
         _reject_build_flags_from_command(command, error)
         if command.force:
             error("figure does not accept --force")
-        if command.arg3 not in {None, "list"}:
-            error("figure supports only 'list'")
-        if command.arg4 is not None:
-            error("figure list does not accept additional arguments")
-        rows = _build_figure_inventory_rows(publication)
-        if not rows:
-            print(f"{publication.publication_id}: no figures")
-            return 0
-        figure_id_width = max(len(row.figure_id) for row in rows)
-        for row in rows:
-            print(
-                _render_figure_inventory_line(
-                    row,
-                    figure_id_width=figure_id_width,
-                    use_color=use_color,
+        if command.arg3 in {None, "list"}:
+            if command.arg4 is not None or command.arg5 is not None:
+                error("figure list does not accept additional arguments")
+            rows = _build_figure_inventory_rows(publication)
+            if not rows:
+                print(f"{publication.publication_id}: no figures")
+                return 0
+            figure_id_width = max(len(row.figure_id) for row in rows)
+            for row in rows:
+                print(
+                    _render_figure_inventory_line(
+                        row,
+                        figure_id_width=figure_id_width,
+                        use_color=use_color,
+                    )
                 )
-            )
+            return 0
+        if command.arg4 != "preview":
+            error("figure supports only 'list' or '<figure-id> preview [<subfig-idx>]'")
+        subfigure_index = None if command.arg5 is None else _parse_subfig_idx_value(command.arg5, error)
+        preview_paths = _preview_figure_paths(
+            publication,
+            command.arg3,
+            subfigure_index=subfigure_index,
+        )
+        workspace = load_workspace_config(publication.paths.workspace_root)
+        _open_publication_previews(preview_paths, backend=workspace.preview.figure)
+        for path in preview_paths:
+            print(path.relative_to(publication.paths.publication_root))
         return 0
 
     if command.command == "build":
@@ -342,7 +360,7 @@ def _run_publication_command(
             error("build does not accept --force")
         if command.export_before_build and command.export_if_stale:
             error("build accepts only one of --export or --export-if-stale")
-        if command.arg3 is not None or command.arg4 is not None:
+        if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
             error("build does not accept additional arguments")
         if command.export_before_build or (
             command.export_if_stale and generated_exports_are_stale(publication)
@@ -351,6 +369,23 @@ def _run_publication_command(
                 print(path.relative_to(publication.paths.publication_root))
         build_publication(publication)
         print(build_pdf_path(publication))
+        return 0
+
+    if command.command == "preview":
+        _reject_build_flags_from_command(command, error)
+        if command.force:
+            error("preview does not accept --force")
+        if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
+            error("preview does not accept additional arguments")
+        pdf_path = build_pdf_path(publication)
+        if not pdf_path.exists():
+            raise FileNotFoundError(
+                f"Built publication PDF does not exist: {pdf_path.resolve()}. "
+                f"Run `pubs {publication.publication_id} build` first."
+            )
+        workspace = load_workspace_config(publication.paths.workspace_root)
+        _open_publication_previews([pdf_path], backend=workspace.preview.publication)
+        print(pdf_path)
         return 0
 
     if command.command == "push":
@@ -441,7 +476,7 @@ def run_publication_shell(
             if command == "reload":
                 try:
                     _reload_session_publication(session, force=True)
-                except (FileNotFoundError, ImportError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
+                except (FileNotFoundError, ImportError, IndexError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
                     print(f"Error: {exc}", file=sys.stderr)
                 else:
                     print(f"{publication_id}: reloaded")
@@ -457,6 +492,7 @@ def run_publication_shell(
                     command=parsed_command,
                     arg3=parsed.arg3,
                     arg4=parsed.arg4,
+                    arg5=parsed.arg5,
                     force=parsed.force,
                     export_before_build=parsed.export_before_build,
                     export_if_stale=parsed.export_if_stale,
@@ -469,7 +505,7 @@ def run_publication_shell(
                     use_color=sys.stdout.isatty(),
                     use_interactive_merge=sys.stdout.isatty() and sys.stdin.isatty(),
                 )
-            except (FileNotFoundError, ImportError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
+            except (FileNotFoundError, ImportError, IndexError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
                 print(f"Error: {exc}", file=sys.stderr)
     finally:
         _save_shell_history(readline_module, history_path)
@@ -483,6 +519,7 @@ def _build_shell_command_parser() -> argparse.ArgumentParser:
     parser.add_argument("command")
     parser.add_argument("arg3", nargs="?")
     parser.add_argument("arg4", nargs="?")
+    parser.add_argument("arg5", nargs="?")
     return parser
 
 
@@ -636,12 +673,13 @@ def _shell_help_text(publication_id: str) -> str:
         [
             f"Shell commands for {publication_id}:",
             "  check",
-            "  figure [list]",
+            "  figure [list|<figure-id> preview [<subfig-idx>]]",
             "  export [<figure-id> [<subfig-idx>]]",
             "  data [list]",
             "  data <loader-id> pin",
             "  ignore <relative-path>",
             "  build [--export|--export-if-stale]",
+            "  preview",
             "  push [--force]",
             "  pull [--force]",
             "  diff [list|<relative-path>]",
@@ -699,6 +737,88 @@ def _parse_ignore_path(value: str) -> str:
     if path.as_posix() in {"", "."}:
         raise ValueError("ignore path must be a non-empty path relative to tex/")
     return value
+
+
+def _open_publication_previews(paths: list[Path], *, backend: str) -> None:
+    resolved_paths = [path.resolve() for path in paths]
+    if not resolved_paths:
+        raise ValueError("No preview paths were provided")
+    for resolved_path in resolved_paths:
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"Preview target does not exist: {resolved_path}")
+    if backend == "preview":
+        _open_with_preview(resolved_paths)
+        return
+    if backend == "vscode":
+        _open_with_vscode(resolved_paths)
+        return
+    raise ValueError(f"Unsupported preview backend: {backend}")
+
+
+def _open_with_preview(paths: list[Path]) -> None:
+    if sys.platform != "darwin":
+        raise RuntimeError("The 'preview' backend is supported only on macOS")
+    try:
+        subprocess.run(
+            ["open", "-a", "Preview", *(str(path) for path in paths)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("Could not find the macOS `open` command") from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        if stderr:
+            raise RuntimeError(f"Preview failed: {stderr}") from None
+        raise RuntimeError(f"Preview failed with exit code {exc.returncode}") from None
+
+
+def _open_with_vscode(paths: list[Path]) -> None:
+    try:
+        subprocess.run(
+            ["code", "-n", *(str(path) for path in paths)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError("Could not find the VS Code `code` command on PATH") from exc
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or "").strip()
+        if stderr:
+            raise RuntimeError(f"VS Code preview failed: {stderr}") from None
+        raise RuntimeError(f"VS Code preview failed with exit code {exc.returncode}") from None
+
+
+def _preview_figure_paths(
+    publication: PublicationDefinition,
+    figure_id: str,
+    *,
+    subfigure_index: int | None = None,
+) -> list[Path]:
+    if figure_id not in publication.figures:
+        raise KeyError(f"Unknown figure '{figure_id}'")
+    root = publication.paths.autofigures_root
+    primary = root / f"{figure_id}.pdf"
+    if primary.exists():
+        if subfigure_index is not None and subfigure_index != 1:
+            raise IndexError(
+                f"Figure '{figure_id}' has 1 panel(s); requested subfigure {subfigure_index}"
+            )
+        return [primary]
+    paths = sorted(root.glob(f"{figure_id}_*.pdf"))
+    if paths:
+        if subfigure_index is not None:
+            if subfigure_index < 1 or subfigure_index > len(paths):
+                raise IndexError(
+                    f"Figure '{figure_id}' has {len(paths)} panel(s); requested subfigure {subfigure_index}"
+                )
+            return [paths[subfigure_index - 1]]
+        return paths
+    raise FileNotFoundError(
+        f"Exported figure PDF does not exist for '{figure_id}'. Run `pubs {publication.publication_id} export {figure_id}` first."
+    )
 
 
 def _render_status_line(status: str, path: str, *, use_color: bool) -> str:

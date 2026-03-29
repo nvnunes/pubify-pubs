@@ -34,6 +34,9 @@ Create a workspace rooted by `pubify.conf`:
 ```yaml
 publications_root: papers
 data_root: output/papers
+preview:
+  publication: preview
+  figure: preview
 ```
 
 Initialize a new publication:
@@ -77,6 +80,23 @@ This separation is intentional:
 - publications stay under the host workspace's configured publication root
 - pinned data stays under the configured data root
 - package code lives independently from both
+
+`pubify.conf` can also configure preview backends independently for publication PDFs and exported figure PDFs:
+
+```yaml
+preview:
+  publication: vscode
+  figure: preview
+```
+
+Supported backend values are:
+
+- `preview`
+  - opens PDFs in macOS Preview via `open -a Preview`
+- `vscode`
+  - opens PDFs in a separate VS Code window via `code -n`
+
+If the `preview` section is omitted, both commands default to the `preview` backend.
 
 ## Publication Layout
 
@@ -161,9 +181,10 @@ The installed command is `pubs`:
 - `pubs <publication-id> export [<figure-id> [<subfig-idx>]]`
 - `pubs <publication-id> data [list]`
 - `pubs <publication-id> data <loader-id> pin`
-- `pubs <publication-id> figure [list]`
+- `pubs <publication-id> figure [list|<figure-id> preview]`
 - `pubs <publication-id> ignore <relative-path>`
 - `pubs <publication-id> build [--export|--export-if-stale]`
+- `pubs <publication-id> preview`
 - `pubs <publication-id> push [--force]`
 - `pubs <publication-id> pull [--force]`
 - `pubs <publication-id> diff [list|<relative-path>]`
@@ -182,6 +203,10 @@ The installed command is `pubs`:
   - reloads publication code and config when `figures.py`, `pub.yaml`, or publication-local helpers change
 - `figure list`
   - lists discovered figures and their declared loader dependencies
+- `figure <figure-id> preview`
+  - opens the exported PDF for one figure from `tex/autofigures/`
+  - uses the `preview.figure` backend from `pubify.conf`
+  - opens all matching panel PDFs for multi-panel figures
 - `export`
   - writes generated figure PDFs into `tex/autofigures/`
   - full export clears stale generated outputs first
@@ -197,6 +222,9 @@ The installed command is `pubs`:
   - builds from the current publication-local TeX tree
   - `--export` runs a full export before building
   - `--export-if-stale` exports first only when `figures.py` appears newer than the generated outputs or the generated output directory is missing or empty
+- `preview`
+  - opens the built publication PDF derived from `main_tex`
+  - uses the `preview.publication` backend from `pubify.conf`
 - `diff`, `push`, `pull`
   - operate on the canonical publication-local TeX tree and mirror state using conservative sync rules
 

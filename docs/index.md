@@ -31,6 +31,9 @@ A workspace is rooted by `pubify.conf`:
 ```yaml
 publications_root: papers
 data_root: output/papers
+preview:
+  publication: preview
+  figure: preview
 ```
 
 The package discovers that file by walking upward from the current working directory.
@@ -42,6 +45,23 @@ The workspace contract is:
 - package code lives independently from both
 
 Keeping publication content and pinned data separate is intentional. It lets host workspaces keep publication source trees readable while still giving the workflow a stable place to store pinned inputs.
+
+The optional `preview` section configures how PDFs are opened:
+
+```yaml
+preview:
+  publication: vscode
+  figure: preview
+```
+
+Supported backend values are:
+
+- `preview`
+  - opens PDFs in macOS Preview via `open -a Preview`
+- `vscode`
+  - opens PDFs in a separate VS Code window via `code -n`
+
+If `preview` is omitted, both commands default to `preview`.
 
 ## Publication Layout
 
@@ -186,14 +206,24 @@ Publication commands:
 - `pubs <publication-id> export [<figure-id> [<subfig-idx>]]`
 - `pubs <publication-id> data [list]`
 - `pubs <publication-id> data <loader-id> pin`
-- `pubs <publication-id> figure [list]`
+- `pubs <publication-id> figure [list|<figure-id> preview]`
 - `pubs <publication-id> ignore <relative-path>`
 - `pubs <publication-id> build [--export|--export-if-stale]`
+- `pubs <publication-id> preview`
 - `pubs <publication-id> push [--force]`
 - `pubs <publication-id> pull [--force]`
 - `pubs <publication-id> diff [list|<relative-path>]`
 
 The shell command opens a publication-scoped interactive session with command history and reload behavior for `figures.py`, `pub.yaml`, and publication-local helpers.
+
+Preview behavior is workspace-configured:
+
+- `pubs <publication-id> preview`
+  - opens the built publication PDF derived from `main_tex`
+  - uses `preview.publication`
+- `pubs <publication-id> figure <figure-id> preview`
+  - opens exported PDFs from `tex/autofigures/`
+  - uses `preview.figure`
 
 ## Python API
 
