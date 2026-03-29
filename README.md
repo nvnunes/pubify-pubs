@@ -154,6 +154,9 @@ from pubify_pubs.export import FigureExport, panel
 
 `FigureExport` also exposes first-class caption sizing fields for `pubify-mpl`:
 
+- `layout`
+  - optional explicit layout override
+  - when omitted, `pubify-pubs` uses the publication default layout from `pub.yaml`
 - `caption_lines`
   - estimated line count for the main figure caption
 - `subcaption_lines`

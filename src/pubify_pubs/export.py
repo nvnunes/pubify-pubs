@@ -26,7 +26,7 @@ class FigureExport:
     """Normalized logical-figure export payload for the publication runtime."""
 
     panels: tuple[FigurePanel, ...]
-    layout: str
+    layout: str | None = None
     caption_lines: int | None = None
     subcaption_lines: int | None = None
     kwargs: dict[str, object] = field(default_factory=dict)
@@ -34,7 +34,7 @@ class FigureExport:
     def __post_init__(self) -> None:
         if not self.panels:
             raise ValueError("FigureExport requires at least one panel")
-        if not self.layout:
+        if self.layout is not None and not self.layout:
             raise ValueError("FigureExport requires a non-empty layout")
         if not all(_is_pubify_export_target(panel.figure) for panel in self.panels):
             raise ValueError("Each FigureExport panel must contain a Matplotlib Figure or Axes")
@@ -68,7 +68,7 @@ def normalize_figure_result(result: object, config: PublicationConfig) -> Figure
     if result is None:
         raise ValueError("Figure returned None")
     if isinstance(result, FigureExport):
-        return result
+        return _with_default_layout(result, config)
     if _is_pubify_export_target(result):
         return FigureExport(
             panels=(FigurePanel(result),),
@@ -110,6 +110,7 @@ def export_figure(
         raise ValueError(f"Invalid mode extension '{mode_extension}'")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    layout = result.layout or config.pubify_mpl.default_layout
 
     panel_count = len(result.panels)
     if subfigure_index is not None:
@@ -137,7 +138,7 @@ def export_figure(
         pubify_kwargs.update(current_panel.overrides)
         backend.save_fig(
             current_panel.figure,
-            result.layout,
+            layout,
             output_path,
             template=config.pubify_mpl.template,
             **pubify_kwargs,
@@ -181,6 +182,18 @@ def output_filename(figure_id: str, count: int, idx: int, extension: str) -> str
 
 def _is_pubify_export_target(value: object) -> bool:
     return isinstance(value, (Figure, Axes))
+
+
+def _with_default_layout(result: FigureExport, config: PublicationConfig) -> FigureExport:
+    if result.layout is not None:
+        return result
+    return FigureExport(
+        panels=result.panels,
+        layout=config.pubify_mpl.default_layout,
+        caption_lines=result.caption_lines,
+        subcaption_lines=result.subcaption_lines,
+        kwargs=result.kwargs,
+    )
 
 
 def _close_export_source(value: object) -> None:

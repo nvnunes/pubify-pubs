@@ -126,6 +126,19 @@ def test_normalize_simple_return_accepts_one_axes(paper_config: PublicationConfi
     plt.close(fig)
 
 
+def test_normalize_explicit_figure_export_uses_publication_default_layout_when_omitted(
+    paper_config: PublicationConfig,
+) -> None:
+    fig = plt.figure()
+    explicit = FigureExport(panels=(panel(fig),))
+
+    result = normalize_figure_result(explicit, paper_config)
+
+    assert result.layout == "onewide"
+    assert result.panels[0].figure is fig
+    plt.close(fig)
+
+
 def test_normalize_rejects_unsupported_object_type(paper_config: PublicationConfig) -> None:
     with pytest.raises(ValueError, match="Matplotlib Figure or Axes"):
         normalize_figure_result(UnsupportedObject(), paper_config)
@@ -163,6 +176,31 @@ def test_export_figure_single_panel_uses_shared_layout_and_kwargs(
     assert filename == output_dir / "compare.png"
     assert template == paper_config.pubify_mpl.template
     assert kwargs == {"dpi": 144, "hide_labels": True, "caption_lines": 2}
+
+
+def test_export_figure_uses_publication_default_layout_when_explicit_layout_is_omitted(
+    tmp_path: Path,
+    paper_config: PublicationConfig,
+) -> None:
+    backend = FakePubifyBackend()
+    fig = plt.figure()
+    fig._pubs_name = "single"
+    result = FigureExport(
+        panels=(panel(fig),),
+        caption_lines=2,
+    )
+
+    export_figure(
+        paper_config,
+        tmp_path / "tex",
+        tmp_path / "png-output",
+        "compare",
+        result,
+        ".png",
+        backend=backend,
+    )
+
+    assert backend.save_calls[0][1] == "onewide"
 
 
 def test_export_figure_multi_panel_shared_metadata_only(
@@ -318,6 +356,18 @@ def test_typed_export_rejects_non_positive_caption_line_counts() -> None:
         FigureExport(
             panels=(panel(fig, subcaption_lines=0),),
             layout="twowide",
+        )
+
+    plt.close(fig)
+
+
+def test_typed_export_rejects_empty_explicit_layout() -> None:
+    fig = plt.figure()
+
+    with pytest.raises(ValueError, match="requires a non-empty layout"):
+        FigureExport(
+            panels=(panel(fig),),
+            layout="",
         )
 
     plt.close(fig)
