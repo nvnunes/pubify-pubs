@@ -152,6 +152,15 @@ from pubify_pubs.export import FigureExport, panel
 
 `@figure` marks a callable as a logical publication figure. Exported figure functions typically return `FigureExport` values built from one or more panels.
 
+`FigureExport` also exposes first-class caption sizing fields for `pubify-mpl`:
+
+- `caption_lines`
+  - estimated line count for the main figure caption
+- `subcaption_lines`
+  - default estimated line count for panel subcaptions
+
+If panels differ materially, `panel(..., subcaption_lines=...)` can override the figure-level subcaption count per panel.
+
 ## Pinned Publication Data
 
 `pubify-pubs` includes helpers for publication-owned binary data:

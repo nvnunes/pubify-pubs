@@ -14,9 +14,10 @@ from pubify_pubs.config import PublicationConfig, PubifyMplConfig
 
 @dataclass(frozen=True)
 class FigurePanel:
-    """One exported panel plus optional per-panel ``pubify-mpl`` export overrides."""
+    """One exported panel plus optional per-panel export metadata and overrides."""
 
     figure: object
+    subcaption_lines: int | None = None
     overrides: dict[str, object] = field(default_factory=dict)
 
 
@@ -26,6 +27,8 @@ class FigureExport:
 
     panels: tuple[FigurePanel, ...]
     layout: str
+    caption_lines: int | None = None
+    subcaption_lines: int | None = None
     kwargs: dict[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -35,12 +38,28 @@ class FigureExport:
             raise ValueError("FigureExport requires a non-empty layout")
         if not all(_is_pubify_export_target(panel.figure) for panel in self.panels):
             raise ValueError("Each FigureExport panel must contain a Matplotlib Figure or Axes")
+        if self.caption_lines is not None and self.caption_lines < 1:
+            raise ValueError("FigureExport caption_lines must be >= 1 when set")
+        if self.subcaption_lines is not None and self.subcaption_lines < 1:
+            raise ValueError("FigureExport subcaption_lines must be >= 1 when set")
+        for panel_item in self.panels:
+            if panel_item.subcaption_lines is not None and panel_item.subcaption_lines < 1:
+                raise ValueError("FigurePanel subcaption_lines must be >= 1 when set")
 
 
-def panel(figure: object, **overrides: object) -> FigurePanel:
-    """Wrap one panel with optional per-panel ``pubify-mpl`` export overrides."""
+def panel(
+    figure: object,
+    *,
+    subcaption_lines: int | None = None,
+    **overrides: object,
+) -> FigurePanel:
+    """Wrap one panel with optional per-panel subcaption sizing and overrides."""
 
-    return FigurePanel(figure=figure, overrides=dict(overrides))
+    return FigurePanel(
+        figure=figure,
+        subcaption_lines=subcaption_lines,
+        overrides=dict(overrides),
+    )
 
 
 def normalize_figure_result(result: object, config: PublicationConfig) -> FigureExport:
@@ -108,7 +127,13 @@ def export_figure(
         output_path = output_dir / output_filename(figure_id, panel_count, idx, mode_extension)
         pubify_kwargs = dict(config.pubify_mpl.defaults)
         pubify_kwargs.pop("layout", None)
+        if result.caption_lines is not None:
+            pubify_kwargs["caption_lines"] = result.caption_lines
+        if result.subcaption_lines is not None:
+            pubify_kwargs["subcaption_lines"] = result.subcaption_lines
         pubify_kwargs.update(result.kwargs)
+        if current_panel.subcaption_lines is not None:
+            pubify_kwargs["subcaption_lines"] = current_panel.subcaption_lines
         pubify_kwargs.update(current_panel.overrides)
         backend.save_fig(
             current_panel.figure,

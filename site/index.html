@@ -245,6 +245,14 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 <li>a sequence of figures or axes</li>
 <li>a <code>FigureExport</code> value for explicit multi-panel control</li>
 </ul>
+<p><code>FigureExport</code> also carries first-class caption sizing metadata for <code>pubify-mpl</code>:</p>
+<ul>
+<li><code>caption_lines</code></li>
+<li>estimated main-caption line count</li>
+<li><code>subcaption_lines</code></li>
+<li>default estimated subcaption line count for panels</li>
+</ul>
+<p>If one panel needs a different subcaption estimate, <code>panel(..., subcaption_lines=...)</code> overrides the figure-level default for that panel only.</p>
 <h2 id="pinned-publication-data">Pinned Publication Data</h2>
 <p><code>pubify-pubs</code> includes helpers for publication-owned binary data:</p>
 <ul>
@@ -406,5 +414,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-29 00:25:29.558088+00:00
+Build Date UTC : 2026-03-29 00:44:47.025454+00:00
 -->

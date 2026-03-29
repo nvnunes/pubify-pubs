@@ -146,6 +146,15 @@ from pubify_pubs.export import FigureExport, panel
 - a sequence of figures or axes
 - a `FigureExport` value for explicit multi-panel control
 
+`FigureExport` also carries first-class caption sizing metadata for `pubify-mpl`:
+
+- `caption_lines`
+  - estimated main-caption line count
+- `subcaption_lines`
+  - default estimated subcaption line count for panels
+
+If one panel needs a different subcaption estimate, `panel(..., subcaption_lines=...)` overrides the figure-level default for that panel only.
+
 ## Pinned Publication Data
 
 `pubify-pubs` includes helpers for publication-owned binary data:

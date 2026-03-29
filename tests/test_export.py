@@ -143,7 +143,7 @@ def test_export_figure_single_panel_uses_shared_layout_and_kwargs(
     result = FigureExport(
         panels=(panel(fig),),
         layout="twowide",
-        kwargs={"caption_lines": 2},
+        caption_lines=2,
     )
 
     paths = export_figure(
@@ -195,6 +195,38 @@ def test_export_figure_multi_panel_shared_metadata_only(
     assert backend.save_calls[1][4]["hide_annotations"] is True
 
 
+def test_export_figure_allows_generic_kwargs_alongside_first_class_caption_fields(
+    tmp_path: Path,
+    paper_config: PublicationConfig,
+) -> None:
+    backend = FakePubifyBackend()
+    fig = plt.figure()
+    fig._pubs_name = "single"
+    result = FigureExport(
+        panels=(panel(fig),),
+        layout="twowide",
+        caption_lines=2,
+        kwargs={"hide_annotations": True},
+    )
+
+    export_figure(
+        paper_config,
+        tmp_path / "tex",
+        tmp_path / "pdf-output",
+        "summary",
+        result,
+        ".pdf",
+        backend=backend,
+    )
+
+    assert backend.save_calls[0][4] == {
+        "dpi": 144,
+        "hide_labels": True,
+        "caption_lines": 2,
+        "hide_annotations": True,
+    }
+
+
 def test_export_figure_multi_panel_supports_per_panel_overrides(
     tmp_path: Path,
     paper_config: PublicationConfig,
@@ -207,10 +239,11 @@ def test_export_figure_multi_panel_supports_per_panel_overrides(
     result = FigureExport(
         panels=(
             panel(fig1, hide_labels=False),
-            panel(fig2, hide_cbar=True),
+            panel(fig2, hide_cbar=True, subcaption_lines=2),
         ),
         layout="twowide",
-        kwargs={"caption_lines": 1},
+        caption_lines=1,
+        subcaption_lines=1,
     )
 
     export_figure(
@@ -227,11 +260,13 @@ def test_export_figure_multi_panel_supports_per_panel_overrides(
         "dpi": 144,
         "hide_labels": False,
         "caption_lines": 1,
+        "subcaption_lines": 1,
     }
     assert backend.save_calls[1][4] == {
         "dpi": 144,
         "hide_labels": True,
         "caption_lines": 1,
+        "subcaption_lines": 2,
         "hide_cbar": True,
     }
 
@@ -262,6 +297,32 @@ def test_typed_export_accepts_axes_panel(
     assert fig.number not in plt.get_fignums()
 
 
+def test_typed_export_rejects_non_positive_caption_line_counts() -> None:
+    fig = plt.figure()
+
+    with pytest.raises(ValueError, match="caption_lines must be >= 1"):
+        FigureExport(
+            panels=(panel(fig),),
+            layout="twowide",
+            caption_lines=0,
+        )
+
+    with pytest.raises(ValueError, match="subcaption_lines must be >= 1"):
+        FigureExport(
+            panels=(panel(fig),),
+            layout="twowide",
+            subcaption_lines=0,
+        )
+
+    with pytest.raises(ValueError, match="FigurePanel subcaption_lines must be >= 1"):
+        FigureExport(
+            panels=(panel(fig, subcaption_lines=0),),
+            layout="twowide",
+        )
+
+    plt.close(fig)
+
+
 def test_png_and_pdf_exports_share_pubify_inputs_except_destination_and_extension(
     tmp_path: Path,
     paper_config: PublicationConfig,
@@ -275,12 +336,12 @@ def test_png_and_pdf_exports_share_pubify_inputs_except_destination_and_extensio
     png_result = FigureExport(
         panels=(panel(png_fig),),
         layout="twowide",
-        kwargs={"caption_lines": 2},
+        caption_lines=2,
     )
     export_result = FigureExport(
         panels=(panel(export_fig),),
         layout="twowide",
-        kwargs={"caption_lines": 2},
+        caption_lines=2,
     )
 
     png_paths = export_figure(
