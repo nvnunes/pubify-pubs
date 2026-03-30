@@ -345,7 +345,7 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 <li><code>pubs &lt;publication-id&gt; diff [list|&lt;relative-path&gt;]</code></li>
 </ul>
 <p><code>build --export</code> refreshes generated figures and stats before LaTeX build. <code>build --export-if-stale</code> does that only when <code>figures.py</code> is newer than the generated outputs, <code>tex/autofigures/</code> is missing or empty, or <code>tex/autostats.tex</code> is missing.</p>
-<p>The shell command opens a publication-scoped interactive session with command history and reload behavior for <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers.</p>
+<p>The shell command opens a publication-scoped interactive session with command history and reload behavior for <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers. Loader data is recomputed on the next command after <code>reload</code>; loader caching is per command, not per shell session.</p>
 <p>Preview behavior is workspace-configured:</p>
 <ul>
 <li><code>pubs &lt;publication-id&gt; preview</code></li>
@@ -465,5 +465,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-30 13:07:00.189344+00:00
+Build Date UTC : 2026-03-30 13:24:26.623233+00:00
 -->

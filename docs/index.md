@@ -250,6 +250,7 @@ Publication commands:
 - `pubs <publication-id> check`
 - `pubs <publication-id> shell`
 - `pubs <publication-id> export [<figure-id> [<subfig-idx>]]`
+- `pubs <publication-id> stat [list|update|<stat-id> update]`
 - `pubs <publication-id> data [list]`
 - `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> figure [list|<figure-id> preview]`
@@ -260,7 +261,9 @@ Publication commands:
 - `pubs <publication-id> pull [--force]`
 - `pubs <publication-id> diff [list|<relative-path>]`
 
-The shell command opens a publication-scoped interactive session with command history and reload behavior for `figures.py`, `pub.yaml`, and publication-local helpers.
+`build --export` refreshes generated figures and stats before LaTeX build. `build --export-if-stale` does that only when `figures.py` is newer than the generated outputs, `tex/autofigures/` is missing or empty, or `tex/autostats.tex` is missing.
+
+The shell command opens a publication-scoped interactive session with command history and reload behavior for `figures.py`, `pub.yaml`, and publication-local helpers. Loader data is recomputed on the next command after `reload`; loader caching is per command, not per shell session.
 
 Preview behavior is workspace-configured:
 
@@ -278,12 +281,28 @@ The public Python API is intentionally small.
 Primary entrypoints:
 
 - `find_workspace_root(...)`
-- `figure`, `data`, `external_data`
+- `figure`, `stat`, `data`, `external_data`
 - `publication_data_path(...)`
 - `save_publication_data_npz(...)`
 - `load_publication_data_npz(...)`
 - `FigureExport`
-- `FigurePanel`
-- `panel(...)`
+- `Stat`
+
+## Generated Stats
+
+`tex/autostats.tex` is the framework-owned generated stats file.
+
+- `pubs <publication-id> stat update` rewrites it as one authoritative snapshot
+- `pubs <publication-id> stat <stat-id> update` prints one stat block to the console while still rewriting the full snapshot
+- TeX should include it explicitly, for example with `\input{autostats.tex}`
+- In prose, use `{}` after a stat macro before following letters, for example `\StatFavorableAsterismCount{} targets`.
+- stat ids stay `snake_case` in Python, but generated TeX macro names use CamelCase
+  - `compute_favorable_asterism_count(...)` maps to `\StatFavorableAsterismCount`
+  - figure files stay `snake_case`, for example `tex/autofigures/ews_asterism_coverage_map_1.pdf`
+
+Generated stat macros use the forms:
+
+- `\Stat<StatId>`
+- `\Stat<StatId><Suffix>`
 
 See the [API reference](api.md) for the docstring-driven reference pages.

@@ -11,6 +11,13 @@ def figure(func: Callable) -> Callable:
     return func
 
 
+def stat(func: Callable) -> Callable:
+    """Mark a callable as a computed publication stat entrypoint."""
+
+    setattr(func, "__pubs_stat__", True)
+    return func
+
+
 def data(
     *args: str,
     nocache: bool = False,

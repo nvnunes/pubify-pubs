@@ -1456,6 +1456,54 @@ def test_cli_shell_reload_failure_keeps_session_alive(
     assert "Error:" in captured.err
 
 
+def test_cli_shell_reload_recomputes_loader_data_on_next_command(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publication_root = repo / "papers" / "demo"
+    figures_path = publication_root / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "from pubify_pubs import Stat",
+                "from pubify_pubs.decorators import data, stat",
+                "",
+                "@data('training.txt')",
+                "def load_training(ctx, path):",
+                "    return Path(path).read_text(encoding='utf-8').strip()",
+                "",
+                "@stat",
+                "def compute_training_value(ctx, training):",
+                "    return Stat(display=training)",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    training_path = repo / "output" / "papers" / "demo" / "training.txt"
+    training_path.write_text("first\n", encoding="utf-8")
+    init_publication(load_publication_definition(repo, "demo"))
+    commands = iter(["stat training_value update", "reload", "stat training_value update", "quit"])
+
+    def fake_input(prompt: str) -> str:
+        command = next(commands)
+        if command == "reload":
+            training_path.write_text("second\n", encoding="utf-8")
+        return command
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
+
+    assert main(["demo", "shell"]) == 0
+    captured = capsys.readouterr()
+    assert r"  \StatTrainingValue = first" in captured.out
+    assert "demo: reloaded" in captured.out
+    assert r"  \StatTrainingValue = second" in captured.out
+
+
 def test_cli_shell_persists_history_in_publication_root(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2196,7 +2244,7 @@ def test_cli_stat_update_writes_autostats_and_prints_all_stats(
     assert "training_summary" in captured.out
     assert r"  \StatTrainingSummary = training" in captured.out
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
-    assert captured.out.strip().endswith("tex/autostats.tex")
+    assert captured.out.strip().endswith("Updated: tex/autostats.tex")
     assert publication.paths.autostats_path.read_text(encoding="utf-8") == "\n".join(
         [
             r"\newcommand{\StatTrainingSummary}{training}",
@@ -2216,7 +2264,7 @@ def test_cli_stat_update_selected_stat_prints_only_selected_block(
     assert "training_summary" in captured.out
     assert r"  \StatTrainingSummary = training" in captured.out
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
-    assert captured.out.strip().endswith("tex/autostats.tex")
+    assert captured.out.strip().endswith("Updated: tex/autostats.tex")
 
 
 def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(

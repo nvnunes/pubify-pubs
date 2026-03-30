@@ -19,10 +19,18 @@ from pubify_pubs.config import (
 from pubify_pubs.discovery import (
     FigureSpec,
     PublicationDefinition,
+    StatSpec,
     build_publication_paths,
     validate_publication_definition,
 )
 from pubify_pubs.export import export_figure, normalize_figure_result
+from pubify_pubs.stats import (
+    ComputedStat,
+    autostats_path,
+    compute_resolved_stat,
+    ensure_unique_macro_names,
+    render_autostats_text,
+)
 from pubify_pubs.texlog import build_log_path, extract_latex_diagnostic
 
 @dataclass
@@ -139,6 +147,43 @@ def run_figures(
     return outputs
 
 
+def run_stats(
+    publication: PublicationDefinition,
+    stat_id: str | None = None,
+) -> tuple[ComputedStat, ...]:
+    """Run one or more stats and return normalized computed stat values."""
+
+    errors = validate_publication_definition(publication, require_tex_support=False)
+    if errors:
+        joined = "\n".join(f"- {message}" for message in errors)
+        raise ValueError(
+            f"Publication '{publication.publication_id}' failed validation:\n{joined}"
+        )
+    ctx = RunContext(
+        publication=publication,
+        rc=PublicationRcContext(publication.config.pubify_mpl.template),
+    )
+    stat_ids = [stat_id] if stat_id is not None else sorted(publication.stats)
+    computed: list[ComputedStat] = []
+    for current_id in stat_ids:
+        if current_id not in publication.stats:
+            raise KeyError(f"Unknown stat '{current_id}'")
+        computed.append(_run_one_stat(ctx, publication.stats[current_id]))
+    result = tuple(computed)
+    ensure_unique_macro_names(result)
+    return result
+
+
+def update_stats(publication: PublicationDefinition) -> tuple[Path, tuple[ComputedStat, ...]]:
+    """Compute all stats and rewrite the framework-owned ``autostats.tex`` snapshot."""
+
+    computed = run_stats(publication)
+    output_path = autostats_path(publication.paths.tex_root)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(render_autostats_text(computed), encoding="utf-8")
+    return output_path, computed
+
+
 def build_publication(
     publication: PublicationDefinition,
     runner: CommandRunner | None = None,
@@ -203,19 +248,30 @@ def build_pdf_path(publication: PublicationDefinition) -> Path:
     )
 
 
-def generated_exports_are_stale(publication: PublicationDefinition) -> bool:
-    """Return whether a full figure export should run before build."""
+def generated_outputs_are_stale(publication: PublicationDefinition) -> bool:
+    """Return whether generated figure/stat outputs should refresh before build."""
 
-    exports_root = publication.paths.autofigures_root
-    if not exports_root.exists():
-        return True
+    entrypoint_mtime = publication.paths.entrypoint.stat().st_mtime
 
-    exported_files = [path for path in exports_root.rglob("*") if path.is_file()]
-    if not exported_files:
-        return True
+    if publication.figures:
+        exports_root = publication.paths.autofigures_root
+        if not exports_root.exists():
+            return True
+        exported_files = [path for path in exports_root.rglob("*") if path.is_file()]
+        if not exported_files:
+            return True
+        newest_export_mtime = max(path.stat().st_mtime for path in exported_files)
+        if entrypoint_mtime > newest_export_mtime:
+            return True
 
-    newest_export_mtime = max(path.stat().st_mtime for path in exported_files)
-    return publication.paths.entrypoint.stat().st_mtime > newest_export_mtime
+    if publication.stats:
+        autostats = publication.paths.autostats_path
+        if not autostats.exists():
+            return True
+        if entrypoint_mtime > autostats.stat().st_mtime:
+            return True
+
+    return False
 
 
 def run_command(command: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
@@ -277,6 +333,11 @@ def _run_one_figure(
         ".pdf",
         subfigure_index=subfigure_index,
     )
+
+
+def _run_one_stat(ctx: RunContext, stat: StatSpec) -> ComputedStat:
+    resolved_args = [_resolve_loader(ctx, dep_id) for dep_id in stat.dependency_ids]
+    return compute_resolved_stat(stat.stat_id, stat.func(ctx, *resolved_args))
 
 
 def _clear_output_directory(path: Path) -> None:

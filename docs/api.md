@@ -18,6 +18,12 @@ This page is generated from the public Python docstrings.
     options:
       show_source: false
 
+### stat
+
+::: pubify_pubs.stat
+    options:
+      show_source: false
+
 ### data
 
 ::: pubify_pubs.data
@@ -51,6 +57,12 @@ This page is generated from the public Python docstrings.
       show_source: false
 
 ## Export Model
+
+### Stat
+
+::: pubify_pubs.stats.Stat
+    options:
+      show_source: false
 
 ### FigurePanel
 

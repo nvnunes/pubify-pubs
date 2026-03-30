@@ -228,6 +228,7 @@ The installed command is `pubs`:
 - `pubs <publication-id> check`
 - `pubs <publication-id> shell`
 - `pubs <publication-id> export [<figure-id> [<subfig-idx>]]`
+- `pubs <publication-id> stat [list|update|<stat-id> update]`
 - `pubs <publication-id> data [list]`
 - `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> figure [list|<figure-id> preview]`
@@ -250,8 +251,16 @@ The installed command is `pubs`:
   - opens a publication-scoped interactive session with prompt `<publication-id>> `
   - supports command history and standard line editing
   - reloads publication code and config when `figures.py`, `pub.yaml`, or publication-local helpers change
+  - loader data is recomputed on the next command after `reload`; loader caching is per command, not per shell session
 - `figure list`
   - lists discovered figures and their declared loader dependencies
+- `stat list`
+  - lists discovered stats from `figures.py`
+- `stat update`
+  - computes all stats, rewrites `tex/autostats.tex`, and prints the emitted macro values
+- `stat <stat-id> update`
+  - prints one selected stat block to the console
+  - still rewrites the full `tex/autostats.tex` snapshot
 - `figure <figure-id> preview`
   - opens the exported PDF for one figure from `tex/autofigures/`
   - uses the `preview.figure` backend from `pubify.conf`
@@ -269,21 +278,50 @@ The installed command is `pubs`:
   - records a mirror-sync exclusion in the publication config
 - `build`
   - builds from the current publication-local TeX tree
-  - `--export` runs a full export before building
-  - `--export-if-stale` exports first only when `figures.py` appears newer than the generated outputs or the generated output directory is missing or empty
+  - `--export` refreshes generated figures and stats before building
+  - `--export-if-stale` refreshes generated figures and stats first only when `figures.py` appears newer than the generated outputs, `tex/autofigures/` is missing or empty, or `tex/autostats.tex` is missing
 - `preview`
   - opens the built publication PDF derived from `main_tex`
   - uses the `preview.publication` backend from `pubify.conf`
 - `diff`, `push`, `pull`
   - operate on the canonical publication-local TeX tree and mirror state using conservative sync rules
 
-## Generated Figures And TeX Assets
+## Generated Figures, Stats, And TeX Assets
 
 `tex/autofigures/` is the framework-owned generated figure directory.
 
 - generated figures from `figures.py` are exported there
 - full export treats it as an authoritative snapshot and clears stale generated files first
 - TeX should reference generated figures explicitly by path such as `autofigures/<name>.pdf`
+
+`tex/autostats.tex` is the framework-owned generated stats file.
+
+- `stat update` rewrites it as one authoritative snapshot
+- TeX should include it explicitly, for example with `\input{autostats.tex}`
+- generated stat macros are named `\Stat<StatId>` and `\Stat<StatId><Suffix>`
+- In prose, use `{}` after a stat macro before following letters, for example `\StatFavorableAsterismCount{} targets`.
+- stat ids stay `snake_case` in Python, but generated TeX macro names use CamelCase
+  - `compute_favorable_asterism_count(...)` maps to `\StatFavorableAsterismCount`
+  - figure files stay `snake_case`, for example `tex/autofigures/ews_asterism_coverage_map_1.pdf`
+
+Example stat authoring in `figures.py`:
+
+```python
+from pubify_pubs import Stat
+from pubify_pubs.decorators import stat
+
+@stat
+def compute_detection_summary(ctx, detections):
+    found = int(detections["found"])
+    total = int(detections["total"])
+    fraction = found / total
+
+    return (
+        Stat(display=str(found)),
+        Stat(suffix="Total", display=str(total)),
+        Stat(suffix="Fraction", display=f"{fraction:.1%}", tex=f"{fraction:.3f}"),
+    )
+```
 
 Manual and static paper assets are ordinary publication-local TeX files. They are not part of the generated export surface and do not belong in the framework-owned `autofigures` directory.
 
@@ -294,6 +332,7 @@ The local TeX tree is canonical.
 Managed source files are the publication-local TeX sources under `tex/`, excluding:
 
 - generated figures in `tex/autofigures/`
+- generated stats in `tex/autostats.tex`
 - build artifacts in `tex/build/`
 - publication-local sync exclusions from `pub.yaml`
 

@@ -24,11 +24,13 @@ from pubify_pubs.runtime import (
     build_publication,
     check_publication,
     clear_publication_build,
+    generated_outputs_are_stale,
     init_publication,
-    generated_exports_are_stale,
     init_publication_by_id,
     run_figures,
+    update_stats,
 )
+from pubify_pubs.stats import ComputedStat
 
 STATUS_WIDTH = 14
 STATUS_COLORS = {
@@ -59,6 +61,11 @@ class FigureInventoryRow:
     status: str
     figure_id: str
     dependencies: str
+
+
+@dataclass(frozen=True)
+class StatInventoryRow:
+    stat_id: str
 
 
 @dataclass(frozen=True)
@@ -95,10 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
             "  pubs <publication-id> prepare\n"
             "  pubs <publication-id> check\n"
             "  pubs <publication-id> shell\n"
-            "  pubs <publication-id> figure [list|<figure-id> preview [<subfig-idx>]]\n"
-            "  pubs <publication-id> export [<figure-id> [<subfig-idx>]]\n"
             "  pubs <publication-id> data [list]\n"
             "  pubs <publication-id> data <loader-id> pin\n"
+            "  pubs <publication-id> figure [list|<figure-id> preview [<subfig-idx>]]\n"
+            "  pubs <publication-id> stat [list|update|<stat-id> update]\n"
+            "  pubs <publication-id> export [<figure-id> [<subfig-idx>]]\n"
             "  pubs <publication-id> ignore <relative-path>\n"
             "  pubs <publication-id> build [--export|--export-if-stale] [--clear]\n"
             "  pubs <publication-id> preview\n"
@@ -156,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
         command = args.arg2
         if command == "figures":
             command = "figure"
+        if command == "stats":
+            command = "stat"
         if command == "init":
             parser.error("use 'pubs init <publication-id>'")
         if command not in {
@@ -165,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
             "export",
             "data",
             "figure",
+            "stat",
             "ignore",
             "build",
             "preview",
@@ -373,6 +384,37 @@ def _run_publication_command(
             print(path.relative_to(publication.paths.publication_root))
         return 0
 
+    if command.command == "stat":
+        _reject_build_flags_from_command(command, error)
+        if command.force:
+            error("stat does not accept --force")
+        if command.arg3 in {None, "list"}:
+            if command.arg4 is not None or command.arg5 is not None:
+                error("stat list does not accept additional arguments")
+            rows = _build_stat_inventory_rows(publication)
+            if not rows:
+                print(f"{publication.publication_id}: no stats")
+                return 0
+            for row in rows:
+                print(row.stat_id)
+            return 0
+        if command.arg3 == "update":
+            if command.arg4 is not None or command.arg5 is not None:
+                error("stat update does not accept additional arguments")
+            output_path, computed_stats = update_stats(publication)
+            _print_computed_stats(computed_stats)
+            print(f"Updated: {output_path.relative_to(publication.paths.publication_root)}")
+            return 0
+        if command.arg4 != "update" or command.arg5 is not None:
+            error("stat supports only 'list', 'update', or '<stat-id> update'")
+        selected_id = command.arg3
+        if selected_id not in publication.stats:
+            raise KeyError(f"Unknown stat '{selected_id}'")
+        output_path, computed_stats = update_stats(publication)
+        _print_computed_stats(tuple(item for item in computed_stats if item.stat_id == selected_id))
+        print(f"Updated: {output_path.relative_to(publication.paths.publication_root)}")
+        return 0
+
     if command.command == "build":
         if command.force:
             error("build does not accept --force")
@@ -383,9 +425,9 @@ def _run_publication_command(
         if command.clear_build:
             clear_publication_build(publication)
         if command.export_before_build or (
-            command.export_if_stale and generated_exports_are_stale(publication)
+            command.export_if_stale and generated_outputs_are_stale(publication)
         ):
-            for path in run_figures(publication):
+            for path in _refresh_generated_build_inputs(publication):
                 print(path.relative_to(publication.paths.publication_root))
         build_publication(publication)
         print(build_pdf_path(publication))
@@ -507,7 +549,11 @@ def run_publication_shell(
 
             try:
                 parsed = shell_parser.parse_args(tokens)
-                parsed_command = "figure" if parsed.command == "figures" else parsed.command
+                parsed_command = parsed.command
+                if parsed_command == "figures":
+                    parsed_command = "figure"
+                if parsed_command == "stats":
+                    parsed_command = "stat"
                 publication_command = PublicationCommand(
                     command=parsed_command,
                     arg3=parsed.arg3,
@@ -702,10 +748,11 @@ def _shell_help_text(publication_id: str) -> str:
             f"Shell commands for {publication_id}:",
             "  prepare",
             "  check",
-            "  figure [list|<figure-id> preview [<subfig-idx>]]",
-            "  export [<figure-id> [<subfig-idx>]]",
             "  data [list]",
             "  data <loader-id> pin",
+            "  figure [list|<figure-id> preview [<subfig-idx>]]",
+            "  stat [list|update|<stat-id> update]",
+            "  export [<figure-id> [<subfig-idx>]]",
             "  ignore <relative-path>",
             "  build [--export|--export-if-stale] [--clear]",
             "  preview",
@@ -738,6 +785,27 @@ def _reject_build_flags_from_command(
 ) -> None:
     if command.export_before_build or command.export_if_stale or command.clear_build:
         error(f"{command.command} does not accept --export, --export-if-stale, or --clear")
+
+
+def _build_stat_inventory_rows(publication: PublicationDefinition) -> list[StatInventoryRow]:
+    return [StatInventoryRow(stat_id=stat_id) for stat_id in sorted(publication.stats)]
+
+
+def _refresh_generated_build_inputs(publication: PublicationDefinition) -> list[Path]:
+    paths: list[Path] = []
+    if publication.figures:
+        paths.extend(run_figures(publication))
+    if publication.stats:
+        autostats_path, _computed_stats = update_stats(publication)
+        paths.append(autostats_path)
+    return paths
+
+
+def _print_computed_stats(stats: tuple[ComputedStat, ...]) -> None:
+    for stat in stats:
+        print(stat.stat_id)
+        for value in stat.values:
+            print(f"  \\{value.macro_name} = {value.display}")
 
 
 def _parse_force_flag_value(
