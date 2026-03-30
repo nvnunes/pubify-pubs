@@ -224,6 +224,7 @@ The installed command is `pubs`:
 
 - `pubs list`
 - `pubs init <publication-id>`
+- `pubs <publication-id> prepare`
 - `pubs <publication-id> check`
 - `pubs <publication-id> shell`
 - `pubs <publication-id> export [<figure-id> [<subfig-idx>]]`

@@ -153,7 +153,7 @@ def build_publication(
         if missing_support:
             raise ValueError(
                 f"Publication '{publication.publication_id}' is not initialized for LaTeX build. "
-                f"Run `pubs {publication.publication_id} init` and try again."
+                f"Run `pubs init {publication.publication_id}` and try again."
             )
         joined = "\n".join(f"- {message}" for message in errors)
         raise ValueError(

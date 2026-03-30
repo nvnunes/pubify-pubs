@@ -1111,6 +1111,7 @@ def test_cli_shell_help_and_rejects_top_level_commands(
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
     assert "Shell commands for demo:" in captured.out
+    assert "  prepare" in captured.out
     assert "  figure [list|<figure-id> preview [<subfig-idx>]]" in captured.out
     assert "  preview" in captured.out
     assert "  reload" in captured.out
@@ -1834,6 +1835,17 @@ def test_init_creates_tex_tree_and_runs_prepare(repo: Path, fake_pubify_mpl: Fak
     assert paper.paths.tex_root.exists()
     assert paper.paths.autofigures_root.exists()
     assert paper.paths.build_root.exists()
+    assert fake_pubify_mpl.prepare_calls == [(paper.paths.tex_root, paper.config.pubify_mpl.template)]
+    assert (paper.paths.tex_root / "pubify.sty").exists()
+    assert (paper.paths.tex_root / "pubify-template.tex").exists()
+
+
+def test_prepare_refreshes_existing_publication(repo: Path, fake_pubify_mpl: FakePubifyBackend) -> None:
+    paper = load_publication_definition(repo, "demo")
+
+    rc = main(["demo", "prepare"])
+
+    assert rc == 0
     assert fake_pubify_mpl.prepare_calls == [(paper.paths.tex_root, paper.config.pubify_mpl.template)]
     assert (paper.paths.tex_root / "pubify.sty").exists()
     assert (paper.paths.tex_root / "pubify-template.tex").exists()
@@ -2702,7 +2714,7 @@ def test_push_requires_configured_mirror_root(repo: Path) -> None:
 
 def test_build_fails_with_init_message_when_pubify_support_files_are_missing(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
-    with pytest.raises(ValueError, match=r"Run `pubs demo init`"):
+    with pytest.raises(ValueError, match=r"Run `pubs init demo`"):
         build_publication(paper)
 
 
@@ -3692,6 +3704,11 @@ def test_old_init_syntax_is_rejected() -> None:
         main(["demo", "init"])
 
 
+def test_prepare_rejects_force(repo: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(["demo", "prepare", "--force"])
+
+
 def test_no_arg_invocation_prints_multiline_help_block(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -3704,6 +3721,7 @@ def test_no_arg_invocation_prints_multiline_help_block(
     assert "Commands:" in captured.err
     assert "  pubs list" in captured.err
     assert "  pubs init <publication-id>" in captured.err
+    assert "  pubs <publication-id> prepare" in captured.err
     assert "  pubs <publication-id> shell" in captured.err
     assert "  pubs <publication-id> build [--export|--export-if-stale] [--clear]" in captured.err
     assert "  pubs <publication-id> preview" in captured.err

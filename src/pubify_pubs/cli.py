@@ -24,6 +24,7 @@ from pubify_pubs.runtime import (
     build_publication,
     check_publication,
     clear_publication_build,
+    init_publication,
     generated_exports_are_stale,
     init_publication_by_id,
     run_figures,
@@ -91,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  pubs list\n"
             "  pubs init <publication-id>\n"
             "\n"
+            "  pubs <publication-id> prepare\n"
             "  pubs <publication-id> check\n"
             "  pubs <publication-id> shell\n"
             "  pubs <publication-id> figure [list|<figure-id> preview [<subfig-idx>]]\n"
@@ -157,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
         if command == "init":
             parser.error("use 'pubs init <publication-id>'")
         if command not in {
+            "prepare",
             "check",
             "shell",
             "export",
@@ -274,6 +277,16 @@ def _run_publication_command(
             print(f"{publication.publication_id}: added sync ignore {relative_path}")
         else:
             print(f"{publication.publication_id}: sync ignore already present {relative_path}")
+        return 0
+
+    if command.command == "prepare":
+        _reject_build_flags_from_command(command, error)
+        if command.force:
+            error("prepare does not accept --force")
+        if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
+            error("prepare does not accept additional arguments")
+        init_publication(publication)
+        print(f"{publication.publication_id}: prepared")
         return 0
 
     if command.command == "check":
@@ -687,6 +700,7 @@ def _shell_help_text(publication_id: str) -> str:
     return "\n".join(
         [
             f"Shell commands for {publication_id}:",
+            "  prepare",
             "  check",
             "  figure [list|<figure-id> preview [<subfig-idx>]]",
             "  export [<figure-id> [<subfig-idx>]]",

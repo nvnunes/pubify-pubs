@@ -246,6 +246,7 @@ Top-level commands:
 
 Publication commands:
 
+- `pubs <publication-id> prepare`
 - `pubs <publication-id> check`
 - `pubs <publication-id> shell`
 - `pubs <publication-id> export [<figure-id> [<subfig-idx>]]`
