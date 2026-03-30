@@ -1773,9 +1773,48 @@ def test_cli_build_rejects_both_export_flags(repo: Path) -> None:
         main(["demo", "build", "--export", "--export-if-stale"])
 
 
+def test_cli_build_clear_removes_existing_build_outputs(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_build(paper_definition: object) -> object:
+        calls.append("build")
+        return None
+
+    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+
+    paper = load_publication_definition(repo, "demo")
+    paper.paths.build_root.mkdir(parents=True, exist_ok=True)
+    stale_pdf = paper.paths.build_root / "main.pdf"
+    stale_aux = paper.paths.build_root / "main.aux"
+    nested_dir = paper.paths.build_root / "cache"
+    stale_pdf.write_text("old pdf\n", encoding="utf-8")
+    stale_aux.write_text("old aux\n", encoding="utf-8")
+    nested_dir.mkdir()
+    (nested_dir / "temp.txt").write_text("nested\n", encoding="utf-8")
+
+    assert main(["demo", "build", "--clear"]) == 0
+
+    captured = capsys.readouterr()
+    assert calls == ["build"]
+    assert captured.out.strip().endswith("/tex/build/main.pdf")
+    assert paper.paths.build_root.exists()
+    assert not stale_pdf.exists()
+    assert not stale_aux.exists()
+    assert not nested_dir.exists()
+
+
 def test_cli_build_still_rejects_force(repo: Path) -> None:
     with pytest.raises(SystemExit):
         main(["demo", "build", "--force"])
+
+
+def test_cli_list_rejects_clear_flag(repo: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(["list", "--clear"])
 
 
 def test_init_creates_tex_tree_and_runs_prepare(repo: Path, fake_pubify_mpl: FakePubifyBackend) -> None:
@@ -3661,12 +3700,12 @@ def test_no_arg_invocation_prints_multiline_help_block(
 
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "usage: pubs [--force] [--export] [--export-if-stale] <command>" in captured.err
+    assert "usage: pubs [--force] [--export] [--export-if-stale] [--clear] <command>" in captured.err
     assert "Commands:" in captured.err
     assert "  pubs list" in captured.err
     assert "  pubs init <publication-id>" in captured.err
     assert "  pubs <publication-id> shell" in captured.err
-    assert "  pubs <publication-id> build [--export|--export-if-stale]" in captured.err
+    assert "  pubs <publication-id> build [--export|--export-if-stale] [--clear]" in captured.err
     assert "  pubs <publication-id> preview" in captured.err
     assert "  pubs <publication-id> data [list]" in captured.err
     assert "  pubs <publication-id> data <loader-id> pin" in captured.err

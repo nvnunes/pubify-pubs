@@ -231,7 +231,7 @@ The installed command is `pubs`:
 - `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> figure [list|<figure-id> preview]`
 - `pubs <publication-id> ignore <relative-path>`
-- `pubs <publication-id> build [--export|--export-if-stale]`
+- `pubs <publication-id> build [--export|--export-if-stale] [--clear]`
 - `pubs <publication-id> preview`
 - `pubs <publication-id> push [--force]`
 - `pubs <publication-id> pull [--force]`

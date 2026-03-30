@@ -23,6 +23,7 @@ from pubify_pubs.runtime import (
     build_pdf_path,
     build_publication,
     check_publication,
+    clear_publication_build,
     generated_exports_are_stale,
     init_publication_by_id,
     run_figures,
@@ -68,6 +69,7 @@ class PublicationCommand:
     force: bool = False
     export_before_build: bool = False
     export_if_stale: bool = False
+    clear_build: bool = False
 
 
 @dataclass
@@ -83,7 +85,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog="pubs",
-        usage="pubs [--force] [--export] [--export-if-stale] <command>",
+        usage="pubs [--force] [--export] [--export-if-stale] [--clear] <command>",
         description=(
             "Commands:\n"
             "  pubs list\n"
@@ -96,7 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  pubs <publication-id> data [list]\n"
             "  pubs <publication-id> data <loader-id> pin\n"
             "  pubs <publication-id> ignore <relative-path>\n"
-            "  pubs <publication-id> build [--export|--export-if-stale]\n"
+            "  pubs <publication-id> build [--export|--export-if-stale] [--clear]\n"
             "  pubs <publication-id> preview\n"
             "  pubs <publication-id> push [--force]\n"
             "  pubs <publication-id> pull [--force]\n"
@@ -112,6 +114,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--export", dest="export_before_build", action="store_true")
     parser.add_argument("--export-if-stale", action="store_true")
+    parser.add_argument("--clear", dest="clear_build", action="store_true")
     return parser
 
 
@@ -123,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.subject == "list":
             workspace_root = find_workspace_root()
-            _reject_build_flags(parser, "list", args.export_before_build, args.export_if_stale)
+            _reject_build_flags(parser, "list", args.export_before_build, args.export_if_stale, args.clear_build)
             if any(value is not None for value in (args.arg2, args.arg3, args.arg4, args.arg5)):
                 parser.error("list does not accept additional arguments")
             for publication_id in list_publication_ids(workspace_root):
@@ -132,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.subject == "init":
             workspace_root = find_workspace_root()
-            _reject_build_flags(parser, "init", args.export_before_build, args.export_if_stale)
+            _reject_build_flags(parser, "init", args.export_before_build, args.export_if_stale, args.clear_build)
             if args.arg2 is None:
                 parser.error("init requires <publication-id>")
             if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
@@ -171,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         workspace_root = find_workspace_root()
         publication = load_publication_definition(workspace_root, publication_id)
         if command == "shell":
-            _reject_build_flags(parser, "shell", args.export_before_build, args.export_if_stale)
+            _reject_build_flags(parser, "shell", args.export_before_build, args.export_if_stale, args.clear_build)
             if args.force:
                 parser.error("shell does not accept --force")
             if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
@@ -186,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
             export_before_build=args.export_before_build,
             export_if_stale=args.export_if_stale,
+            clear_build=args.clear_build,
         )
         return _run_publication_command(
             publication,
@@ -224,9 +228,10 @@ def _reject_build_flags(
     command: str,
     export_before_build: bool,
     export_if_stale: bool,
+    clear_build: bool,
 ) -> None:
-    if export_before_build or export_if_stale:
-        parser.error(f"{command} does not accept --export or --export-if-stale")
+    if export_before_build or export_if_stale or clear_build:
+        parser.error(f"{command} does not accept --export, --export-if-stale, or --clear")
 
 
 def _parse_force_flag(
@@ -362,6 +367,8 @@ def _run_publication_command(
             error("build accepts only one of --export or --export-if-stale")
         if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
             error("build does not accept additional arguments")
+        if command.clear_build:
+            clear_publication_build(publication)
         if command.export_before_build or (
             command.export_if_stale and generated_exports_are_stale(publication)
         ):
@@ -496,6 +503,7 @@ def run_publication_shell(
                     force=parsed.force,
                     export_before_build=parsed.export_before_build,
                     export_if_stale=parsed.export_if_stale,
+                    clear_build=parsed.clear_build,
                 )
                 _reload_session_publication(session)
                 _run_publication_command(
@@ -516,6 +524,7 @@ def _build_shell_command_parser() -> argparse.ArgumentParser:
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--export", dest="export_before_build", action="store_true")
     parser.add_argument("--export-if-stale", action="store_true")
+    parser.add_argument("--clear", dest="clear_build", action="store_true")
     parser.add_argument("command")
     parser.add_argument("arg3", nargs="?")
     parser.add_argument("arg4", nargs="?")
@@ -684,7 +693,7 @@ def _shell_help_text(publication_id: str) -> str:
             "  data [list]",
             "  data <loader-id> pin",
             "  ignore <relative-path>",
-            "  build [--export|--export-if-stale]",
+            "  build [--export|--export-if-stale] [--clear]",
             "  preview",
             "  push [--force]",
             "  pull [--force]",
@@ -713,8 +722,8 @@ def _reject_build_flags_from_command(
     command: PublicationCommand,
     error: Callable[[str], None],
 ) -> None:
-    if command.export_before_build or command.export_if_stale:
-        error(f"{command.command} does not accept --export or --export-if-stale")
+    if command.export_before_build or command.export_if_stale or command.clear_build:
+        error(f"{command.command} does not accept --export, --export-if-stale, or --clear")
 
 
 def _parse_force_flag_value(

@@ -185,6 +185,12 @@ def build_publication(
         raise ValueError(_format_latex_build_failure(publication, exc.returncode)) from None
 
 
+def clear_publication_build(publication: PublicationDefinition) -> None:
+    """Remove all files from ``tex/build`` so the next build starts fresh."""
+
+    _clear_output_directory(publication.paths.build_root)
+
+
 CommandRunner = Callable[[Sequence[str], Path], subprocess.CompletedProcess[str]]
 
 
