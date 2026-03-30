@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
 import shutil
 import subprocess
 
 import pubify_mpl
+from pubify_mpl import pubify_rc_context as publication_rc_context
 
 from pubify_pubs.config import (
     load_publication_config,
@@ -29,6 +31,26 @@ class RunContext:
 
     publication: PublicationDefinition
     loader_cache: dict[str, object] = field(default_factory=dict)
+    rc: AbstractContextManager[None] | None = None
+
+
+class PublicationRcContext(AbstractContextManager[None]):
+    """Reusable publication-bound Matplotlib rc context for figure construction."""
+
+    def __init__(self, template: dict[str, object]) -> None:
+        self._template = dict(template)
+        self._active: AbstractContextManager[None] | None = None
+
+    def __enter__(self) -> None:
+        self._active = publication_rc_context(template=self._template)
+        return self._active.__enter__()
+
+    def __exit__(self, exc_type, exc_value, traceback) -> bool | None:
+        if self._active is None:
+            return None
+        active = self._active
+        self._active = None
+        return active.__exit__(exc_type, exc_value, traceback)
 
 
 def check_publication(publication: PublicationDefinition) -> None:
@@ -94,7 +116,10 @@ def run_figures(
         raise ValueError(
             f"Publication '{publication.publication_id}' failed validation:\n{joined}"
         )
-    ctx = RunContext(publication=publication)
+    ctx = RunContext(
+        publication=publication,
+        rc=PublicationRcContext(publication.config.pubify_mpl.template),
+    )
     figure_ids = [figure_id] if figure_id is not None else sorted(publication.figures)
     outputs: list[Path] = []
 

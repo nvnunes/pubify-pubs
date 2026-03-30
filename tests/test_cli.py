@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 
+import matplotlib as mpl
 import numpy as np
 import pytest
 
@@ -682,6 +683,45 @@ def test_export_uses_documented_output_names_and_cache(repo: Path) -> None:
     assert export_path.read_text(encoding="utf-8") == "single:training"
     assert paper.module.CALLS["training"] == 2
     assert paper.module.CALLS["bundle"] == 1
+
+
+def test_run_figures_exposes_publication_rc_context(
+    repo: Path,
+    fake_pubify_mpl: FakePubifyBackend,
+) -> None:
+    original_usetex = mpl.rcParams["text.usetex"]
+
+    (repo / "papers" / "demo" / "figures.py").write_text(
+        "\n".join(
+            [
+                "import matplotlib as mpl",
+                "import matplotlib.pyplot as plt",
+                "from pubify_pubs.decorators import figure",
+                "",
+                "@figure",
+                "def single(ctx):",
+                "    with ctx.rc:",
+                "        fig, _ax = plt.subplots()",
+                "        fig._observed = {",
+                "            'text.usetex': mpl.rcParams['text.usetex'],",
+                "            'font.family': list(mpl.rcParams['font.family']),",
+                "            'font.size': mpl.rcParams['font.size'],",
+                "        }",
+                "    fig._pubs_name = 'single'",
+                "    return fig",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    paper = load_publication_definition(repo, "demo")
+    run_figures(paper, "single")
+
+    observed = getattr(fake_pubify_mpl.save_calls[0][0], "_observed")
+    assert observed["text.usetex"] == original_usetex
+    assert observed["font.family"] == ["serif"]
+    assert observed["font.size"] == 10
 
 
 def test_full_export_clears_stale_outputs_before_writing(repo: Path) -> None:

@@ -158,22 +158,38 @@ from pubify_pubs.export import FigureExport, panel
 
 If one panel needs a different subcaption estimate, `panel(..., subcaption_lines=...)` overrides the figure-level default for that panel only.
 
-For custom text that pubify cannot discover generically, pass a `prepare_copy` callback through `FigureExport(..., kwargs={...})` and use the resolved style payload:
+When a plotting library creates text artists during figure construction, use `ctx.rc` so those artists are born under the publication construction-time font defaults:
 
 ```python
-def prepare_copy(fig_copy, style):
-    sky_ax = fig_copy.axes[0]
+@figure
+def custom_map(ctx):
+    with ctx.rc:
+        fig = build_custom_map()
+    return fig
+```
+
+The intended styling flow is:
+
+- build under `ctx.rc` when a plotting library reads Matplotlib defaults during construction
+- let pubify run its full export-time setup plus generic post-construction normalization during export
+- use `prepare_export(...)` only for figure-specific text or artists that still need special handling
+
+For those remaining custom text cases, pass a `prepare_export` callback through `FigureExport(..., kwargs={...})` and use the resolved style payload:
+
+```python
+def prepare_export(fig_export, style):
+    sky_ax = fig_export.axes[0]
     for text in iter_custom_tick_labels(sky_ax):
         text.set_fontfamily(style.font_family)
         text.set_fontsize(style.tick_labelsize_pt)
 
 return FigureExport(
     panels=(panel(fig),),
-    kwargs={"prepare_copy": prepare_copy},
+    kwargs={"prepare_export": prepare_export},
 )
 ```
 
-One-argument callbacks still work, but the two-argument form is preferred for figure-specific styling adjustments.
+One-argument callbacks still work, but the two-argument form is preferred for figure-specific styling adjustments after the generic pubify passes have already run.
 
 ## Pinned Publication Data
 

@@ -142,14 +142,14 @@ def test_export_figure_allows_skip_clone_override(
     assert backend.save_calls[0][4]["skip_clone"] is False
 
 
-def test_export_figure_forwards_prepare_copy_callback(
+def test_export_figure_forwards_prepare_export_callback(
     paper_config: PublicationConfig,
     tmp_path: Path,
 ) -> None:
     backend = FakePubifyBackend()
     fig = plt.figure()
 
-    def prepare_copy(fig_copy, style):
+    def prepare_export(fig_copy, style):
         return None
 
     export_figure(
@@ -159,13 +159,13 @@ def test_export_figure_forwards_prepare_copy_callback(
         figure_id="demo",
         result=FigureExport(
             panels=(panel(fig),),
-            kwargs={"prepare_copy": prepare_copy},
+            kwargs={"prepare_export": prepare_export},
         ),
         mode_extension=".pdf",
         backend=backend,
     )
 
-    assert backend.save_calls[0][4]["prepare_copy"] is prepare_copy
+    assert backend.save_calls[0][4]["prepare_export"] is prepare_export
 
 
 def test_save_pubify_figure_sets_skip_clone_by_default(tmp_path: Path) -> None:
