@@ -106,7 +106,7 @@ Then iterate with:
 ```bash
 pubs my-paper check
 pubs my-paper export
-pubs my-paper build --export-if-stale
+pubs my-paper build
 ```
 
 That creates a minimal publication skeleton and installs package-owned support files into the publication-local TeX tree.
@@ -116,7 +116,7 @@ That creates a minimal publication skeleton and installs package-owned support f
 1. Keep publication-local TeX sources under `papers/<publication-id>/tex/`.
 2. Define loaders and figure functions in `figures.py`.
 3. Run `pubs <publication-id> check` to load and validate the publication definition.
-4. Run `pubs <publication-id> export` to regenerate `tex/autofigures/`.
+4. Run `pubs <publication-id> figure update` to regenerate `tex/autofigures/`.
 5. Run `pubs <publication-id> build` to compile the publication.
 6. If a synced mirror is configured, use `diff`, `push`, or `pull` as needed.
 7. When an external loader input should become publication-local and reproducible, pin it with `pubs <publication-id> data <loader-id> pin`.
@@ -248,22 +248,22 @@ Publication commands:
 
 - `pubs <publication-id> prepare`
 - `pubs <publication-id> check`
+- `pubs <publication-id> update`
 - `pubs <publication-id> shell`
-- `pubs <publication-id> export [<figure-id> [<subfig-idx>]]`
+- `pubs <publication-id> figure [list|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]`
 - `pubs <publication-id> stat [list|update|<stat-id> update]`
 - `pubs <publication-id> data [list]`
 - `pubs <publication-id> data <loader-id> pin`
-- `pubs <publication-id> figure [list|<figure-id> preview]`
 - `pubs <publication-id> ignore <relative-path>`
-- `pubs <publication-id> build [--export|--export-if-stale] [--clear]`
+- `pubs <publication-id> build [--update|--skipupdate] [--clear]`
 - `pubs <publication-id> preview`
 - `pubs <publication-id> push [--force]`
 - `pubs <publication-id> pull [--force]`
 - `pubs <publication-id> diff [list|<relative-path>]`
 
-`build --export` refreshes generated figures and stats before LaTeX build. `build --export-if-stale` does that only when `figures.py` is newer than the generated outputs, `tex/autofigures/` is missing or empty, or `tex/autostats.tex` is missing.
+`update` refreshes publication code/config state plus generated figures and stats. By default, `build` refreshes generated figures and stats before LaTeX build only when `figures.py` is newer than the generated outputs, `tex/autofigures/` is missing or empty, or `tex/autostats.tex` is missing. `build --update` forces that refresh, and `build --skipupdate` skips it. In `pubs <publication-id> shell`, the first `build` after shell start or after `update` also forces one refresh unless `--skipupdate` is used.
 
-The shell command opens a publication-scoped interactive session with command history and reload behavior for `figures.py`, `pub.yaml`, and publication-local helpers. Loader data is recomputed on the next command after `reload`; loader caching is per command, not per shell session.
+The shell command opens a publication-scoped interactive session with command history and automatic pickup of changes to `figures.py`, `pub.yaml`, and publication-local helpers. Shell `update` forces a publication refresh and then regenerates figures and stats. Normal loader data is loaded on shell start and again when the publication is refreshed, then reused across shell commands. `nocache=True` loaders rerun once per command.
 
 Preview behavior is workspace-configured:
 

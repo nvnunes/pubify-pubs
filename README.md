@@ -62,7 +62,7 @@ Then iterate with:
 ```bash
 pubs my-paper check
 pubs my-paper export
-pubs my-paper build --export-if-stale
+pubs my-paper build
 ```
 
 ## Workspace Model
@@ -131,7 +131,7 @@ papers/<publication-id>/
 1. Keep publication-local TeX sources under `papers/<publication-id>/tex/`.
 2. Define loaders and figure functions in `figures.py`.
 3. Run `pubs <publication-id> check` to load and validate the publication definition.
-4. Run `pubs <publication-id> export` to regenerate `tex/autofigures/`.
+4. Run `pubs <publication-id> figure update` to regenerate `tex/autofigures/`.
 5. Run `pubs <publication-id> build` to compile the publication.
 6. If you use a synced mirror such as a locally mounted Overleaf tree, run `diff`, `push`, or `pull` as needed.
 7. When an external loader input should become publication-local and reproducible, pin it with `pubs <publication-id> data <loader-id> pin`.
@@ -226,14 +226,14 @@ The installed command is `pubs`:
 - `pubs init <publication-id>`
 - `pubs <publication-id> prepare`
 - `pubs <publication-id> check`
+- `pubs <publication-id> update`
 - `pubs <publication-id> shell`
-- `pubs <publication-id> export [<figure-id> [<subfig-idx>]]`
+- `pubs <publication-id> figure [list|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]`
 - `pubs <publication-id> stat [list|update|<stat-id> update]`
 - `pubs <publication-id> data [list]`
 - `pubs <publication-id> data <loader-id> pin`
-- `pubs <publication-id> figure [list|<figure-id> preview]`
 - `pubs <publication-id> ignore <relative-path>`
-- `pubs <publication-id> build [--export|--export-if-stale] [--clear]`
+- `pubs <publication-id> build [--update|--skipupdate] [--clear]`
 - `pubs <publication-id> preview`
 - `pubs <publication-id> push [--force]`
 - `pubs <publication-id> pull [--force]`
@@ -247,13 +247,22 @@ The installed command is `pubs`:
   - creates a new publication skeleton with package-owned starter files
 - `check`
   - loads and validates the publication definition
+- `update`
+  - regenerates all figures and stats
 - `shell`
   - opens a publication-scoped interactive session with prompt `<publication-id>> `
   - supports command history and standard line editing
   - reloads publication code and config when `figures.py`, `pub.yaml`, or publication-local helpers change
-  - loader data is recomputed on the next command after `reload`; loader caching is per command, not per shell session
+  - eagerly loads normal loader data on shell start and again when the publication is refreshed
+  - reuses normal loader data across shell commands; `nocache=True` loaders rerun once per command
 - `figure list`
   - lists discovered figures and their declared loader dependencies
+- `figure update`
+  - regenerates all figures into `tex/autofigures/`
+  - clears stale generated figure outputs first
+- `figure <figure-id> update`
+  - regenerates one figure into `tex/autofigures/`
+  - does not clear unrelated generated figure outputs
 - `stat list`
   - lists discovered stats from `figures.py`
 - `stat update`
@@ -265,10 +274,6 @@ The installed command is `pubs`:
   - opens the exported PDF for one figure from `tex/autofigures/`
   - uses the `preview.figure` backend from `pubify.conf`
   - opens all matching panel PDFs for multi-panel figures
-- `export`
-  - writes generated figure PDFs into `tex/autofigures/`
-  - full export clears stale generated outputs first
-  - targeted export does not clear unrelated generated outputs
 - `data list`
   - reports one row per declared loader path with status `pinned` or `external`
 - `data <loader-id> pin`
@@ -278,8 +283,10 @@ The installed command is `pubs`:
   - records a mirror-sync exclusion in the publication config
 - `build`
   - builds from the current publication-local TeX tree
-  - `--export` refreshes generated figures and stats before building
-  - `--export-if-stale` refreshes generated figures and stats first only when `figures.py` appears newer than the generated outputs, `tex/autofigures/` is missing or empty, or `tex/autostats.tex` is missing
+  - by default, `build` refreshes generated figures and stats first only when `figures.py` appears newer than the generated outputs, `tex/autofigures/` is missing or empty, or `tex/autostats.tex` is missing
+  - `--update` forces that refresh before building
+  - `--skipupdate` skips the generated-input refresh and builds with the existing `tex/autofigures/` and `tex/autostats.tex`
+  - in `pubs <publication-id> shell`, the first `build` after shell start or after `update` also forces one refresh unless `--skipupdate` is used
 - `preview`
   - opens the built publication PDF derived from `main_tex`
   - uses the `preview.publication` backend from `pubify.conf`

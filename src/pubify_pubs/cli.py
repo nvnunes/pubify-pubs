@@ -7,6 +7,8 @@ from pathlib import Path
 import subprocess
 import shlex
 import sys
+import threading
+import time
 
 from pubify_pubs.config import add_sync_exclude, load_workspace_config
 from pubify_pubs.discovery import (
@@ -20,15 +22,23 @@ from pubify_pubs.discovery import (
 from pubify_pubs.mirror import diff_publication, merge_conflicting_file, pull_publication, push_publication
 from pubify_pubs.pinning import pin_loader
 from pubify_pubs.runtime import (
+    RunContext,
+    UserCodeExecutionError,
+    build_run_context,
     build_pdf_path,
     build_publication,
+    clear_autofigures,
     check_publication,
     clear_publication_build,
     generated_outputs_are_stale,
     init_publication,
     init_publication_by_id,
+    preload_loaders,
+    resolve_loader,
     run_figures,
+    run_stats,
     update_stats,
+    write_computed_stats,
 )
 from pubify_pubs.stats import ComputedStat
 
@@ -46,6 +56,10 @@ STATUS_COLORS = {
     "figure": "\033[34m",
 }
 ANSI_RESET = "\033[0m"
+ANSI_BOLD = "\033[1m"
+ANSI_WHITE = "\033[97m"
+ANSI_YELLOW = "\033[33m"
+ANSI_BLUE = "\033[34m"
 SHELL_HISTORY_LIMIT = 500
 
 
@@ -75,9 +89,126 @@ class PublicationCommand:
     arg4: str | None = None
     arg5: str | None = None
     force: bool = False
-    export_before_build: bool = False
-    export_if_stale: bool = False
+    update_before_build: bool = False
+    skip_update: bool = False
     clear_build: bool = False
+
+
+class _ReportedExecutionError(RuntimeError):
+    """Raised after a dynamic execution failure has already been rendered."""
+
+
+class _LiveSectionPrinter:
+    _ANIMATION_SUFFIXES = (".", "..", "...")
+    _ANIMATION_INTERVAL_S = 1.0
+
+    def __init__(self, title: str, *, use_color: bool, live: bool | None = None) -> None:
+        self.title = title
+        self.use_color = use_color
+        self.live = sys.stdout.isatty() if live is None else live
+        self.started = False
+        self.active = False
+        self._active_label: str | None = None
+        self._active_action: str | None = None
+        self._stop_event: threading.Event | None = None
+        self._animation_thread: threading.Thread | None = None
+
+    def ensure_heading(self) -> None:
+        if self.started:
+            return
+        print(_render_section_heading(self.title, use_color=self.use_color))
+        self.started = True
+
+    def start_item(self, label: str, action: str) -> None:
+        self.ensure_heading()
+        if not self.live:
+            return
+        self._stop_animation()
+        self._active_label = label
+        self._active_action = action
+        print(_render_execution_status_line(label, f"{action}...", use_color=self.use_color, state="pending"))
+        self.active = True
+        self._start_animation()
+
+    def succeed(self, label: str, *, detail_lines: list[str] | None = None) -> None:
+        self.ensure_heading()
+        self._finish(
+            _render_execution_status_line(
+                label,
+                self._success_word(),
+                use_color=self.use_color,
+                state="success",
+            )
+        )
+        self._print_detail_lines(detail_lines or [])
+
+    def fail(self, label: str, *, detail_lines: list[str] | None = None) -> None:
+        self.ensure_heading()
+        self._finish(
+            _render_execution_status_line(label, "failed", use_color=self.use_color, state="failure")
+        )
+        self._print_detail_lines(detail_lines or [])
+
+    def close(self) -> None:
+        self._stop_animation()
+        if self.started:
+            print()
+
+    def _finish(self, line: str) -> None:
+        self._stop_animation()
+        if self.live and self.active:
+            sys.stdout.write("\033[1A\r\033[2K")
+            sys.stdout.write(f"{line}\n")
+            sys.stdout.flush()
+            self.active = False
+            self._active_label = None
+            self._active_action = None
+            return
+        print(line)
+        self._active_label = None
+        self._active_action = None
+
+    def _print_detail_lines(self, lines: list[str]) -> None:
+        for line in lines:
+            print(_render_detail_line(f"  {line}" if line else "", use_color=self.use_color))
+
+    def _success_word(self) -> str:
+        return "loaded" if self.title == "Data" else "updated"
+
+    def _start_animation(self) -> None:
+        if not self.live or not self.active or self._active_label is None or self._active_action is None:
+            return
+        self._stop_event = threading.Event()
+        self._animation_thread = threading.Thread(target=self._animate_active_line, daemon=True)
+        self._animation_thread.start()
+
+    def _stop_animation(self) -> None:
+        if self._stop_event is not None:
+            self._stop_event.set()
+        if self._animation_thread is not None:
+            self._animation_thread.join(timeout=0.5)
+        self._stop_event = None
+        self._animation_thread = None
+
+    def _animate_active_line(self) -> None:
+        if self._stop_event is None or self._active_label is None or self._active_action is None:
+            return
+        stop_event = self._stop_event
+        label = self._active_label
+        action = self._active_action
+        suffix_index = len(self._ANIMATION_SUFFIXES) - 1
+        while not stop_event.wait(self._ANIMATION_INTERVAL_S):
+            suffix = self._ANIMATION_SUFFIXES[suffix_index % len(self._ANIMATION_SUFFIXES)]
+            suffix_index += 1
+            line = _render_execution_status_line(
+                label,
+                f"{action}{suffix}",
+                use_color=self.use_color,
+                state="pending",
+            )
+            sys.stdout.write("\033[1A\r\033[2K")
+            sys.stdout.write(f"{line}\n")
+            sys.stdout.flush()
 
 
 @dataclass
@@ -86,6 +217,9 @@ class PublicationShellSession:
     publication_id: str
     publication: PublicationDefinition
     fingerprints: dict[Path, float | None]
+    loader_cache: dict[str, object]
+    pending_data_output: dict[str, list[str]]
+    build_seen: bool = False
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,7 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog="pubs",
-        usage="pubs [--force] [--export] [--export-if-stale] [--clear] <command>",
+        usage="pubs [--force] [--update] [--skipupdate] [--clear] <command>",
         description=(
             "Commands:\n"
             "  pubs list\n"
@@ -101,14 +235,14 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "  pubs <publication-id> prepare\n"
             "  pubs <publication-id> check\n"
+            "  pubs <publication-id> update\n"
             "  pubs <publication-id> shell\n"
             "  pubs <publication-id> data [list]\n"
             "  pubs <publication-id> data <loader-id> pin\n"
-            "  pubs <publication-id> figure [list|<figure-id> preview [<subfig-idx>]]\n"
+            "  pubs <publication-id> figure [list|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]\n"
             "  pubs <publication-id> stat [list|update|<stat-id> update]\n"
-            "  pubs <publication-id> export [<figure-id> [<subfig-idx>]]\n"
             "  pubs <publication-id> ignore <relative-path>\n"
-            "  pubs <publication-id> build [--export|--export-if-stale] [--clear]\n"
+            "  pubs <publication-id> build [--update|--skipupdate] [--clear]\n"
             "  pubs <publication-id> preview\n"
             "  pubs <publication-id> push [--force]\n"
             "  pubs <publication-id> pull [--force]\n"
@@ -122,8 +256,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("arg4", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument("arg5", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--export", dest="export_before_build", action="store_true")
-    parser.add_argument("--export-if-stale", action="store_true")
+    parser.add_argument("--update", dest="update_before_build", action="store_true")
+    parser.add_argument("--skipupdate", action="store_true")
     parser.add_argument("--clear", dest="clear_build", action="store_true")
     return parser
 
@@ -136,7 +270,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.subject == "list":
             workspace_root = find_workspace_root()
-            _reject_build_flags(parser, "list", args.export_before_build, args.export_if_stale, args.clear_build)
+            _reject_build_flags(parser, "list", args.update_before_build, args.skipupdate, args.clear_build)
             if any(value is not None for value in (args.arg2, args.arg3, args.arg4, args.arg5)):
                 parser.error("list does not accept additional arguments")
             for publication_id in list_publication_ids(workspace_root):
@@ -145,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.subject == "init":
             workspace_root = find_workspace_root()
-            _reject_build_flags(parser, "init", args.export_before_build, args.export_if_stale, args.clear_build)
+            _reject_build_flags(parser, "init", args.update_before_build, args.skipupdate, args.clear_build)
             if args.arg2 is None:
                 parser.error("init requires <publication-id>")
             if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
@@ -171,8 +305,8 @@ def main(argv: list[str] | None = None) -> int:
         if command not in {
             "prepare",
             "check",
+            "update",
             "shell",
-            "export",
             "data",
             "figure",
             "stat",
@@ -188,7 +322,7 @@ def main(argv: list[str] | None = None) -> int:
         workspace_root = find_workspace_root()
         publication = load_publication_definition(workspace_root, publication_id)
         if command == "shell":
-            _reject_build_flags(parser, "shell", args.export_before_build, args.export_if_stale, args.clear_build)
+            _reject_build_flags(parser, "shell", args.update_before_build, args.skipupdate, args.clear_build)
             if args.force:
                 parser.error("shell does not accept --force")
             if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
@@ -201,8 +335,8 @@ def main(argv: list[str] | None = None) -> int:
             arg4=args.arg4,
             arg5=args.arg5,
             force=args.force,
-            export_before_build=args.export_before_build,
-            export_if_stale=args.export_if_stale,
+            update_before_build=args.update_before_build,
+            skip_update=args.skipupdate,
             clear_build=args.clear_build,
         )
         return _run_publication_command(
@@ -215,6 +349,11 @@ def main(argv: list[str] | None = None) -> int:
 
         parser.error(f"Unsupported command: {command}")
         return 2
+    except UserCodeExecutionError as exc:
+        _print_indented_lines(exc.lines, stream=sys.stderr)
+        return 1
+    except _ReportedExecutionError:
+        return 1
     except (FileNotFoundError, ImportError, IndexError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -240,12 +379,12 @@ def _raise_value_error(message: str) -> None:
 def _reject_build_flags(
     parser: argparse.ArgumentParser,
     command: str,
-    export_before_build: bool,
-    export_if_stale: bool,
+    update_before_build: bool,
+    skip_update: bool,
     clear_build: bool,
 ) -> None:
-    if export_before_build or export_if_stale or clear_build:
-        parser.error(f"{command} does not accept --export, --export-if-stale, or --clear")
+    if update_before_build or skip_update or clear_build:
+        parser.error(f"{command} does not accept --update, --skipupdate, or --clear")
 
 
 def _parse_force_flag(
@@ -270,6 +409,10 @@ def _run_publication_command(
     error: Callable[[str], None],
     use_color: bool,
     use_interactive_merge: bool,
+    loader_cache: dict[str, object] | None = None,
+    pending_data_output: dict[str, list[str]] | None = None,
+    pending_data_loader_ids: tuple[str, ...] | None = None,
+    force_build_refresh: bool = False,
 ) -> int:
     if command.command == "ignore":
         _reject_build_flags_from_command(command, error)
@@ -296,7 +439,8 @@ def _run_publication_command(
             error("prepare does not accept --force")
         if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
             error("prepare does not accept additional arguments")
-        init_publication(publication)
+        changed_paths = _refresh_publication_support(publication)
+        _print_updated_publication_files(publication, changed_paths, use_color=use_color)
         print(f"{publication.publication_id}: prepared")
         return 0
 
@@ -310,13 +454,24 @@ def _run_publication_command(
         print(f"{publication.publication_id}: ok")
         return 0
 
-    if command.command == "export":
+    if command.command == "update":
         _reject_build_flags_from_command(command, error)
         if command.force:
-            error("export does not accept --force")
-        subfig_idx = None if command.arg4 is None else _parse_subfig_idx_value(command.arg4, error)
-        for path in run_figures(publication, command.arg3, subfig_idx):
-            print(path.relative_to(publication.paths.publication_root))
+            error("update does not accept --force")
+        if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
+            error("update does not accept additional arguments")
+        changed_paths = _refresh_publication_support(publication)
+        ctx = _command_run_context(
+            publication,
+            loader_cache=loader_cache,
+            pending_data_output=pending_data_output,
+        )
+        if pending_data_loader_ids is not None:
+            ctx.updated_loader_ids.update(pending_data_loader_ids)
+        loader_ids = _build_refresh_loader_ids(publication)
+        _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
+        _print_updated_publication_files(publication, changed_paths, use_color=use_color)
+        _print_update_outputs(publication, ctx, use_color=use_color)
         return 0
 
     if command.command == "data":
@@ -370,8 +525,34 @@ def _run_publication_command(
                     )
                 )
             return 0
+        if command.arg3 == "update":
+            if command.arg4 is not None or command.arg5 is not None:
+                error("figure update does not accept additional arguments")
+            ctx = _command_run_context(
+                publication,
+                loader_cache=loader_cache,
+                pending_data_output=pending_data_output,
+            )
+            figure_ids = _selected_figure_ids(publication)
+            loader_ids = _figure_loader_ids(publication)
+            _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
+            _run_figure_updates(publication, ctx, figure_ids, use_color=use_color)
+            return 0
+        if command.arg4 == "update":
+            if command.arg5 is not None:
+                error("figure <figure-id> update does not accept additional arguments")
+            ctx = _command_run_context(
+                publication,
+                loader_cache=loader_cache,
+                pending_data_output=pending_data_output,
+            )
+            figure_ids = _selected_figure_ids(publication, command.arg3)
+            loader_ids = _figure_loader_ids(publication, command.arg3)
+            _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
+            _run_figure_updates(publication, ctx, figure_ids, use_color=use_color)
+            return 0
         if command.arg4 != "preview":
-            error("figure supports only 'list' or '<figure-id> preview [<subfig-idx>]'")
+            error("figure supports only 'list', 'update', '<figure-id> update', or '<figure-id> preview [<subfig-idx>]'")
         subfigure_index = None if command.arg5 is None else _parse_subfig_idx_value(command.arg5, error)
         preview_paths = _preview_figure_paths(
             publication,
@@ -401,36 +582,58 @@ def _run_publication_command(
         if command.arg3 == "update":
             if command.arg4 is not None or command.arg5 is not None:
                 error("stat update does not accept additional arguments")
-            output_path, computed_stats = update_stats(publication)
-            _print_computed_stats(computed_stats)
-            print(f"Updated: {output_path.relative_to(publication.paths.publication_root)}")
+            ctx = _command_run_context(
+                publication,
+                loader_cache=loader_cache,
+                pending_data_output=pending_data_output,
+            )
+            loader_ids = _stat_loader_ids(publication)
+            _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
+            _run_stat_updates(publication, ctx, tuple(sorted(publication.stats)), use_color=use_color)
             return 0
         if command.arg4 != "update" or command.arg5 is not None:
             error("stat supports only 'list', 'update', or '<stat-id> update'")
         selected_id = command.arg3
         if selected_id not in publication.stats:
             raise KeyError(f"Unknown stat '{selected_id}'")
-        output_path, computed_stats = update_stats(publication)
-        _print_computed_stats(tuple(item for item in computed_stats if item.stat_id == selected_id))
-        print(f"Updated: {output_path.relative_to(publication.paths.publication_root)}")
+        ctx = _command_run_context(
+            publication,
+            loader_cache=loader_cache,
+            pending_data_output=pending_data_output,
+        )
+        loader_ids = _stat_loader_ids(publication)
+        _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
+        _run_stat_updates(publication, ctx, (selected_id,), use_color=use_color)
         return 0
 
     if command.command == "build":
         if command.force:
             error("build does not accept --force")
-        if command.export_before_build and command.export_if_stale:
-            error("build accepts only one of --export or --export-if-stale")
+        if command.update_before_build and command.skip_update:
+            error("build accepts only one of --update or --skipupdate")
         if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
             error("build does not accept additional arguments")
         if command.clear_build:
             clear_publication_build(publication)
-        if command.export_before_build or (
-            command.export_if_stale and generated_outputs_are_stale(publication)
+        if not command.skip_update and (
+            command.update_before_build
+            or force_build_refresh
+            or generated_outputs_are_stale(publication)
         ):
-            for path in _refresh_generated_build_inputs(publication):
-                print(path.relative_to(publication.paths.publication_root))
+            changed_paths = _refresh_publication_support(publication)
+            ctx = _command_run_context(
+                publication,
+                loader_cache=loader_cache,
+                pending_data_output=pending_data_output,
+            )
+            if pending_data_loader_ids is not None:
+                ctx.updated_loader_ids.update(pending_data_loader_ids)
+            loader_ids = _build_refresh_loader_ids(publication)
+            _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
+            _print_updated_publication_files(publication, changed_paths, use_color=use_color)
+            _print_update_outputs(publication, ctx, use_color=use_color)
         build_publication(publication)
-        print(build_pdf_path(publication))
+        _print_updated_pdf(build_pdf_path(publication), use_color=use_color)
         return 0
 
     if command.command == "preview":
@@ -498,16 +701,33 @@ def run_publication_shell(
     publication: PublicationDefinition,
 ) -> int:
     readline_module = _configure_shell_readline()
+    loader_cache, pending_data_output = _preload_shell_loader_cache(publication)
     session = PublicationShellSession(
         workspace_root=workspace_root,
         publication_id=publication_id,
         publication=publication,
         fingerprints=_collect_reload_fingerprints(publication.paths),
+        loader_cache=loader_cache,
+        pending_data_output=pending_data_output,
     )
     shell_parser = _build_shell_command_parser()
     history_path = _shell_history_path(publication.paths)
     _load_shell_history(readline_module, history_path)
     try:
+        if publication.loaders:
+            print()
+            startup_ctx = build_run_context(publication, loader_cache=session.loader_cache)
+            startup_ctx.captured_data_output = session.pending_data_output
+            startup_ctx.updated_loader_ids = set(publication.loaders)
+            _run_data_updates(
+                startup_ctx,
+                tuple(sorted(publication.loaders)),
+                heading="Data",
+                show_all=True,
+                include_nocache=False,
+                use_color=sys.stdout.isatty(),
+            )
+            session.pending_data_output = startup_ctx.captured_data_output
         while True:
             try:
                 line = input(f"{publication_id}> ")
@@ -535,15 +755,7 @@ def run_publication_shell(
             if command == "help":
                 print(_shell_help_text(publication_id))
                 continue
-            if command == "reload":
-                try:
-                    _reload_session_publication(session, force=True)
-                except (FileNotFoundError, ImportError, IndexError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
-                    print(f"Error: {exc}", file=sys.stderr)
-                else:
-                    print(f"{publication_id}: reloaded")
-                continue
-            if command in {"init", "list", "shell"}:
+            if command in {"init", "list", "shell", "reload"}:
                 print(f"Error: unsupported shell command '{command}'", file=sys.stderr)
                 continue
 
@@ -560,18 +772,48 @@ def run_publication_shell(
                     arg4=parsed.arg4,
                     arg5=parsed.arg5,
                     force=parsed.force,
-                    export_before_build=parsed.export_before_build,
-                    export_if_stale=parsed.export_if_stale,
+                    update_before_build=parsed.update_before_build,
+                    skip_update=parsed.skipupdate,
                     clear_build=parsed.clear_build,
                 )
-                _reload_session_publication(session)
+                did_reload = _reload_session_publication(
+                    session,
+                    force=(
+                        publication_command.command == "update"
+                        or (
+                            publication_command.command == "build"
+                            and publication_command.update_before_build
+                        )
+                    ),
+                )
+                pending_data_loader_ids = (
+                    tuple(sorted(session.publication.loaders))
+                    if publication_command.command in {"update", "build"} and did_reload
+                    else None
+                )
+                if publication_command.command in {"update", "build"}:
+                    print()
                 _run_publication_command(
                     session.publication,
                     publication_command,
                     error=_raise_value_error,
                     use_color=sys.stdout.isatty(),
                     use_interactive_merge=sys.stdout.isatty() and sys.stdin.isatty(),
+                    loader_cache=session.loader_cache,
+                    pending_data_output=session.pending_data_output,
+                    pending_data_loader_ids=pending_data_loader_ids,
+                    force_build_refresh=(
+                        publication_command.command == "build"
+                        and not publication_command.skip_update
+                        and not session.build_seen
+                    ),
                 )
+                if publication_command.command in {"build", "update"}:
+                    session.build_seen = True
+            except UserCodeExecutionError as exc:
+                _print_indented_lines(exc.lines, stream=sys.stderr)
+            except _ReportedExecutionError:
+                continue
             except (FileNotFoundError, ImportError, IndexError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
                 print(f"Error: {exc}", file=sys.stderr)
     finally:
@@ -581,8 +823,8 @@ def run_publication_shell(
 def _build_shell_command_parser() -> argparse.ArgumentParser:
     parser = _ShellArgumentParser(add_help=False)
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--export", dest="export_before_build", action="store_true")
-    parser.add_argument("--export-if-stale", action="store_true")
+    parser.add_argument("--update", dest="update_before_build", action="store_true")
+    parser.add_argument("--skipupdate", action="store_true")
     parser.add_argument("--clear", dest="clear_build", action="store_true")
     parser.add_argument("command")
     parser.add_argument("arg3", nargs="?")
@@ -733,13 +975,18 @@ def _reload_session_publication(
     session: PublicationShellSession,
     *,
     force: bool = False,
-) -> None:
+) -> bool:
     current = _collect_reload_fingerprints(session.publication.paths)
     if not force and current == session.fingerprints:
-        return
+        return False
     publication = load_publication_definition(session.workspace_root, session.publication_id)
+    loader_cache, pending_data_output = _preload_shell_loader_cache(publication)
     session.publication = publication
     session.fingerprints = _collect_reload_fingerprints(publication.paths)
+    session.loader_cache = loader_cache
+    session.pending_data_output = pending_data_output
+    session.build_seen = False
+    return True
 
 
 def _shell_help_text(publication_id: str) -> str:
@@ -750,16 +997,15 @@ def _shell_help_text(publication_id: str) -> str:
             "  check",
             "  data [list]",
             "  data <loader-id> pin",
-            "  figure [list|<figure-id> preview [<subfig-idx>]]",
+            "  figure [list|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]",
             "  stat [list|update|<stat-id> update]",
-            "  export [<figure-id> [<subfig-idx>]]",
+            "  update",
             "  ignore <relative-path>",
-            "  build [--export|--export-if-stale] [--clear]",
+            "  build [--update|--skipupdate] [--clear]",
             "  preview",
             "  push [--force]",
             "  pull [--force]",
             "  diff [list|<relative-path>]",
-            "  reload",
             "  help",
             "  quit",
         ]
@@ -783,29 +1029,280 @@ def _reject_build_flags_from_command(
     command: PublicationCommand,
     error: Callable[[str], None],
 ) -> None:
-    if command.export_before_build or command.export_if_stale or command.clear_build:
-        error(f"{command.command} does not accept --export, --export-if-stale, or --clear")
+    if command.update_before_build or command.skip_update or command.clear_build:
+        error(f"{command.command} does not accept --update, --skipupdate, or --clear")
 
 
 def _build_stat_inventory_rows(publication: PublicationDefinition) -> list[StatInventoryRow]:
     return [StatInventoryRow(stat_id=stat_id) for stat_id in sorted(publication.stats)]
 
 
-def _refresh_generated_build_inputs(publication: PublicationDefinition) -> list[Path]:
-    paths: list[Path] = []
+def _print_update_outputs(
+    publication: PublicationDefinition,
+    ctx: RunContext,
+    *,
+    use_color: bool,
+) -> None:
     if publication.figures:
-        paths.extend(run_figures(publication))
+        _run_figure_updates(publication, ctx, _selected_figure_ids(publication), use_color=use_color)
     if publication.stats:
-        autostats_path, _computed_stats = update_stats(publication)
-        paths.append(autostats_path)
-    return paths
+        _run_stat_updates(publication, ctx, tuple(sorted(publication.stats)), use_color=use_color)
 
 
-def _print_computed_stats(stats: tuple[ComputedStat, ...]) -> None:
-    for stat in stats:
-        print(stat.stat_id)
-        for value in stat.values:
-            print(f"  \\{value.macro_name} = {value.display}")
+def _refresh_publication_support(publication: PublicationDefinition) -> tuple[Path, ...]:
+    before_contents: dict[Path, bytes | None] = {}
+    support_paths = (
+        publication.paths.tex_root / "pubify.sty",
+        publication.paths.tex_root / "pubify-template.tex",
+    )
+    for path in support_paths:
+        before_contents[path] = path.read_bytes() if path.exists() else None
+
+    changed_paths: list[Path] = []
+    prepared_paths = init_publication(publication)
+    for path in prepared_paths:
+        if _path_content_changed(path, before_contents.get(path)):
+            changed_paths.append(path)
+    return tuple(changed_paths)
+
+
+def _path_content_changed(path: Path, previous_content: bytes | None) -> bool:
+    current_content = path.read_bytes() if path.exists() else None
+    return previous_content != current_content
+
+
+def _print_updated_publication_files(
+    publication: PublicationDefinition,
+    changed_paths: tuple[Path, ...],
+    *,
+    use_color: bool,
+) -> None:
+    if not changed_paths:
+        return
+    print(_render_section_heading("Publication Files", use_color=use_color))
+    for path in changed_paths:
+        try:
+            display = path.relative_to(publication.paths.publication_root)
+        except ValueError:
+            display = path
+        print(_render_execution_status_line(str(display), "updated", use_color=use_color, state="success"))
+    print()
+
+
+def _run_figure_updates(
+    publication: PublicationDefinition,
+    ctx: RunContext,
+    figure_ids: tuple[str, ...],
+    *,
+    use_color: bool,
+) -> None:
+    if not figure_ids:
+        return
+    clear_autofigures(publication)
+    printer = _LiveSectionPrinter("Figures", use_color=use_color)
+    try:
+        for figure_id in figure_ids:
+            printer.start_item(figure_id, "updating")
+            try:
+                output_paths = run_figures(publication, figure_id, ctx=ctx)
+            except UserCodeExecutionError as exc:
+                printer.fail(figure_id, detail_lines=list(exc.lines))
+                raise _ReportedExecutionError() from exc
+            detail_lines = _consume_dynamic_output(ctx, "figure")
+            label = figure_id
+            count = _count_figure_outputs(figure_id, output_paths)
+            if count > 1:
+                label = f"{figure_id} ({count})"
+            printer.succeed(label, detail_lines=detail_lines)
+    finally:
+        printer.close()
+
+
+def _run_stat_updates(
+    publication: PublicationDefinition,
+    ctx: RunContext,
+    stat_ids: tuple[str, ...],
+    *,
+    use_color: bool,
+) -> None:
+    if not stat_ids:
+        return
+    printer = _LiveSectionPrinter("Stats", use_color=use_color)
+    computed_stats: list[ComputedStat] = []
+    try:
+        for stat_id in stat_ids:
+            printer.start_item(stat_id, "updating")
+            try:
+                computed = run_stats(publication, stat_id, ctx=ctx)
+            except UserCodeExecutionError as exc:
+                printer.fail(stat_id, detail_lines=list(exc.lines))
+                raise _ReportedExecutionError() from exc
+            computed_stat = computed[0]
+            computed_stats.append(computed_stat)
+            detail_lines = _consume_dynamic_output(ctx, "stat")
+            detail_lines.extend(
+                [f"\\{value.macro_name} = {value.display}" for value in computed_stat.values]
+            )
+            printer.succeed(stat_id, detail_lines=detail_lines)
+    finally:
+        printer.close()
+    write_computed_stats(publication, tuple(computed_stats))
+
+
+def _count_figure_outputs(figure_id: str, output_paths: list[Path]) -> int:
+    count = 0
+    for path in output_paths:
+        stem = path.stem
+        if stem == figure_id or stem.startswith(f"{figure_id}_"):
+            count += 1
+    return count
+
+
+def _consume_dynamic_output(ctx: RunContext, group: str) -> list[str]:
+    lines = list(ctx.captured_output[group])
+    ctx.captured_output[group].clear()
+    return lines
+
+
+def _print_indented_lines(lines: Sequence[str], *, stream: object) -> None:
+    use_color = stream is sys.stderr and sys.stderr.isatty()
+    for line in lines:
+        text = f"  {line}" if line else ""
+        if use_color and text:
+            text = f"{ANSI_WHITE}{text}{ANSI_RESET}"
+        print(text, file=stream)
+
+
+def _run_data_updates(
+    ctx: RunContext,
+    loader_ids: tuple[str, ...],
+    *,
+    heading: str = "Data",
+    show_all: bool = False,
+    include_nocache: bool,
+    use_color: bool,
+) -> None:
+    visible_loader_ids = loader_ids if show_all else tuple(
+        loader_id
+        for loader_id in loader_ids
+        if loader_id in ctx.updated_loader_ids or _loader_needs_execution(ctx, loader_id, include_nocache)
+    )
+    if not visible_loader_ids:
+        return
+    printer = _LiveSectionPrinter(heading, use_color=use_color)
+    try:
+        for loader_id in visible_loader_ids:
+            if loader_id in ctx.updated_loader_ids:
+                detail_lines = list(ctx.captured_data_output.pop(loader_id, []))
+                printer.succeed(loader_id, detail_lines=detail_lines)
+                ctx.updated_loader_ids.discard(loader_id)
+                continue
+            printer.start_item(loader_id, "loading")
+            try:
+                resolve_loader(ctx, loader_id)
+            except UserCodeExecutionError as exc:
+                printer.fail(loader_id, detail_lines=list(exc.lines))
+                raise _ReportedExecutionError() from exc
+            detail_lines = list(ctx.captured_data_output.pop(loader_id, []))
+            printer.succeed(loader_id, detail_lines=detail_lines)
+            ctx.updated_loader_ids.discard(loader_id)
+    finally:
+        printer.close()
+
+
+def _loader_needs_execution(ctx: RunContext, loader_id: str, include_nocache: bool) -> bool:
+    loader = ctx.publication.loaders[loader_id]
+    if loader.nocache:
+        return include_nocache and loader_id not in ctx.command_loader_cache
+    return loader_id not in ctx.loader_cache
+
+
+def _render_section_heading(text: str, *, use_color: bool) -> str:
+    if not use_color:
+        return text
+    return f"{ANSI_BOLD}{ANSI_BLUE}{text}{ANSI_RESET}"
+
+
+def _render_detail_line(text: str, *, use_color: bool) -> str:
+    if not use_color or not text:
+        return text
+    return f"{ANSI_WHITE}{text}{ANSI_RESET}"
+
+
+def _print_updated_pdf(path: Path, *, use_color: bool) -> None:
+    printer = _LiveSectionPrinter("PDF", use_color=use_color)
+    try:
+        printer.succeed(str(path))
+    finally:
+        printer.close()
+
+
+def _render_execution_status_line(label: str, status: str, *, use_color: bool, state: str) -> str:
+    prefix = f"- {label}: "
+    if not use_color:
+        return prefix + status
+    colored_label = f"{ANSI_YELLOW}- {label}:{ANSI_RESET}"
+    if state == "success":
+        colored_status = f"{ANSI_BOLD}{STATUS_COLORS['pinned']}{status}{ANSI_RESET}"
+    elif state == "failure":
+        colored_status = f"{ANSI_BOLD}{STATUS_COLORS['conflicting']}{status}{ANSI_RESET}"
+    else:
+        colored_status = f"{ANSI_WHITE}{status}{ANSI_RESET}"
+    return f"{colored_label} {colored_status}"
+
+
+def _command_run_context(
+    publication: PublicationDefinition,
+    *,
+    loader_cache: dict[str, object] | None = None,
+    pending_data_output: dict[str, list[str]] | None = None,
+) -> RunContext:
+    ctx = build_run_context(
+        publication,
+        loader_cache=loader_cache.copy() if loader_cache is not None else None,
+    )
+    if pending_data_output is not None:
+        ctx.captured_data_output = pending_data_output
+    return ctx
+
+
+def _preload_shell_loader_cache(publication: PublicationDefinition) -> tuple[dict[str, object], dict[str, list[str]]]:
+    loader_cache: dict[str, object] = {}
+    ctx = build_run_context(publication, loader_cache=loader_cache)
+    preload_loaders(ctx, tuple(sorted(publication.loaders)), include_nocache=False)
+    return loader_cache, {key: list(value) for key, value in ctx.captured_data_output.items()}
+
+
+def _selected_figure_ids(
+    publication: PublicationDefinition,
+    figure_id: str | None = None,
+) -> tuple[str, ...]:
+    if figure_id is None:
+        return tuple(sorted(publication.figures))
+    if figure_id not in publication.figures:
+        raise KeyError(f"Unknown figure '{figure_id}'")
+    return (figure_id,)
+
+
+def _figure_loader_ids(publication: PublicationDefinition, figure_id: str | None = None) -> tuple[str, ...]:
+    figure_ids = _selected_figure_ids(publication, figure_id)
+    loader_ids: set[str] = set()
+    for current_id in figure_ids:
+        loader_ids.update(publication.figures[current_id].dependency_ids)
+    return tuple(sorted(loader_ids))
+
+
+def _stat_loader_ids(publication: PublicationDefinition) -> tuple[str, ...]:
+    loader_ids: set[str] = set()
+    for stat in publication.stats.values():
+        loader_ids.update(stat.dependency_ids)
+    return tuple(sorted(loader_ids))
+
+
+def _build_refresh_loader_ids(publication: PublicationDefinition) -> tuple[str, ...]:
+    loader_ids = set(_figure_loader_ids(publication))
+    loader_ids.update(_stat_loader_ids(publication))
+    return tuple(sorted(loader_ids))
 
 
 def _parse_force_flag_value(

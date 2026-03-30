@@ -39,12 +39,18 @@ Host-owned:
 ## Publication-Facing Conventions To Preserve
 
 - `figures.py` is the publication entrypoint.
+- The manuscript is the publication-local LaTeX tree rooted at the `main_tex` entry in `pub.yaml`.
+- `figures.py` is a manuscript-ordered entrypoint file.
+- Order `@figure` and `@stat` methods by the first place their outputs are used in the manuscript, regardless of whether they are figures or stats.
+- Do not group all figures first and stats later unless that still matches first-use order in the manuscript.
+- Order loaders by the first place they are needed by the manuscript-ordered `@figure` and `@stat` methods below.
 - Prefer `@data(...)` over `@external_data(...)` when the input should be pinned under the workspace `data_root`.
 - `publication_data_path(...)` owns pinned publication-data path resolution and parent creation.
 - Format-owned publication-data helpers should generally come in save/load pairs.
 - Small publication-local helpers may live in `figures.py`; larger publication-specific helper sets belong in publication-local helper modules, not in the package.
 - Large or repeated filenames may be lifted into top-level constants for readability.
 - Section comments in `figures.py` are only needed for sections that actually exist.
+- When section comments are used, prefer `# Figures` if there are no stats and `# Figures & Stats` if stats are present.
 - When several pinned filenames share a scientific basename, prefer one basename constant plus derived filenames.
 - Thin named loaders are acceptable when they give the paper a clear dependency name.
 - Prefer local nested helpers for repeated subpanel assembly within one figure.
@@ -54,8 +60,8 @@ Host-owned:
 
 - full `export` clears stale generated files in `tex/autofigures/`
 - targeted `export` stays incremental
-- `build --export` and `build --export-if-stale` preserve their current meanings
-- shell prompt, history, and reload behavior remain part of the supported CLI contract
+- `build`, `build --update`, and `build --skipupdate` preserve their current meanings
+- shell prompt, history, automatic pickup of publication changes, and shell `update` behavior remain part of the supported CLI contract
 - generated figures remain one-way local-to-mirror delivery, separate from managed-source sync
 - diff status names and meanings stay documented and tested together
 - data pinning behavior and helper semantics stay documented and tested together

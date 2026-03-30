@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from contextlib import AbstractContextManager
+from contextlib import AbstractContextManager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
+import io
 from pathlib import Path
 import shutil
 import subprocess
+import traceback
 
 import pubify_mpl
 from pubify_mpl import pubify_rc_context as publication_rc_context
@@ -39,6 +41,12 @@ class RunContext:
 
     publication: PublicationDefinition
     loader_cache: dict[str, object] = field(default_factory=dict)
+    command_loader_cache: dict[str, object] = field(default_factory=dict)
+    updated_loader_ids: set[str] = field(default_factory=set)
+    captured_data_output: dict[str, list[str]] = field(default_factory=dict)
+    captured_output: dict[str, list[str]] = field(
+        default_factory=lambda: {"figure": [], "stat": []}
+    )
     rc: AbstractContextManager[None] | None = None
 
 
@@ -59,6 +67,14 @@ class PublicationRcContext(AbstractContextManager[None]):
         active = self._active
         self._active = None
         return active.__exit__(exc_type, exc_value, traceback)
+
+
+class UserCodeExecutionError(RuntimeError):
+    """Raised when publication-defined Python code fails during execution."""
+
+    def __init__(self, lines: list[str]) -> None:
+        self.lines = tuple(lines)
+        super().__init__(lines[-1] if lines else "Publication code execution failed")
 
 
 def check_publication(publication: PublicationDefinition) -> None:
@@ -115,6 +131,7 @@ def run_figures(
     publication: PublicationDefinition,
     figure_id: str | None = None,
     subfigure_index: int | None = None,
+    ctx: RunContext | None = None,
 ) -> list[Path]:
     """Run one or more figures and export PDFs into ``tex/autofigures``."""
 
@@ -124,10 +141,7 @@ def run_figures(
         raise ValueError(
             f"Publication '{publication.publication_id}' failed validation:\n{joined}"
         )
-    ctx = RunContext(
-        publication=publication,
-        rc=PublicationRcContext(publication.config.pubify_mpl.template),
-    )
+    run_ctx = ctx or build_run_context(publication)
     figure_ids = [figure_id] if figure_id is not None else sorted(publication.figures)
     outputs: list[Path] = []
 
@@ -138,7 +152,7 @@ def run_figures(
         if current_id not in publication.figures:
             raise KeyError(f"Unknown figure '{current_id}'")
         figure_outputs = _run_one_figure(
-            ctx,
+            run_ctx,
             publication.figures[current_id],
             subfigure_index,
         )
@@ -150,6 +164,7 @@ def run_figures(
 def run_stats(
     publication: PublicationDefinition,
     stat_id: str | None = None,
+    ctx: RunContext | None = None,
 ) -> tuple[ComputedStat, ...]:
     """Run one or more stats and return normalized computed stat values."""
 
@@ -159,29 +174,77 @@ def run_stats(
         raise ValueError(
             f"Publication '{publication.publication_id}' failed validation:\n{joined}"
         )
-    ctx = RunContext(
-        publication=publication,
-        rc=PublicationRcContext(publication.config.pubify_mpl.template),
-    )
+    run_ctx = ctx or build_run_context(publication)
     stat_ids = [stat_id] if stat_id is not None else sorted(publication.stats)
     computed: list[ComputedStat] = []
     for current_id in stat_ids:
         if current_id not in publication.stats:
             raise KeyError(f"Unknown stat '{current_id}'")
-        computed.append(_run_one_stat(ctx, publication.stats[current_id]))
+        computed.append(_run_one_stat(run_ctx, publication.stats[current_id]))
     result = tuple(computed)
     ensure_unique_macro_names(result)
     return result
 
 
-def update_stats(publication: PublicationDefinition) -> tuple[Path, tuple[ComputedStat, ...]]:
+def update_stats(
+    publication: PublicationDefinition,
+    ctx: RunContext | None = None,
+) -> tuple[Path, tuple[ComputedStat, ...]]:
     """Compute all stats and rewrite the framework-owned ``autostats.tex`` snapshot."""
 
-    computed = run_stats(publication)
+    computed = run_stats(publication, ctx=ctx)
     output_path = autostats_path(publication.paths.tex_root)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_autostats_text(computed), encoding="utf-8")
     return output_path, computed
+
+
+def write_computed_stats(
+    publication: PublicationDefinition,
+    computed: tuple[ComputedStat, ...],
+) -> Path:
+    """Write an already-computed stat snapshot to ``autostats.tex``."""
+
+    ensure_unique_macro_names(computed)
+    output_path = autostats_path(publication.paths.tex_root)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(render_autostats_text(computed), encoding="utf-8")
+    return output_path
+
+
+def build_run_context(
+    publication: PublicationDefinition,
+    *,
+    loader_cache: dict[str, object] | None = None,
+) -> RunContext:
+    """Create one command-scoped runtime context for a publication."""
+
+    return RunContext(
+        publication=publication,
+        loader_cache=loader_cache if loader_cache is not None else {},
+        rc=PublicationRcContext(publication.config.pubify_mpl.template),
+    )
+
+
+def preload_loaders(
+    ctx: RunContext,
+    loader_ids: tuple[str, ...],
+    *,
+    include_nocache: bool,
+) -> None:
+    """Resolve selected loaders into ``ctx`` before figures or stats run."""
+
+    for loader_id in loader_ids:
+        loader = ctx.publication.loaders[loader_id]
+        if loader.nocache and not include_nocache:
+            continue
+        _resolve_loader(ctx, loader_id)
+
+
+def resolve_loader(ctx: RunContext, loader_id: str) -> object:
+    """Resolve one loader and return its computed value."""
+
+    return _resolve_loader(ctx, loader_id)
 
 
 def build_publication(
@@ -234,6 +297,12 @@ def clear_publication_build(publication: PublicationDefinition) -> None:
     """Remove all files from ``tex/build`` so the next build starts fresh."""
 
     _clear_output_directory(publication.paths.build_root)
+
+
+def clear_autofigures(publication: PublicationDefinition) -> None:
+    """Remove all generated figure files under ``tex/autofigures``."""
+
+    _clear_output_directory(publication.paths.autofigures_root)
 
 
 CommandRunner = Callable[[Sequence[str], Path], subprocess.CompletedProcess[str]]
@@ -321,7 +390,7 @@ def _run_one_figure(
     resolved_args = [_resolve_loader(ctx, dep_id) for dep_id in figure.dependency_ids]
     output_dir = ctx.publication.paths.autofigures_root
     result = normalize_figure_result(
-        figure.func(ctx, *resolved_args),
+        _capture_dynamic_output(ctx, "figure", figure.func, ctx, *resolved_args),
         ctx.publication.config,
     )
     return export_figure(
@@ -337,7 +406,10 @@ def _run_one_figure(
 
 def _run_one_stat(ctx: RunContext, stat: StatSpec) -> ComputedStat:
     resolved_args = [_resolve_loader(ctx, dep_id) for dep_id in stat.dependency_ids]
-    return compute_resolved_stat(stat.stat_id, stat.func(ctx, *resolved_args))
+    return compute_resolved_stat(
+        stat.stat_id,
+        _capture_dynamic_output(ctx, "stat", stat.func, ctx, *resolved_args),
+    )
 
 
 def _clear_output_directory(path: Path) -> None:
@@ -351,7 +423,10 @@ def _clear_output_directory(path: Path) -> None:
 
 def _resolve_loader(ctx: RunContext, loader_id: str) -> object:
     loader = ctx.publication.loaders[loader_id]
-    if not loader.nocache and loader_id in ctx.loader_cache:
+    if loader.nocache:
+        if loader_id in ctx.command_loader_cache:
+            return ctx.command_loader_cache[loader_id]
+    elif loader_id in ctx.loader_cache:
         return ctx.loader_cache[loader_id]
 
     if loader.kind == "data":
@@ -370,9 +445,18 @@ def _resolve_loader(ctx: RunContext, loader_id: str) -> object:
 
     if loader.style == "single":
         relative_path = next(iter(loader.relative_paths.values()))
-        resolved = loader.func(ctx, _resolve_loader_path(root, relative_path, loader_id))
+        resolved = _capture_loader_output(
+            ctx,
+            loader_id,
+            loader.func,
+            ctx,
+            _resolve_loader_path(root, relative_path, loader_id),
+        )
     elif loader.style == "named":
-        resolved = loader.func(
+        resolved = _capture_loader_output(
+            ctx,
+            loader_id,
+            loader.func,
             ctx,
             **{
                 name: _resolve_loader_path(root, relative_path, loader_id)
@@ -382,8 +466,11 @@ def _resolve_loader(ctx: RunContext, loader_id: str) -> object:
     else:
         raise ValueError(f"Unsupported loader style '{loader.style}'")
 
-    if not loader.nocache:
+    if loader.nocache:
+        ctx.command_loader_cache[loader_id] = resolved
+    else:
         ctx.loader_cache[loader_id] = resolved
+    ctx.updated_loader_ids.add(loader_id)
     return resolved
 
 
@@ -399,3 +486,53 @@ def _resolve_loader_path(root: Path, relative_path: str, loader_id: str) -> Path
     if normalized in {"", "."}:
         raise ValueError(f"Loader '{loader_id}' path must be a non-empty relative path")
     return root / candidate
+
+
+def _capture_dynamic_output(
+    ctx: RunContext,
+    group: str,
+    func: Callable[..., object],
+    *args: object,
+    **kwargs: object,
+) -> object:
+    stream = io.StringIO()
+    try:
+        with redirect_stdout(stream), redirect_stderr(stream):
+            result = func(*args, **kwargs)
+    except Exception as exc:
+        lines = stream.getvalue().splitlines()
+        lines.extend(
+            line.rstrip("\n")
+            for line in traceback.format_exception_only(type(exc), exc)
+            if line.rstrip("\n")
+        )
+        raise UserCodeExecutionError(lines) from exc
+    output = stream.getvalue()
+    if output:
+        ctx.captured_output[group].extend(output.splitlines())
+    return result
+
+
+def _capture_loader_output(
+    ctx: RunContext,
+    loader_id: str,
+    func: Callable[..., object],
+    *args: object,
+    **kwargs: object,
+) -> object:
+    stream = io.StringIO()
+    try:
+        with redirect_stdout(stream), redirect_stderr(stream):
+            result = func(*args, **kwargs)
+    except Exception as exc:
+        lines = stream.getvalue().splitlines()
+        lines.extend(
+            line.rstrip("\n")
+            for line in traceback.format_exception_only(type(exc), exc)
+            if line.rstrip("\n")
+        )
+        raise UserCodeExecutionError(lines) from exc
+    output = stream.getvalue()
+    if output:
+        ctx.captured_data_output.setdefault(loader_id, []).extend(output.splitlines())
+    return result

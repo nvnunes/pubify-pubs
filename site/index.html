@@ -217,7 +217,7 @@
 <p>Then iterate with:</p>
 <div class="highlight"><pre><span></span><code>pubs<span class="w"> </span>my-paper<span class="w"> </span>check
 pubs<span class="w"> </span>my-paper<span class="w"> </span><span class="nb">export</span>
-pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"> </span>--export-if-stale
+pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 </code></pre></div>
 <p>That creates a minimal publication skeleton and installs package-owned support files into the publication-local TeX tree.</p>
 <h2 id="typical-workflow">Typical Workflow</h2>
@@ -225,7 +225,7 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 <li>Keep publication-local TeX sources under <code>papers/&lt;publication-id&gt;/tex/</code>.</li>
 <li>Define loaders and figure functions in <code>figures.py</code>.</li>
 <li>Run <code>pubs &lt;publication-id&gt; check</code> to load and validate the publication definition.</li>
-<li>Run <code>pubs &lt;publication-id&gt; export</code> to regenerate <code>tex/autofigures/</code>.</li>
+<li>Run <code>pubs &lt;publication-id&gt; figure update</code> to regenerate <code>tex/autofigures/</code>.</li>
 <li>Run <code>pubs &lt;publication-id&gt; build</code> to compile the publication.</li>
 <li>If a synced mirror is configured, use <code>diff</code>, <code>push</code>, or <code>pull</code> as needed.</li>
 <li>When an external loader input should become publication-local and reproducible, pin it with <code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code>.</li>
@@ -331,21 +331,21 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 <ul>
 <li><code>pubs &lt;publication-id&gt; prepare</code></li>
 <li><code>pubs &lt;publication-id&gt; check</code></li>
+<li><code>pubs &lt;publication-id&gt; update</code></li>
 <li><code>pubs &lt;publication-id&gt; shell</code></li>
-<li><code>pubs &lt;publication-id&gt; export [&lt;figure-id&gt; [&lt;subfig-idx&gt;]]</code></li>
+<li><code>pubs &lt;publication-id&gt; figure [list|update|&lt;figure-id&gt; update|&lt;figure-id&gt; preview [&lt;subfig-idx&gt;]]</code></li>
 <li><code>pubs &lt;publication-id&gt; stat [list|update|&lt;stat-id&gt; update]</code></li>
 <li><code>pubs &lt;publication-id&gt; data [list]</code></li>
 <li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
-<li><code>pubs &lt;publication-id&gt; figure [list|&lt;figure-id&gt; preview]</code></li>
 <li><code>pubs &lt;publication-id&gt; ignore &lt;relative-path&gt;</code></li>
-<li><code>pubs &lt;publication-id&gt; build [--export|--export-if-stale] [--clear]</code></li>
+<li><code>pubs &lt;publication-id&gt; build [--update|--skipupdate] [--clear]</code></li>
 <li><code>pubs &lt;publication-id&gt; preview</code></li>
 <li><code>pubs &lt;publication-id&gt; push [--force]</code></li>
 <li><code>pubs &lt;publication-id&gt; pull [--force]</code></li>
 <li><code>pubs &lt;publication-id&gt; diff [list|&lt;relative-path&gt;]</code></li>
 </ul>
-<p><code>build --export</code> refreshes generated figures and stats before LaTeX build. <code>build --export-if-stale</code> does that only when <code>figures.py</code> is newer than the generated outputs, <code>tex/autofigures/</code> is missing or empty, or <code>tex/autostats.tex</code> is missing.</p>
-<p>The shell command opens a publication-scoped interactive session with command history and reload behavior for <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers. Loader data is recomputed on the next command after <code>reload</code>; loader caching is per command, not per shell session.</p>
+<p><code>update</code> refreshes publication code/config state plus generated figures and stats. By default, <code>build</code> refreshes generated figures and stats before LaTeX build only when <code>figures.py</code> is newer than the generated outputs, <code>tex/autofigures/</code> is missing or empty, or <code>tex/autostats.tex</code> is missing. <code>build --update</code> forces that refresh, and <code>build --skipupdate</code> skips it. In <code>pubs &lt;publication-id&gt; shell</code>, the first <code>build</code> after shell start or after <code>update</code> also forces one refresh unless <code>--skipupdate</code> is used.</p>
+<p>The shell command opens a publication-scoped interactive session with command history and automatic pickup of changes to <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers. Shell <code>update</code> forces a publication refresh and then regenerates figures and stats. Normal loader data is loaded on shell start and again when the publication is refreshed, then reused across shell commands. <code>nocache=True</code> loaders rerun once per command.</p>
 <p>Preview behavior is workspace-configured:</p>
 <ul>
 <li><code>pubs &lt;publication-id&gt; preview</code></li>
@@ -465,5 +465,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-30 13:24:26.623233+00:00
+Build Date UTC : 2026-03-30 22:26:48.069184+00:00
 -->
