@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import invalidate_caches
 from importlib.util import module_from_spec, spec_from_file_location
 import inspect
 from pathlib import Path
@@ -44,6 +45,15 @@ class FigureSpec:
 
 
 @dataclass(frozen=True)
+class StatSpec:
+    """Discovered stat metadata derived from one decorated stat function."""
+
+    stat_id: str
+    func: object
+    dependency_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PublicationPaths:
     """Resolved workspace and publication paths used by the runtime."""
 
@@ -54,6 +64,7 @@ class PublicationPaths:
     sync_base_root: Path
     build_root: Path
     autofigures_root: Path
+    autostats_path: Path
     entrypoint: Path
     config_path: Path
 
@@ -68,6 +79,7 @@ class PublicationDefinition:
     module: ModuleType
     loaders: dict[str, LoaderSpec]
     figures: dict[str, FigureSpec]
+    stats: dict[str, StatSpec]
 
 
 def find_workspace_root(start: Path | None = None) -> Path:
@@ -100,6 +112,7 @@ def load_publication_definition(workspace_root: Path, publication_id: str) -> Pu
     module = _import_publication_module(publication_id, paths.entrypoint)
     loaders = _discover_loaders(module)
     figures = _discover_figures(module)
+    stats = _discover_stats(module)
     return PublicationDefinition(
         publication_id=publication_id,
         paths=paths,
@@ -107,6 +120,7 @@ def load_publication_definition(workspace_root: Path, publication_id: str) -> Pu
         module=module,
         loaders=loaders,
         figures=figures,
+        stats=stats,
     )
 
 
@@ -161,6 +175,13 @@ def validate_publication_definition(
                     f"Figure '{figure.figure_id}' depends on unknown loader '{dep}'"
                 )
 
+    for stat in publication.stats.values():
+        for dep in stat.dependency_ids:
+            if dep not in publication.loaders:
+                errors.append(
+                    f"Stat '{stat.stat_id}' depends on unknown loader '{dep}'"
+                )
+
     if not publication.paths.tex_root.exists():
         errors.append(f"Missing tex directory: {publication.paths.tex_root}")
 
@@ -197,6 +218,7 @@ def build_publication_paths(workspace_root: Path, publication_id: str) -> Public
         sync_base_root=tex_root / ".pubs-sync-base",
         build_root=tex_root / "build",
         autofigures_root=tex_root / "autofigures",
+        autostats_path=tex_root / "autostats.tex",
         entrypoint=publication_root / PUBLICATION_ENTRYPOINT,
         config_path=publication_root / PUBLICATION_CONFIG,
     )
@@ -204,6 +226,16 @@ def build_publication_paths(workspace_root: Path, publication_id: str) -> Public
 
 def _import_publication_module(publication_id: str, entrypoint: Path) -> ModuleType:
     module_name = f"pubify_pubs_publication_{publication_id}"
+    publication_root = entrypoint.parent
+    _purge_publication_modules(publication_root)
+    invalidate_caches()
+
+    publication_root_str = str(publication_root)
+    added_path = False
+    if publication_root_str not in sys.path:
+        sys.path.insert(0, publication_root_str)
+        added_path = True
+
     spec = spec_from_file_location(module_name, entrypoint)
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not build import spec for {entrypoint}")
@@ -213,7 +245,38 @@ def _import_publication_module(publication_id: str, entrypoint: Path) -> ModuleT
         spec.loader.exec_module(module)
     finally:
         sys.modules.pop(module_name, None)
+        if added_path and sys.path and sys.path[0] == publication_root_str:
+            sys.path.pop(0)
     return module
+
+
+def _purge_publication_modules(publication_root: Path) -> None:
+    resolved_root = publication_root.resolve()
+    for module_name, module in list(sys.modules.items()):
+        if _module_lives_under_root(module, resolved_root):
+            sys.modules.pop(module_name, None)
+
+
+def _module_lives_under_root(module: object, root: Path) -> bool:
+    module_file = getattr(module, "__file__", None)
+    if module_file is not None and _path_lives_under_root(module_file, root):
+        return True
+
+    module_paths = getattr(module, "__path__", None)
+    if module_paths is None:
+        return False
+    try:
+        return any(_path_lives_under_root(path, root) for path in module_paths)
+    except TypeError:
+        return False
+
+
+def _path_lives_under_root(path_like: str | Path, root: Path) -> bool:
+    try:
+        resolved_path = Path(path_like).resolve()
+    except OSError:
+        return False
+    return resolved_path == root or root in resolved_path.parents
 
 
 def _discover_loaders(module: ModuleType) -> dict[str, LoaderSpec]:
@@ -249,9 +312,25 @@ def _discover_figures(module: ModuleType) -> dict[str, FigureSpec]:
         figures[figure_id] = FigureSpec(
             figure_id=figure_id,
             func=member,
-            dependency_ids=_figure_dependency_ids(member),
+            dependency_ids=_dependency_ids(member, kind="Figure"),
         )
     return figures
+
+
+def _discover_stats(module: ModuleType) -> dict[str, StatSpec]:
+    stats: dict[str, StatSpec] = {}
+    for _, member in inspect.getmembers(module):
+        if not getattr(member, "__pubs_stat__", False):
+            continue
+        stat_id = _strip_prefix(member.__name__, "compute_")
+        if stat_id in stats:
+            raise ValueError(f"Duplicate stat id '{stat_id}'")
+        stats[stat_id] = StatSpec(
+            stat_id=stat_id,
+            func=member,
+            dependency_ids=_dependency_ids(member, kind="Stat"),
+        )
+    return stats
 
 
 def _validate_loader_signature(
@@ -284,10 +363,10 @@ def _validate_loader_signature(
     raise ValueError(f"Unsupported loader style for loader '{loader_id}': {style}")
 
 
-def _figure_dependency_ids(func: object) -> tuple[str, ...]:
+def _dependency_ids(func: object, *, kind: str) -> tuple[str, ...]:
     params = tuple(inspect.signature(func).parameters.values())
     if not params or params[0].name != "ctx":
-        raise ValueError(f"Figure '{func.__name__}' must accept ctx as its first parameter")
+        raise ValueError(f"{kind} '{func.__name__}' must accept ctx as its first parameter")
     return tuple(param.name for param in params[1:])
 
 

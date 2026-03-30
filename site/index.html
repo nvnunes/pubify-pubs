@@ -123,6 +123,10 @@
               <ul class="nav flex-column">
               </ul>
             </li>
+            <li class="nav-item" data-bs-level="2"><a href="#generated-stats" class="nav-link">Generated Stats</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
               </ul>
             </li>
         </ul>
@@ -329,6 +333,7 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 <li><code>pubs &lt;publication-id&gt; check</code></li>
 <li><code>pubs &lt;publication-id&gt; shell</code></li>
 <li><code>pubs &lt;publication-id&gt; export [&lt;figure-id&gt; [&lt;subfig-idx&gt;]]</code></li>
+<li><code>pubs &lt;publication-id&gt; stat [list|update|&lt;stat-id&gt; update]</code></li>
 <li><code>pubs &lt;publication-id&gt; data [list]</code></li>
 <li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
 <li><code>pubs &lt;publication-id&gt; figure [list|&lt;figure-id&gt; preview]</code></li>
@@ -339,6 +344,7 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 <li><code>pubs &lt;publication-id&gt; pull [--force]</code></li>
 <li><code>pubs &lt;publication-id&gt; diff [list|&lt;relative-path&gt;]</code></li>
 </ul>
+<p><code>build --export</code> refreshes generated figures and stats before LaTeX build. <code>build --export-if-stale</code> does that only when <code>figures.py</code> is newer than the generated outputs, <code>tex/autofigures/</code> is missing or empty, or <code>tex/autostats.tex</code> is missing.</p>
 <p>The shell command opens a publication-scoped interactive session with command history and reload behavior for <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers.</p>
 <p>Preview behavior is workspace-configured:</p>
 <ul>
@@ -354,13 +360,28 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 <p>Primary entrypoints:</p>
 <ul>
 <li><code>find_workspace_root(...)</code></li>
-<li><code>figure</code>, <code>data</code>, <code>external_data</code></li>
+<li><code>figure</code>, <code>stat</code>, <code>data</code>, <code>external_data</code></li>
 <li><code>publication_data_path(...)</code></li>
 <li><code>save_publication_data_npz(...)</code></li>
 <li><code>load_publication_data_npz(...)</code></li>
 <li><code>FigureExport</code></li>
-<li><code>FigurePanel</code></li>
-<li><code>panel(...)</code></li>
+<li><code>Stat</code></li>
+</ul>
+<h2 id="generated-stats">Generated Stats</h2>
+<p><code>tex/autostats.tex</code> is the framework-owned generated stats file.</p>
+<ul>
+<li><code>pubs &lt;publication-id&gt; stat update</code> rewrites it as one authoritative snapshot</li>
+<li><code>pubs &lt;publication-id&gt; stat &lt;stat-id&gt; update</code> prints one stat block to the console while still rewriting the full snapshot</li>
+<li>TeX should include it explicitly, for example with <code>\input{autostats.tex}</code></li>
+<li>In prose, use <code>{}</code> after a stat macro before following letters, for example <code>\StatFavorableAsterismCount{} targets</code>.</li>
+<li>stat ids stay <code>snake_case</code> in Python, but generated TeX macro names use CamelCase</li>
+<li><code>compute_favorable_asterism_count(...)</code> maps to <code>\StatFavorableAsterismCount</code></li>
+<li>figure files stay <code>snake_case</code>, for example <code>tex/autofigures/ews_asterism_coverage_map_1.pdf</code></li>
+</ul>
+<p>Generated stat macros use the forms:</p>
+<ul>
+<li><code>\Stat&lt;StatId&gt;</code></li>
+<li><code>\Stat&lt;StatId&gt;&lt;Suffix&gt;</code></li>
 </ul>
 <p>See the <a href="api/">API reference</a> for the docstring-driven reference pages.</p></div>
             </div>
@@ -444,5 +465,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build<span class="w"
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-30 03:46:41.382427+00:00
+Build Date UTC : 2026-03-30 13:07:00.189344+00:00
 -->

@@ -18,10 +18,18 @@ import pubify_pubs.mirror as core_mirror
 import pubify_pubs.pinning as core_pinning
 import pubify_pubs.runtime as core_runtime
 from pubify_pubs.data import load_publication_data_npz, publication_data_path, save_publication_data_npz
-from pubify_pubs.decorators import data, external_data, figure
+from pubify_pubs.decorators import data, external_data, figure, stat
 from pubify_pubs.discovery import find_workspace_root, list_publication_ids, load_publication_definition
 from pubify_pubs.mirror import diff_publication, pull_publication, push_publication
-from pubify_pubs.runtime import build_publication, check_publication, init_publication, run_figures
+from pubify_pubs.runtime import (
+    build_publication,
+    check_publication,
+    generated_outputs_are_stale,
+    init_publication,
+    run_figures,
+    run_stats,
+)
+from pubify_pubs.stats import Stat
 from pubify_pubs.config import load_workspace_config
 
 
@@ -147,7 +155,8 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs.decorators import data, figure",
+                "from pubify_pubs import Stat",
+                "from pubify_pubs.decorators import data, figure, stat",
                 "",
                 "CALLS = {'training': 0, 'bundle': 0}",
                 "",
@@ -177,6 +186,13 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "    fig2._pubs_name = f'bundle:{bundle}'",
                 "    ax2.plot([0, 1], [1, 0])",
                 "    return [fig1, fig2]",
+                "",
+                "@stat",
+                "def compute_training_summary(ctx, training, bundle):",
+                "    return (",
+                "        Stat(display=training),",
+                "        Stat(suffix='Bundle', display=bundle, tex=rf'\\texttt{{{bundle}}}'),",
+                "    )",
             ]
         )
         + "\n",
@@ -577,6 +593,14 @@ def test_external_data_decorator_rejects_parent_traversal() -> None:
         external_data("scratch", "../training.npy")
 
 
+def test_stat_decorator_marks_callable() -> None:
+    @stat
+    def compute_sample_count(ctx):
+        return Stat(display="42")
+
+    assert getattr(compute_sample_count, "__pubs_stat__", False) is True
+
+
 def test_parser_supports_documented_surface() -> None:
     parser = build_parser()
 
@@ -599,6 +623,11 @@ def test_parser_supports_documented_surface() -> None:
     data_args = parser.parse_args(["demo", "data", "list"])
     assert data_args.subject == "demo"
     assert data_args.arg2 == "data"
+    stat_args = parser.parse_args(["demo", "stat", "training_summary", "update"])
+    assert stat_args.subject == "demo"
+    assert stat_args.arg2 == "stat"
+    assert stat_args.arg3 == "training_summary"
+    assert stat_args.arg4 == "update"
     assert data_args.arg3 == "list"
     data_alias_args = parser.parse_args(["demo", "data"])
     assert data_alias_args.subject == "demo"
@@ -685,6 +714,50 @@ def test_export_uses_documented_output_names_and_cache(repo: Path) -> None:
     assert paper.module.CALLS["bundle"] == 1
 
 
+def test_check_fails_when_stat_depends_on_unknown_loader(repo: Path) -> None:
+    _write_external_paper(
+        repo,
+        publication_id="badstats",
+        external_root_lines=["  project: output"],
+        figure_lines=[
+            "from pubify_pubs import Stat",
+            "from pubify_pubs.decorators import stat",
+            "",
+            "@stat",
+            "def compute_missing_dep(ctx, missing_loader):",
+            "    return Stat(display='x')",
+        ],
+    )
+
+    publication = load_publication_definition(repo, "badstats")
+
+    with pytest.raises(ValueError, match="Stat 'missing_dep' depends on unknown loader 'missing_loader'"):
+        check_publication(publication)
+
+
+def test_load_publication_definition_rejects_duplicate_stat_ids(repo: Path) -> None:
+    _write_external_paper(
+        repo,
+        publication_id="dupes",
+        external_root_lines=["  project: output"],
+        figure_lines=[
+            "from pubify_pubs import Stat",
+            "from pubify_pubs.decorators import stat",
+            "",
+            "@stat",
+            "def compute_same(ctx):",
+            "    return Stat(display='a')",
+            "",
+            "@stat",
+            "def same(ctx):",
+            "    return Stat(display='b')",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Duplicate stat id 'same'"):
+        load_publication_definition(repo, "dupes")
+
+
 def test_run_figures_exposes_publication_rc_context(
     repo: Path,
     fake_pubify_mpl: FakePubifyBackend,
@@ -722,6 +795,20 @@ def test_run_figures_exposes_publication_rc_context(
     assert observed["text.usetex"] == original_usetex
     assert observed["font.family"] == ["serif"]
     assert observed["font.size"] == 10
+
+
+def test_run_stats_resolves_loader_dependencies(repo: Path) -> None:
+    publication = load_publication_definition(repo, "demo")
+
+    computed = run_stats(publication)
+
+    assert [item.stat_id for item in computed] == ["training_summary"]
+    assert [value.macro_name for value in computed[0].values] == [
+        "StatTrainingSummary",
+        "StatTrainingSummaryBundle",
+    ]
+    assert [value.display for value in computed[0].values] == ["training", "meta|model"]
+    assert [value.tex for value in computed[0].values] == ["training", r"\texttt{meta|model}"]
 
 
 def test_full_export_clears_stale_outputs_before_writing(repo: Path) -> None:
@@ -1113,10 +1200,29 @@ def test_cli_shell_help_and_rejects_top_level_commands(
     assert "Shell commands for demo:" in captured.out
     assert "  prepare" in captured.out
     assert "  figure [list|<figure-id> preview [<subfig-idx>]]" in captured.out
+    assert "  stat [list|update|<stat-id> update]" in captured.out
     assert "  preview" in captured.out
     assert "  reload" in captured.out
     assert "Error: unsupported shell command 'list'" in captured.err
     assert "Error: unsupported shell command 'init'" in captured.err
+
+
+def test_cli_shell_stat_commands(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands = iter(["stat list", "stat training_summary update", "quit"])
+
+    monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
+    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
+
+    assert main(["demo", "shell"]) == 0
+    captured = capsys.readouterr()
+    assert "training_summary" in captured.out
+    assert r"  \StatTrainingSummary = training" in captured.out
+    assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
+    assert "tex/autostats.tex" in captured.out
 
 
 def test_cli_shell_reload_command_reloads_paper(
@@ -1213,6 +1319,109 @@ def test_cli_shell_auto_reloads_when_pub_yaml_changes(
     captured = capsys.readouterr()
     assert captured.out.count("demo: ok") == 2
     assert load_count == 2
+
+
+def test_cli_shell_reload_reloads_publication_local_helpers_after_loader_rename(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publication_root = repo / "papers" / "demo"
+    figures_path = publication_root / "figures.py"
+    helpers_path = publication_root / "helpers.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs.decorators import data",
+                "from helpers import compute_summary, plot_single",
+                "",
+                "@data('training.npy')",
+                "def load_training(ctx, path):",
+                "    return 'training'",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    helpers_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs import Stat",
+                "from pubify_pubs.decorators import figure, stat",
+                "",
+                "@figure",
+                "def plot_single(ctx, training):",
+                "    return None",
+                "",
+                "@stat",
+                "def compute_summary(ctx, training):",
+                "    return Stat(display=training)",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    init_publication(load_publication_definition(repo, "demo"))
+    data_root = repo / "output" / "papers" / "demo"
+    (data_root / "training.npy").write_bytes(b"training")
+    (data_root / "dataset.npy").write_bytes(b"dataset")
+    step = 0
+
+    def fake_input(prompt: str) -> str:
+        nonlocal step
+        step += 1
+        if step == 1:
+            return "check"
+        if step == 2:
+            figures_path.write_text(
+                "\n".join(
+                    [
+                        "from pubify_pubs.decorators import data",
+                        "from helpers import compute_summary, plot_single",
+                        "",
+                        "@data('dataset.npy')",
+                        "def load_dataset(ctx, path):",
+                        "    return 'dataset'",
+                        "",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            helpers_path.write_text(
+                "\n".join(
+                    [
+                        "from pubify_pubs import Stat",
+                        "from pubify_pubs.decorators import figure, stat",
+                        "",
+                        "@figure",
+                        "def plot_single(ctx, dataset):",
+                        "    return None",
+                        "",
+                        "@stat",
+                        "def compute_summary(ctx, dataset):",
+                        "    return Stat(display=dataset)",
+                        "",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+            return "reload"
+        if step == 3:
+            return "check"
+        return "quit"
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
+
+    assert main(["demo", "shell"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.count("demo: ok") == 2
+    assert "demo: reloaded" in captured.out
+    assert "depends on unknown loader" not in captured.err
 
 
 def test_cli_shell_reload_failure_keeps_session_alive(
@@ -1632,19 +1841,25 @@ def test_cli_build_export_runs_full_export_before_build(
             repo / "papers" / "demo" / "tex" / "autofigures" / "second.pdf",
         ]
 
+    def fake_update_stats(paper_definition: object) -> tuple[Path, tuple[object, ...]]:
+        calls.append("stats")
+        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
+
     def fake_build(paper_definition: object) -> object:
         calls.append("build")
         return None
 
     monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
+    monkeypatch.setattr(core_cli, "update_stats", fake_update_stats)
     monkeypatch.setattr(core_cli, "build_publication", fake_build)
 
     assert main(["demo", "build", "--export"]) == 0
     captured = capsys.readouterr()
-    assert calls == ["export", "build"]
+    assert calls == ["export", "stats", "build"]
     assert captured.out.splitlines() == [
         "tex/autofigures/first.pdf",
         "tex/autofigures/second.pdf",
+        "tex/autostats.tex",
         str(repo / "papers" / "demo" / "tex" / "build" / "main.pdf"),
     ]
 
@@ -1656,25 +1871,32 @@ def test_cli_build_export_if_stale_runs_export_when_outputs_missing(
 ) -> None:
     calls: list[str] = []
 
-    def fake_build(paper_definition: object) -> object:
-        calls.append("build")
-        return None
-
     def fake_run_figures(paper_definition: object, *args: object) -> list[Path]:
         calls.append("export")
         return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
 
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    def fake_update_stats(paper_definition: object) -> tuple[Path, tuple[object, ...]]:
+        calls.append("stats")
+        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
+
+    def fake_build(paper_definition: object) -> object:
+        calls.append("build")
+        return None
+
     monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
+    monkeypatch.setattr(core_cli, "update_stats", fake_update_stats)
+    monkeypatch.setattr(core_cli, "build_publication", fake_build)
 
     paper = load_publication_definition(repo, "demo")
     if paper.paths.autofigures_root.exists():
         shutil.rmtree(paper.paths.autofigures_root)
+    paper.paths.autostats_path.unlink(missing_ok=True)
 
     assert main(["demo", "build", "--export-if-stale"]) == 0
-    assert calls == ["export", "build"]
+    assert calls == ["export", "stats", "build"]
     captured = capsys.readouterr()
     assert captured.out.splitlines()[0] == "tex/autofigures/single.pdf"
+    assert captured.out.splitlines()[1] == "tex/autostats.tex"
 
 
 def test_cli_build_export_if_stale_runs_export_when_outputs_empty(
@@ -1684,24 +1906,66 @@ def test_cli_build_export_if_stale_runs_export_when_outputs_empty(
 ) -> None:
     calls: list[str] = []
 
+    def fake_run_figures(paper_definition: object, *args: object) -> list[Path]:
+        calls.append("export")
+        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
+
+    def fake_update_stats(paper_definition: object) -> tuple[Path, tuple[object, ...]]:
+        calls.append("stats")
+        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
+
     def fake_build(paper_definition: object) -> object:
         calls.append("build")
         return None
+
+    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
+    monkeypatch.setattr(core_cli, "update_stats", fake_update_stats)
+    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+
+    paper = load_publication_definition(repo, "demo")
+    paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+    paper.paths.autostats_path.write_text("old stats\n", encoding="utf-8")
+
+    assert main(["demo", "build", "--export-if-stale"]) == 0
+    assert calls == ["export", "stats", "build"]
+    captured = capsys.readouterr()
+    assert captured.out.splitlines()[0] == "tex/autofigures/single.pdf"
+    assert captured.out.splitlines()[1] == "tex/autostats.tex"
+
+
+def test_cli_build_export_if_stale_runs_export_when_autostats_missing(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
 
     def fake_run_figures(paper_definition: object, *args: object) -> list[Path]:
         calls.append("export")
         return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
 
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    def fake_update_stats(paper_definition: object) -> tuple[Path, tuple[object, ...]]:
+        calls.append("stats")
+        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
+
+    def fake_build(paper_definition: object) -> object:
+        calls.append("build")
+        return None
+
     monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
+    monkeypatch.setattr(core_cli, "update_stats", fake_update_stats)
+    monkeypatch.setattr(core_cli, "build_publication", fake_build)
 
     paper = load_publication_definition(repo, "demo")
     paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+    (paper.paths.autofigures_root / "single.pdf").write_text("existing export\n", encoding="utf-8")
+    paper.paths.autostats_path.unlink(missing_ok=True)
 
     assert main(["demo", "build", "--export-if-stale"]) == 0
-    assert calls == ["export", "build"]
+    assert calls == ["export", "stats", "build"]
     captured = capsys.readouterr()
     assert captured.out.splitlines()[0] == "tex/autofigures/single.pdf"
+    assert captured.out.splitlines()[1] == "tex/autostats.tex"
 
 
 def test_cli_build_export_if_stale_runs_export_when_figures_py_is_newer(
@@ -1711,29 +1975,75 @@ def test_cli_build_export_if_stale_runs_export_when_figures_py_is_newer(
 ) -> None:
     calls: list[str] = []
 
-    def fake_build(paper_definition: object) -> object:
-        calls.append("build")
-        return None
-
     def fake_run_figures(paper_definition: object, *args: object) -> list[Path]:
         calls.append("export")
         return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
 
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    def fake_update_stats(paper_definition: object) -> tuple[Path, tuple[object, ...]]:
+        calls.append("stats")
+        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
+
+    def fake_build(paper_definition: object) -> object:
+        calls.append("build")
+        return None
+
     monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
+    monkeypatch.setattr(core_cli, "update_stats", fake_update_stats)
+    monkeypatch.setattr(core_cli, "build_publication", fake_build)
 
     paper = load_publication_definition(repo, "demo")
     paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
     exported = paper.paths.autofigures_root / "single.pdf"
     exported.write_text("old export\n", encoding="utf-8")
+    paper.paths.autostats_path.write_text("stats\n", encoding="utf-8")
     entrypoint_mtime = paper.paths.entrypoint.stat().st_mtime
     old_mtime = max(entrypoint_mtime - 10, 1)
     os.utime(exported, (old_mtime, old_mtime))
+    os.utime(paper.paths.autostats_path, (old_mtime, old_mtime))
     new_entrypoint_mtime = old_mtime + 20
     os.utime(paper.paths.entrypoint, (new_entrypoint_mtime, new_entrypoint_mtime))
 
     assert main(["demo", "build", "--export-if-stale"]) == 0
-    assert calls == ["export", "build"]
+    assert calls == ["export", "stats", "build"]
+    capsys.readouterr()
+
+
+def test_cli_build_export_if_stale_runs_export_when_autostats_is_stale(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    def fake_run_figures(paper_definition: object, *args: object) -> list[Path]:
+        calls.append("export")
+        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
+
+    def fake_update_stats(paper_definition: object) -> tuple[Path, tuple[object, ...]]:
+        calls.append("stats")
+        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
+
+    def fake_build(paper_definition: object) -> object:
+        calls.append("build")
+        return None
+
+    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
+    monkeypatch.setattr(core_cli, "update_stats", fake_update_stats)
+    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+
+    paper = load_publication_definition(repo, "demo")
+    paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+    exported = paper.paths.autofigures_root / "single.pdf"
+    exported.write_text("new export\n", encoding="utf-8")
+    paper.paths.autostats_path.write_text("old stats\n", encoding="utf-8")
+    entrypoint_mtime = paper.paths.entrypoint.stat().st_mtime
+    old_mtime = max(entrypoint_mtime - 10, 1)
+    new_mtime = entrypoint_mtime + 10
+    os.utime(exported, (new_mtime, new_mtime))
+    os.utime(paper.paths.autostats_path, (old_mtime, old_mtime))
+
+    assert main(["demo", "build", "--export-if-stale"]) == 0
+    assert calls == ["export", "stats", "build"]
     capsys.readouterr()
 
 
@@ -1752,16 +2062,23 @@ def test_cli_build_export_if_stale_skips_export_when_outputs_are_newer(
         calls.append("export")
         return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
 
+    def fake_update_stats(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
+        calls.append("stats")
+        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
+
     monkeypatch.setattr(core_cli, "build_publication", fake_build)
     monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
+    monkeypatch.setattr(core_cli, "update_stats", fake_update_stats)
 
     paper = load_publication_definition(repo, "demo")
     paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
     exported = paper.paths.autofigures_root / "single.pdf"
     exported.write_text("new export\n", encoding="utf-8")
+    paper.paths.autostats_path.write_text("new stats\n", encoding="utf-8")
     entrypoint_mtime = paper.paths.entrypoint.stat().st_mtime
     new_mtime = entrypoint_mtime + 10
     os.utime(exported, (new_mtime, new_mtime))
+    os.utime(paper.paths.autostats_path, (new_mtime, new_mtime))
 
     assert main(["demo", "build", "--export-if-stale"]) == 0
     captured = capsys.readouterr()
@@ -1849,6 +2166,57 @@ def test_prepare_refreshes_existing_publication(repo: Path, fake_pubify_mpl: Fak
     assert fake_pubify_mpl.prepare_calls == [(paper.paths.tex_root, paper.config.pubify_mpl.template)]
     assert (paper.paths.tex_root / "pubify.sty").exists()
     assert (paper.paths.tex_root / "pubify-template.tex").exists()
+
+
+def test_cli_stat_list_outputs_discovered_stats(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["demo", "stat", "list"]) == 0
+    assert capsys.readouterr().out.strip() == "training_summary"
+
+
+def test_cli_stats_alias_works_for_list(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["demo", "stats", "list"]) == 0
+    assert capsys.readouterr().out.strip() == "training_summary"
+
+
+def test_cli_stat_update_writes_autostats_and_prints_all_stats(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    publication = load_publication_definition(repo, "demo")
+
+    assert main(["demo", "stat", "update"]) == 0
+
+    captured = capsys.readouterr()
+    assert "training_summary" in captured.out
+    assert r"  \StatTrainingSummary = training" in captured.out
+    assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
+    assert captured.out.strip().endswith("tex/autostats.tex")
+    assert publication.paths.autostats_path.read_text(encoding="utf-8") == "\n".join(
+        [
+            r"\newcommand{\StatTrainingSummary}{training}",
+            r"\newcommand{\StatTrainingSummaryBundle}{\texttt{meta|model}}",
+            "",
+        ]
+    )
+
+
+def test_cli_stat_update_selected_stat_prints_only_selected_block(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["demo", "stat", "training_summary", "update"]) == 0
+
+    captured = capsys.readouterr()
+    assert "training_summary" in captured.out
+    assert r"  \StatTrainingSummary = training" in captured.out
+    assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
+    assert captured.out.strip().endswith("tex/autostats.tex")
 
 
 def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
@@ -2780,18 +3148,23 @@ def test_push_excludes_build_uses_working_tree_and_updates_hash_manifest(repo: P
     (paper.paths.tex_root / "main.tex").write_text("working tree main\n", encoding="utf-8")
     (paper.paths.autofigures_root).mkdir(parents=True, exist_ok=True)
     (paper.paths.autofigures_root / "plot.pdf").write_text("figure data\n", encoding="utf-8")
+    paper.paths.autostats_path.write_text(r"\newcommand{\StatTrainingSummary}{training}" + "\n", encoding="utf-8")
     push_publication(paper)
     mirror_root = paper.config.mirror_root_path
     assert mirror_root is not None
     assert (mirror_root / "main.tex").read_text(encoding="utf-8") == "working tree main\n"
     assert (mirror_root / "sections" / "intro.tex").read_text(encoding="utf-8") == "intro\n"
     assert (mirror_root / "autofigures" / "plot.pdf").read_text(encoding="utf-8") == "figure data\n"
+    assert (mirror_root / "autostats.tex").read_text(encoding="utf-8") == (
+        r"\newcommand{\StatTrainingSummary}{training}" + "\n"
+    )
     assert not (mirror_root / "build" / "ignored.aux").exists()
     assert not (mirror_root / "drafts" / "note.txt").exists()
     sync_text = (mirror_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
     assert f"main.tex: {_hash_text('working tree main\n')}" in sync_text
     assert f"sections/intro.tex: {_hash_text('intro\n')}" in sync_text
     assert "autofigures/plot.pdf" not in sync_text
+    assert "autostats.tex" not in sync_text
     assert (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8") == sync_text
     assert (paper.paths.sync_base_root / "main.tex").read_text(encoding="utf-8") == "working tree main\n"
     assert (paper.paths.sync_base_root / "sections" / "intro.tex").read_text(encoding="utf-8") == "intro\n"
@@ -3488,6 +3861,14 @@ def test_diff_rejects_figure_paths_as_outside_managed_set(repo: Path) -> None:
         diff_publication(paper, "autofigures/foo.pdf")
 
 
+def test_diff_rejects_autostats_as_outside_managed_set(repo: Path) -> None:
+    paper = load_publication_definition(repo, "demo")
+    paper.paths.autostats_path.write_text(r"\newcommand{\StatTrainingSummary}{training}" + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Managed tex path not found: autostats.tex"):
+        diff_publication(paper, "autostats.tex")
+
+
 def test_sync_base_is_excluded_from_managed_sync_and_diff(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
     paper.paths.sync_base_root.mkdir(parents=True, exist_ok=True)
@@ -3721,6 +4102,7 @@ def test_no_arg_invocation_prints_multiline_help_block(
     assert "Commands:" in captured.err
     assert "  pubs list" in captured.err
     assert "  pubs init <publication-id>" in captured.err
+    assert "  pubs <publication-id> stat [list|update|<stat-id> update]" in captured.err
     assert "  pubs <publication-id> prepare" in captured.err
     assert "  pubs <publication-id> shell" in captured.err
     assert "  pubs <publication-id> build [--export|--export-if-stale] [--clear]" in captured.err
