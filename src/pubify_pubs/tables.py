@@ -406,9 +406,12 @@ def _collect_table_usages(
 def _collect_manuscript_files(main_tex_file: Path) -> tuple[Path, ...]:
     seen: set[Path] = set()
     collected: list[Path] = []
+    generated_autotables = autotables_path(main_tex_file.parent).resolve()
 
     def visit(path: Path) -> None:
         resolved = path.resolve()
+        if resolved == generated_autotables:
+            return
         if resolved in seen or not resolved.exists():
             return
         seen.add(resolved)

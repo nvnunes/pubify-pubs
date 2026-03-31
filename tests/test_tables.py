@@ -142,5 +142,33 @@ def test_check_table_references_rejects_unsupported_wrapper_usage(tmp_path: Path
         check_table_references(tex_root, Path("main.tex"), (table,))
 
 
+def test_check_table_references_ignores_generated_autotables_file(tmp_path: Path) -> None:
+    tex_root = tmp_path / "tex"
+    tex_root.mkdir(parents=True)
+    (tex_root / "autotables.tex").write_text(
+        r"\newcommand{\TableSummary}{A & B \\}" + "\n",
+        encoding="utf-8",
+    )
+    main_tex = tex_root / "main.tex"
+    main_tex.write_text(
+        "\n".join(
+            [
+                r"\documentclass{article}",
+                r"\begin{document}",
+                r"\input{autotables.tex}",
+                r"\begin{tabular}{ll}",
+                r"\TableSummary",
+                r"\end{tabular}",
+                r"\end{document}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    table = compute_table("summary", TableResult([["A", "B"]]))
+
+    check_table_references(tex_root, Path("main.tex"), (table,))
+
+
 def test_macro_name_for_table_uses_camel_case() -> None:
     assert macro_name_for_table("training_summary") == "TableTrainingSummary"
