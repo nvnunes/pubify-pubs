@@ -7,6 +7,7 @@ import ast
 import json
 
 from pubify_mpl import DEFAULT_TEMPLATE as PUBIFY_DEFAULT_TEMPLATE
+from pubify_pubs.stubs import render_init_figures_module
 
 
 SYNC_STATE_FILENAME = ".pubs-sync.yaml"
@@ -185,7 +186,7 @@ def write_skeleton_figures_module(path: Path) -> None:
     """Write the default ``figures.py`` scaffold for a new publication."""
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_load_init_asset_text("figures.py"), encoding="utf-8")
+    path.write_text(render_init_figures_module(), encoding="utf-8")
 
 
 def write_skeleton_main_tex(path: Path) -> None:

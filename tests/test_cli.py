@@ -623,11 +623,17 @@ def test_parser_supports_documented_surface() -> None:
     data_args = parser.parse_args(["demo", "data", "list"])
     assert data_args.subject == "demo"
     assert data_args.arg2 == "data"
+    data_add_args = parser.parse_args(["demo", "data", "add", "example_data"])
+    assert data_add_args.arg3 == "add"
+    assert data_add_args.arg4 == "example_data"
     stat_args = parser.parse_args(["demo", "stat", "training_summary", "update"])
     assert stat_args.subject == "demo"
     assert stat_args.arg2 == "stat"
     assert stat_args.arg3 == "training_summary"
     assert stat_args.arg4 == "update"
+    stat_add_args = parser.parse_args(["demo", "stat", "add", "sample_stat"])
+    assert stat_add_args.arg3 == "add"
+    assert stat_add_args.arg4 == "sample_stat"
     update_args = parser.parse_args(["demo", "update"])
     assert update_args.subject == "demo"
     assert update_args.arg2 == "update"
@@ -645,6 +651,9 @@ def test_parser_supports_documented_surface() -> None:
     assert figure_list_args.subject == "demo"
     assert figure_list_args.arg2 == "figure"
     assert figure_list_args.arg3 == "list"
+    figure_add_args = parser.parse_args(["demo", "figure", "add", "sample_plot"])
+    assert figure_add_args.arg3 == "add"
+    assert figure_add_args.arg4 == "sample_plot"
     figure_preview_args = parser.parse_args(["demo", "figure", "compare", "preview", "2"])
     assert figure_preview_args.subject == "demo"
     assert figure_preview_args.arg2 == "figure"
@@ -1209,8 +1218,9 @@ def test_cli_shell_help_and_rejects_top_level_commands(
     captured = capsys.readouterr()
     assert "Shell commands for demo:" in captured.out
     assert "  prepare" in captured.out
-    assert "  figure [list|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]" in captured.out
-    assert "  stat [list|update|<stat-id> update]" in captured.out
+    assert "  data [list|add <data-id>]" in captured.out
+    assert "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]" in captured.out
+    assert "  stat [list|add <stat-id>|update|<stat-id> update]" in captured.out
     assert "  update" in captured.out
     assert "  preview" in captured.out
     assert "Error: unsupported shell command 'list'" in captured.err
@@ -1233,6 +1243,177 @@ def test_cli_shell_stat_commands(
     assert "Stats" in captured.out
     assert r"  \StatTrainingSummary = training" in captured.out
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
+
+
+def test_cli_data_add_inserts_stub_after_last_loader(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["demo", "data", "add", "sample_data"]) == 0
+
+    captured = capsys.readouterr()
+    figures_path = repo / "papers" / "demo" / "figures.py"
+    figures_text = figures_path.read_text(encoding="utf-8")
+
+    assert "Data" in captured.out
+    assert "- sample_data: added" in _strip_ansi(captured.out)
+    assert "def load_sample_data(ctx, file_path):" in figures_text
+    assert '"x": [1, 2, 3],' in figures_text
+    assert '"y": [' in figures_text
+    assert figures_text.index("def load_bundle") < figures_text.index("def load_sample_data")
+    assert figures_text.index("def load_sample_data") < figures_text.index("def plot_single")
+
+
+def test_cli_figure_add_appends_stub_and_adds_missing_imports(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    figures_path = repo / "papers" / "demo" / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs.decorators import data",
+                "",
+                "@data('training.npy')",
+                "def load_training(ctx, path):",
+                "    return path.read_text(encoding='utf-8')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["demo", "figure", "add", "sample_plot"]) == 0
+
+    captured = capsys.readouterr()
+    figures_text = figures_path.read_text(encoding="utf-8")
+    assert "Figures" in captured.out
+    assert "- sample_plot: added" in _strip_ansi(captured.out)
+    assert "import matplotlib.pyplot as plt" in figures_text
+    assert "from pubify_pubs import FigureExport, panel" in figures_text
+    assert "from pubify_pubs.decorators import data, figure" in figures_text
+    assert figures_text.rstrip().endswith(
+        "\n".join(
+            [
+                "@figure",
+                "def plot_sample_plot(ctx, example_data):",
+                "    fig, ax = plt.subplots()",
+                '    ax.scatter(example_data["x"], example_data["y"])',
+                "    return FigureExport(",
+                "        panels=(panel(fig),),",
+                '        layout="one",',
+                "    )",
+            ]
+        )
+    )
+
+
+def test_cli_stat_add_appends_stub_and_adds_missing_imports(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    figures_path = repo / "papers" / "demo" / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs.decorators import data",
+                "",
+                "@data('training.npy')",
+                "def load_training(ctx, path):",
+                "    return path.read_text(encoding='utf-8')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["demo", "stat", "add", "sample_stat"]) == 0
+
+    captured = capsys.readouterr()
+    figures_text = figures_path.read_text(encoding="utf-8")
+    assert "Stats" in captured.out
+    assert "- sample_stat: added" in _strip_ansi(captured.out)
+    assert "from pubify_pubs import Stat" in figures_text
+    assert "from pubify_pubs.decorators import data, stat" in figures_text
+    assert figures_text.rstrip().endswith(
+        "\n".join(
+            [
+                "@stat",
+                "def compute_sample_stat(ctx, example_data):",
+                '    y_values = example_data["y"]',
+                "    return (",
+                '        Stat(suffix="Count", display=str(len(example_data["x"]))),',
+                '        Stat(suffix="Mean", display=str(sum(y_values) / len(y_values))),',
+                "    )",
+            ]
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["demo", "data", "add", "training"], "Loader 'training' already exists"),
+        (["demo", "figure", "add", "single"], "Figure 'single' already exists"),
+        (["demo", "stat", "add", "training_summary"], "Stat 'training_summary' already exists"),
+        (
+            ["demo", "data", "add", "Bad-Id"],
+            "Invalid id 'Bad-Id': ids must be snake_case and start with a letter",
+        ),
+    ],
+)
+def test_cli_add_rejects_duplicate_or_invalid_ids(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    message: str,
+) -> None:
+    assert main(argv) == 1
+    captured = capsys.readouterr()
+    assert message in captured.err
+
+
+def test_cli_add_rejects_function_name_collision(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    figures_path = repo / "papers" / "demo" / "figures.py"
+    figures_path.write_text(
+        figures_path.read_text(encoding="utf-8")
+        + "\n\ndef plot_extra(ctx):\n    return None\n",
+        encoding="utf-8",
+    )
+
+    assert main(["demo", "figure", "add", "extra"]) == 1
+
+    captured = capsys.readouterr()
+    assert f"Function 'plot_extra' already exists in {figures_path}" in captured.err
+
+
+def test_cli_shell_add_commands_mutate_figures_module(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands = iter(
+        [
+            "data add sample_data",
+            "figure add sample_plot",
+            "stat add sample_stat",
+            "quit",
+        ]
+    )
+
+    monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
+    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
+
+    assert main(["demo", "shell"]) == 0
+
+    figures_text = (repo / "papers" / "demo" / "figures.py").read_text(encoding="utf-8")
+    assert "def load_sample_data(ctx, file_path):" in figures_text
+    assert '"x": [1, 2, 3],' in figures_text
+    assert '"y": [' in figures_text
+    assert "def plot_sample_plot(ctx, example_data):" in figures_text
+    assert "def compute_sample_stat(ctx, example_data):" in figures_text
 
 
 def test_cli_shell_update_forces_publication_refresh(
@@ -2642,16 +2823,30 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     figures_py = (fresh_root / "figures.py").read_text(encoding="utf-8")
     assert '"""Figures entrypoint for publication figures."""' in figures_py
     assert "import matplotlib.pyplot as plt" in figures_py
-    assert "import numpy as np" in figures_py
-    assert (
-        "from pubify_pubs.data import load_publication_data_npz, publication_data_path, save_publication_data_npz"
-        in figures_py
-    )
-    assert "from pubify_pubs.decorators import data, figure" in figures_py
+    assert "from pubify_pubs import FigureExport, Stat, panel" in figures_py
+    assert "from pubify_pubs.decorators import data, figure, stat" in figures_py
+    assert "# Data" in figures_py
+    assert "# Figures & Stats" in figures_py
+    assert "def load_example_data(ctx, file_path):" in figures_py
+    assert '"x": [' in figures_py
+    assert '"y": [' in figures_py
+    assert "def plot_example(ctx, example_data):" in figures_py
+    assert 'ax.scatter(example_data["x"], example_data["y"])' in figures_py
+    assert 'layout="one"' in figures_py
+    assert "def compute_example(ctx, example_data):" in figures_py
+    assert 'Stat(suffix="Count", display=str(len(example_data["x"])))' in figures_py
+    assert 'Stat(suffix="Mean", display=str(sum(y_values) / len(y_values)))' in figures_py
+    assert "# pubs:" not in figures_py
     main_tex = fresh_root / "tex" / "main.tex"
     assert main_tex.exists()
     main_tex_text = main_tex.read_text(encoding="utf-8")
     assert r"\usepackage{pubify}" in main_tex_text
+    assert r"\input{autostats.tex}" in main_tex_text
+    assert r"\figfloat" in main_tex_text
+    assert r"\figone{autofigures/example}" in main_tex_text
+    assert r"\StatExampleCount{}" in main_tex_text
+    assert r"\StatExampleMean{}" in main_tex_text
+    assert r"[fig:example]" in main_tex_text
     assert r"\graphicspath{{figures/}}" not in main_tex_text
     assert (fresh_root / "tex" / "autofigures").exists()
     assert (fresh_root / "tex" / "build").exists()
@@ -4495,13 +4690,14 @@ def test_no_arg_invocation_prints_multiline_help_block(
     assert "Commands:" in captured.err
     assert "  pubs list" in captured.err
     assert "  pubs init <publication-id>" in captured.err
-    assert "  pubs <publication-id> stat [list|update|<stat-id> update]" in captured.err
+    assert "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update]" in captured.err
     assert "  pubs <publication-id> prepare" in captured.err
     assert "  pubs <publication-id> shell" in captured.err
     assert "  pubs <publication-id> build [--update|--skipupdate] [--clear]" in captured.err
     assert "  pubs <publication-id> preview" in captured.err
-    assert "  pubs <publication-id> data [list]" in captured.err
+    assert "  pubs <publication-id> data [list|add <data-id>]" in captured.err
     assert "  pubs <publication-id> data <loader-id> pin" in captured.err
+    assert "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]" in captured.err
     assert "  pubs <publication-id> diff [list|<relative-path>]" in captured.err
     assert "positional arguments:" not in captured.err
     assert "subject" not in captured.err

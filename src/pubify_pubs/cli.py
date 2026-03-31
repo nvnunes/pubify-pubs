@@ -41,6 +41,12 @@ from pubify_pubs.runtime import (
     write_computed_stats,
 )
 from pubify_pubs.stats import ComputedStat
+from pubify_pubs.stubs import (
+    add_stub_to_figures_module,
+    generated_stub_function_name,
+    module_function_names,
+    validate_stub_id,
+)
 
 STATUS_WIDTH = 14
 STATUS_COLORS = {
@@ -237,10 +243,10 @@ def build_parser() -> argparse.ArgumentParser:
             "  pubs <publication-id> check\n"
             "  pubs <publication-id> update\n"
             "  pubs <publication-id> shell\n"
-            "  pubs <publication-id> data [list]\n"
+            "  pubs <publication-id> data [list|add <data-id>]\n"
             "  pubs <publication-id> data <loader-id> pin\n"
-            "  pubs <publication-id> figure [list|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]\n"
-            "  pubs <publication-id> stat [list|update|<stat-id> update]\n"
+            "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]\n"
+            "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update]\n"
             "  pubs <publication-id> ignore <relative-path>\n"
             "  pubs <publication-id> build [--update|--skipupdate] [--clear]\n"
             "  pubs <publication-id> preview\n"
@@ -402,6 +408,24 @@ def _parse_force_flag(
     return False
 
 
+def _add_publication_stub(publication: PublicationDefinition, *, kind: str, stub_id: str) -> None:
+    validate_stub_id(stub_id)
+    if kind == "data" and stub_id in publication.loaders:
+        raise ValueError(f"Loader '{stub_id}' already exists")
+    if kind == "figure" and stub_id in publication.figures:
+        raise ValueError(f"Figure '{stub_id}' already exists")
+    if kind == "stat" and stub_id in publication.stats:
+        raise ValueError(f"Stat '{stub_id}' already exists")
+
+    function_name = generated_stub_function_name(kind, stub_id)
+    if function_name in module_function_names(publication.paths.entrypoint):
+        raise ValueError(
+            f"Function '{function_name}' already exists in {publication.paths.entrypoint}"
+        )
+
+    add_stub_to_figures_module(publication.paths.entrypoint, kind=kind, stub_id=stub_id)
+
+
 def _run_publication_command(
     publication: PublicationDefinition,
     command: PublicationCommand,
@@ -495,8 +519,16 @@ def _run_publication_command(
                     )
                 )
             return 0
+        if command.arg3 == "add":
+            if command.arg4 is None:
+                error("data add requires <data-id>")
+            if command.arg5 is not None:
+                error("data add accepts only <data-id>")
+            _add_publication_stub(publication, kind="data", stub_id=command.arg4)
+            _print_added_stub("Data", command.arg4, use_color=use_color)
+            return 0
         if command.arg3 is None or command.arg4 != "pin":
-            error("data supports only 'list' or '<loader-id> pin'")
+            error("data supports only 'list', 'add <data-id>', or '<loader-id> pin'")
         result = pin_loader(publication, command.arg3)
         print(f"{publication.publication_id}: pinned loader {result.loader_id}")
         for path in result.copied_paths:
@@ -525,6 +557,14 @@ def _run_publication_command(
                     )
                 )
             return 0
+        if command.arg3 == "add":
+            if command.arg4 is None:
+                error("figure add requires <figure-id>")
+            if command.arg5 is not None:
+                error("figure add accepts only <figure-id>")
+            _add_publication_stub(publication, kind="figure", stub_id=command.arg4)
+            _print_added_stub("Figures", command.arg4, use_color=use_color)
+            return 0
         if command.arg3 == "update":
             if command.arg4 is not None or command.arg5 is not None:
                 error("figure update does not accept additional arguments")
@@ -552,7 +592,7 @@ def _run_publication_command(
             _run_figure_updates(publication, ctx, figure_ids, use_color=use_color)
             return 0
         if command.arg4 != "preview":
-            error("figure supports only 'list', 'update', '<figure-id> update', or '<figure-id> preview [<subfig-idx>]'")
+            error("figure supports only 'list', 'add <figure-id>', 'update', '<figure-id> update', or '<figure-id> preview [<subfig-idx>]'")
         subfigure_index = None if command.arg5 is None else _parse_subfig_idx_value(command.arg5, error)
         preview_paths = _preview_figure_paths(
             publication,
@@ -579,6 +619,14 @@ def _run_publication_command(
             for row in rows:
                 print(row.stat_id)
             return 0
+        if command.arg3 == "add":
+            if command.arg4 is None:
+                error("stat add requires <stat-id>")
+            if command.arg5 is not None:
+                error("stat add accepts only <stat-id>")
+            _add_publication_stub(publication, kind="stat", stub_id=command.arg4)
+            _print_added_stub("Stats", command.arg4, use_color=use_color)
+            return 0
         if command.arg3 == "update":
             if command.arg4 is not None or command.arg5 is not None:
                 error("stat update does not accept additional arguments")
@@ -592,7 +640,7 @@ def _run_publication_command(
             _run_stat_updates(publication, ctx, tuple(sorted(publication.stats)), use_color=use_color)
             return 0
         if command.arg4 != "update" or command.arg5 is not None:
-            error("stat supports only 'list', 'update', or '<stat-id> update'")
+            error("stat supports only 'list', 'add <stat-id>', 'update', or '<stat-id> update'")
         selected_id = command.arg3
         if selected_id not in publication.stats:
             raise KeyError(f"Unknown stat '{selected_id}'")
@@ -776,16 +824,19 @@ def run_publication_shell(
                     skip_update=parsed.skipupdate,
                     clear_build=parsed.clear_build,
                 )
-                did_reload = _reload_session_publication(
-                    session,
-                    force=(
-                        publication_command.command == "update"
-                        or (
-                            publication_command.command == "build"
-                            and publication_command.update_before_build
-                        )
-                    ),
-                )
+                if _is_add_stub_command(publication_command):
+                    did_reload = False
+                else:
+                    did_reload = _reload_session_publication(
+                        session,
+                        force=(
+                            publication_command.command == "update"
+                            or (
+                                publication_command.command == "build"
+                                and publication_command.update_before_build
+                            )
+                        ),
+                    )
                 pending_data_loader_ids = (
                     tuple(sorted(session.publication.loaders))
                     if publication_command.command in {"update", "build"} and did_reload
@@ -995,10 +1046,10 @@ def _shell_help_text(publication_id: str) -> str:
             f"Shell commands for {publication_id}:",
             "  prepare",
             "  check",
-            "  data [list]",
+            "  data [list|add <data-id>]",
             "  data <loader-id> pin",
-            "  figure [list|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]",
-            "  stat [list|update|<stat-id> update]",
+            "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]",
+            "  stat [list|add <stat-id>|update|<stat-id> update]",
             "  update",
             "  ignore <relative-path>",
             "  build [--update|--skipupdate] [--clear]",
@@ -1015,6 +1066,10 @@ def _shell_help_text(publication_id: str) -> str:
 class _ShellArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         raise ValueError(message)
+
+
+def _is_add_stub_command(command: PublicationCommand) -> bool:
+    return command.command in {"data", "figure", "stat"} and command.arg3 == "add"
 
 
 def _parse_subfig_idx_value(value: str, error: Callable[[str], None]) -> int:
@@ -1086,6 +1141,12 @@ def _print_updated_publication_files(
         except ValueError:
             display = path
         print(_render_execution_status_line(str(display), "updated", use_color=use_color, state="success"))
+    print()
+
+
+def _print_added_stub(section: str, stub_id: str, *, use_color: bool) -> None:
+    print(_render_section_heading(section, use_color=use_color))
+    print(_render_execution_status_line(stub_id, "added", use_color=use_color, state="success"))
     print()
 
 

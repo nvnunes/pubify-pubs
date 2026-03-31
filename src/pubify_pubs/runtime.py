@@ -108,12 +108,19 @@ def init_publication_by_id(workspace_root: Path, publication_id: str, backend: o
     """Create any missing publication scaffolding, then prepare its TeX tree."""
 
     paths = build_publication_paths(workspace_root, publication_id)
+    wrote_figures_module = False
     paths.publication_root.mkdir(parents=True, exist_ok=True)
     paths.data_root.mkdir(parents=True, exist_ok=True)
     if not paths.config_path.exists():
         write_skeleton_publication_config(paths.config_path, publication_id)
     if not paths.entrypoint.exists():
         write_skeleton_figures_module(paths.entrypoint)
+        wrote_figures_module = True
+    if wrote_figures_module:
+        example_data_path = paths.data_root / "path" / "to" / "file"
+        example_data_path.parent.mkdir(parents=True, exist_ok=True)
+        if not example_data_path.exists():
+            example_data_path.write_text("", encoding="utf-8")
     config = load_publication_config(paths.config_path, publication_id)
     main_tex_path = paths.tex_root / config.main_tex_path
     if not main_tex_path.exists():

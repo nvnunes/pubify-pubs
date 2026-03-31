@@ -1,12 +1,11 @@
 \documentclass{article}
-\usepackage{graphicx}
 \usepackage{pubify}
 \begin{document}
+\input{autostats.tex}
 
-\begin{figure}
-  \centering
-  \includegraphics{autofigures/test.pdf}
-  \caption{Example generated figure.}
-\end{figure}
+\figfloat
+    {\figone{autofigures/example}}
+    [Example generated figure with \StatExampleCount{} points and mean y value \StatExampleMean{}.]
+    [fig:example]
 
 \end{document}

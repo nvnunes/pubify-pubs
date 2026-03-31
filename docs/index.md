@@ -83,6 +83,7 @@ Key files:
   - publication entrypoint
   - defines loaders with `@data(...)` or `@external_data(...)`
   - defines exported figure functions with `@figure`
+  - defines manuscript stats with `@stat`
 - `pub.yaml`
   - publication-local workflow settings
   - controls `main_tex`, `mirror_root`, `external_data_roots`, `sync_excludes`, `pubify-mpl-template`, and `pubify-mpl-defaults`
@@ -105,7 +106,7 @@ Then iterate with:
 
 ```bash
 pubs my-paper check
-pubs my-paper export
+pubs my-paper update
 pubs my-paper build
 ```
 
@@ -114,12 +115,18 @@ That creates a minimal publication skeleton and installs package-owned support f
 ## Typical Workflow
 
 1. Keep publication-local TeX sources under `papers/<publication-id>/tex/`.
-2. Define loaders and figure functions in `figures.py`.
+2. Define loaders, figure functions, and stats in `figures.py`.
 3. Run `pubs <publication-id> check` to load and validate the publication definition.
-4. Run `pubs <publication-id> figure update` to regenerate `tex/autofigures/`.
+4. Run `pubs <publication-id> update` to refresh generated figures and stats.
 5. Run `pubs <publication-id> build` to compile the publication.
 6. If a synced mirror is configured, use `diff`, `push`, or `pull` as needed.
 7. When an external loader input should become publication-local and reproducible, pin it with `pubs <publication-id> data <loader-id> pin`.
+
+To scaffold starter entrypoints directly into `figures.py`:
+
+- `pubs <publication-id> data add <data-id>`
+- `pubs <publication-id> figure add <figure-id>`
+- `pubs <publication-id> stat add <stat-id>`
 
 ## Figures And Loaders
 
@@ -211,8 +218,8 @@ They are intentionally small and explicit. Format-owned helpers should generally
 
 `tex/autofigures/` is the framework-owned generated figure directory.
 
-- full `export` treats it as an authoritative snapshot and clears stale generated files first
-- targeted `export` stays incremental
+- full `figure update` treats it as an authoritative snapshot and clears stale generated files first
+- targeted `figure <figure-id> update` stays incremental
 - TeX should reference generated figures explicitly by path such as `autofigures/<name>.pdf`
 
 Manual and static publication assets remain ordinary publication-local TeX files. They do not belong in `tex/autofigures/`.
@@ -250,9 +257,9 @@ Publication commands:
 - `pubs <publication-id> check`
 - `pubs <publication-id> update`
 - `pubs <publication-id> shell`
-- `pubs <publication-id> figure [list|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]`
-- `pubs <publication-id> stat [list|update|<stat-id> update]`
-- `pubs <publication-id> data [list]`
+- `pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]`
+- `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update]`
+- `pubs <publication-id> data [list|add <data-id>]`
 - `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> ignore <relative-path>`
 - `pubs <publication-id> build [--update|--skipupdate] [--clear]`

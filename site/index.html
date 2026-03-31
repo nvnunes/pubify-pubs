@@ -200,6 +200,7 @@
 <li>publication entrypoint</li>
 <li>defines loaders with <code>@data(...)</code> or <code>@external_data(...)</code></li>
 <li>defines exported figure functions with <code>@figure</code></li>
+<li>defines manuscript stats with <code>@stat</code></li>
 <li><code>pub.yaml</code></li>
 <li>publication-local workflow settings</li>
 <li>controls <code>main_tex</code>, <code>mirror_root</code>, <code>external_data_roots</code>, <code>sync_excludes</code>, <code>pubify-mpl-template</code>, and <code>pubify-mpl-defaults</code></li>
@@ -216,20 +217,26 @@
 </code></pre></div>
 <p>Then iterate with:</p>
 <div class="highlight"><pre><span></span><code>pubs<span class="w"> </span>my-paper<span class="w"> </span>check
-pubs<span class="w"> </span>my-paper<span class="w"> </span><span class="nb">export</span>
+pubs<span class="w"> </span>my-paper<span class="w"> </span>update
 pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 </code></pre></div>
 <p>That creates a minimal publication skeleton and installs package-owned support files into the publication-local TeX tree.</p>
 <h2 id="typical-workflow">Typical Workflow</h2>
 <ol>
 <li>Keep publication-local TeX sources under <code>papers/&lt;publication-id&gt;/tex/</code>.</li>
-<li>Define loaders and figure functions in <code>figures.py</code>.</li>
+<li>Define loaders, figure functions, and stats in <code>figures.py</code>.</li>
 <li>Run <code>pubs &lt;publication-id&gt; check</code> to load and validate the publication definition.</li>
-<li>Run <code>pubs &lt;publication-id&gt; figure update</code> to regenerate <code>tex/autofigures/</code>.</li>
+<li>Run <code>pubs &lt;publication-id&gt; update</code> to refresh generated figures and stats.</li>
 <li>Run <code>pubs &lt;publication-id&gt; build</code> to compile the publication.</li>
 <li>If a synced mirror is configured, use <code>diff</code>, <code>push</code>, or <code>pull</code> as needed.</li>
 <li>When an external loader input should become publication-local and reproducible, pin it with <code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code>.</li>
 </ol>
+<p>To scaffold starter entrypoints directly into <code>figures.py</code>:</p>
+<ul>
+<li><code>pubs &lt;publication-id&gt; data add &lt;data-id&gt;</code></li>
+<li><code>pubs &lt;publication-id&gt; figure add &lt;figure-id&gt;</code></li>
+<li><code>pubs &lt;publication-id&gt; stat add &lt;stat-id&gt;</code></li>
+</ul>
 <h2 id="figures-and-loaders">Figures And Loaders</h2>
 <p>Prefer <code>@data(...)</code> for pinned publication-local inputs under the configured workspace <code>data_root</code>. Use <code>@external_data(...)</code> only for explicit external roots declared in <code>pub.yaml</code>.</p>
 <p>Both data decorators require relative paths. They reject absolute paths and path traversal.</p>
@@ -300,8 +307,8 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <h2 id="generated-figures-and-tex-assets">Generated Figures And TeX Assets</h2>
 <p><code>tex/autofigures/</code> is the framework-owned generated figure directory.</p>
 <ul>
-<li>full <code>export</code> treats it as an authoritative snapshot and clears stale generated files first</li>
-<li>targeted <code>export</code> stays incremental</li>
+<li>full <code>figure update</code> treats it as an authoritative snapshot and clears stale generated files first</li>
+<li>targeted <code>figure &lt;figure-id&gt; update</code> stays incremental</li>
 <li>TeX should reference generated figures explicitly by path such as <code>autofigures/&lt;name&gt;.pdf</code></li>
 </ul>
 <p>Manual and static publication assets remain ordinary publication-local TeX files. They do not belong in <code>tex/autofigures/</code>.</p>
@@ -333,9 +340,9 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <li><code>pubs &lt;publication-id&gt; check</code></li>
 <li><code>pubs &lt;publication-id&gt; update</code></li>
 <li><code>pubs &lt;publication-id&gt; shell</code></li>
-<li><code>pubs &lt;publication-id&gt; figure [list|update|&lt;figure-id&gt; update|&lt;figure-id&gt; preview [&lt;subfig-idx&gt;]]</code></li>
-<li><code>pubs &lt;publication-id&gt; stat [list|update|&lt;stat-id&gt; update]</code></li>
-<li><code>pubs &lt;publication-id&gt; data [list]</code></li>
+<li><code>pubs &lt;publication-id&gt; figure [list|add &lt;figure-id&gt;|update|&lt;figure-id&gt; update|&lt;figure-id&gt; preview [&lt;subfig-idx&gt;]]</code></li>
+<li><code>pubs &lt;publication-id&gt; stat [list|add &lt;stat-id&gt;|update|&lt;stat-id&gt; update]</code></li>
+<li><code>pubs &lt;publication-id&gt; data [list|add &lt;data-id&gt;]</code></li>
 <li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
 <li><code>pubs &lt;publication-id&gt; ignore &lt;relative-path&gt;</code></li>
 <li><code>pubs &lt;publication-id&gt; build [--update|--skipupdate] [--clear]</code></li>
@@ -465,5 +472,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-30 22:26:48.069184+00:00
+Build Date UTC : 2026-03-31 02:22:12.591458+00:00
 -->
