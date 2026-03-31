@@ -159,6 +159,22 @@ from pubify_pubs.export import FigureExport, panel
 
 `@figure` marks a callable as a logical publication figure. Exported figure functions typically return `FigureExport` values built from one or more panels.
 
+`FigureExport` accepts a single Matplotlib `Figure` or `Axes`, a list/tuple of them, one `panel(...)`, or a list/tuple of `panel(...)` values. Prefer passing raw figures or axes directly:
+
+```python
+return FigureExport(fig, layout="one")
+return FigureExport([fig1, fig2], layout="two")
+```
+
+Use `panel(...)` only when one panel needs extra pubify export metadata beyond the figure or axes itself, such as `subcaption_lines` or per-panel export overrides:
+
+```python
+return FigureExport(
+    [panel(fig1), panel(fig2, subcaption_lines=2, hide_cbar=True)],
+    layout="two",
+)
+```
+
 `FigureExport` also exposes first-class caption sizing fields for `pubify-mpl`:
 
 - `layout`
@@ -199,10 +215,7 @@ def build_skymap():
             text.set_fontfamily(style.font_family)
             text.set_fontsize(style.tick_labelsize_pt)
 
-    return FigureExport(
-        panels=(panel(fig),),
-        kwargs={"prepare_export": prepare_export},
-    )
+    return FigureExport(fig, kwargs={"prepare_export": prepare_export})
 ```
 
 `prepare_export(fig_export)` still works. The preferred modern form is `prepare_export(fig_export, style)`, where `style` carries the resolved pubify styling values for text, lines, ticks, and spines. Treat it as the final figure-specific adjustment step, not the primary way to opt into publication typography.
@@ -318,7 +331,11 @@ The installed command is `pubs`:
 
 - `stat update` rewrites it as one authoritative snapshot
 - TeX should include it explicitly, for example with `\input{autostats.tex}`
-- generated stat macros are named `\Stat<StatId>` and `\Stat<StatId><Suffix>`
+- stats return either:
+  - one value, which is coerced with `str(...)` and emits `\Stat<StatId>`
+  - or a `dict[str, object]`, whose values are coerced with `str(...)` and emit `\Stat<StatId><Key>`
+- generated stat macros are named `\Stat<StatId>` and `\Stat<StatId><Key>`
+- console display is derived from the TeX-facing value with light cleanup for common TeX markup such as `$...$`, `\,`, and `\mathrm{...}`
 - In prose, use `{}` after a stat macro before following letters, for example `\StatFavorableAsterismCount{} targets`.
 - stat ids stay `snake_case` in Python, but generated TeX macro names use CamelCase
   - `compute_favorable_asterism_count(...)` maps to `\StatFavorableAsterismCount`
@@ -327,7 +344,6 @@ The installed command is `pubs`:
 Example stat authoring in `figures.py`:
 
 ```python
-from pubify_pubs import Stat
 from pubify_pubs.decorators import stat
 
 @stat
@@ -336,11 +352,11 @@ def compute_detection_summary(ctx, detections):
     total = int(detections["total"])
     fraction = found / total
 
-    return (
-        Stat(display=str(found)),
-        Stat(suffix="Total", display=str(total)),
-        Stat(suffix="Fraction", display=f"{fraction:.1%}", tex=f"{fraction:.3f}"),
-    )
+    return {
+        "Count": found,
+        "Total": total,
+        "Fraction": f"{fraction:.3f}",
+    }
 ```
 
 Manual and static paper assets are ordinary publication-local TeX files. They are not part of the generated export surface and do not belong in the framework-owned `autofigures` directory.
@@ -406,6 +422,10 @@ mkdocs build
 ```
 
 Documentation lives under `docs/` and is built with MkDocs.
+
+## Development Approach
+
+The implementation is intentionally pragmatic. Priority was given to producing a useful, validated tool rather than to maximizing internal elegance or generality. Parts of the implementation were developed with AI-assisted workflows. Development effort was focused on documented behavior, intended performance, and validation rather than on highly refined internal structure.
 
 ## License
 
