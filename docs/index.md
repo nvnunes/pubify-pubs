@@ -362,6 +362,7 @@ Publication commands:
 `tables` is an alias for `table` in both the CLI and the publication shell.
 
 The `latex` commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. `tex` is accepted as an alias for `latex`.
+When possible, they also prepend a missing manuscript prelude line from the current `main.tex`: `figure ... latex` adds `\usepackage{pubify}` if needed, `stat ... latex` adds `\input{autostats.tex}` if needed, and `table ... latex` adds `\input{autotables.tex}` if needed.
 
 The shell command opens a publication-scoped interactive session with command history and automatic pickup of changes to `figures.py`, `pub.yaml`, and publication-local helpers. Shell `update` forces a publication refresh and then regenerates figures, stats, and tables. Normal loader data is loaded on shell start and again when the publication is refreshed, then reused across shell commands. `nocache=True` loaders rerun once per command.
 

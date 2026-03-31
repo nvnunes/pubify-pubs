@@ -404,6 +404,7 @@ The installed command is `pubs`:
 `tables` is an alias for `table` in both the CLI and the publication shell.
 
 The `latex` commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier.
+When possible, they also prepend a missing manuscript prelude line from the current `main.tex`: `figure ... latex` adds `\usepackage{pubify}` if needed, `stat ... latex` adds `\input{autostats.tex}` if needed, and `table ... latex` adds `\input{autotables.tex}` if needed.
 
 ## Generated Figures, Stats, Tables, And TeX Assets
 

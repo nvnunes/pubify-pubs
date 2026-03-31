@@ -4,6 +4,7 @@ import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import subprocess
 import shlex
 import sys
@@ -628,7 +629,7 @@ def _run_publication_command(
                 )
             finally:
                 close_figure_export_sources(export)
-            _print_emitted_latex(snippet)
+            _print_emitted_latex(_with_main_tex_prelude(publication, "figure", snippet))
             return 0
         if command.arg4 != "preview":
             error(
@@ -688,7 +689,13 @@ def _run_publication_command(
             if selected_id not in publication.stats:
                 raise KeyError(f"Unknown stat '{selected_id}'")
             ctx = _command_run_context(publication, loader_cache=loader_cache)
-            _print_emitted_latex(render_stat_latex(run_stats(publication, selected_id, ctx=ctx)[0]))
+            _print_emitted_latex(
+                _with_main_tex_prelude(
+                    publication,
+                    "stat",
+                    render_stat_latex(run_stats(publication, selected_id, ctx=ctx)[0]),
+                )
+            )
             return 0
         if command.arg4 != "update" or command.arg5 is not None:
             error("stat supports only 'list', 'add <stat-id>', 'update', '<stat-id> update', or '<stat-id> latex'")
@@ -752,7 +759,13 @@ def _run_publication_command(
             if selected_id not in publication.tables:
                 raise KeyError(f"Unknown table '{selected_id}'")
             ctx = _command_run_context(publication, loader_cache=loader_cache)
-            _print_emitted_latex(render_table_latex(run_tables(publication, selected_id, ctx=ctx)[0]))
+            _print_emitted_latex(
+                _with_main_tex_prelude(
+                    publication,
+                    "table",
+                    render_table_latex(run_tables(publication, selected_id, ctx=ctx)[0]),
+                )
+            )
             return 0
         if command.arg4 == "update":
             if command.arg5 is not None:
@@ -1294,6 +1307,38 @@ def _print_emitted_latex(snippet: str) -> None:
     print()
     print(snippet)
     print()
+
+
+def _with_main_tex_prelude(
+    publication: PublicationDefinition,
+    kind: str,
+    snippet: str,
+) -> str:
+    prelude_lines = _missing_latex_prelude_lines(publication, kind)
+    if not prelude_lines:
+        return snippet
+    return "\n".join([*prelude_lines, snippet])
+
+
+def _missing_latex_prelude_lines(publication: PublicationDefinition, kind: str) -> list[str]:
+    main_tex_text = _read_main_tex_text(publication)
+    missing: list[str] = []
+    if kind == "figure" and not _main_tex_has_pubify_package(main_tex_text):
+        missing.append(r"\usepackage{pubify}")
+    if kind == "stat" and r"\input{autostats.tex}" not in main_tex_text:
+        missing.append(r"\input{autostats.tex}")
+    if kind == "table" and r"\input{autotables.tex}" not in main_tex_text:
+        missing.append(r"\input{autotables.tex}")
+    return missing
+
+
+def _read_main_tex_text(publication: PublicationDefinition) -> str:
+    main_tex_path = publication.paths.tex_root / publication.config.main_tex_path
+    return main_tex_path.read_text(encoding="utf-8")
+
+
+def _main_tex_has_pubify_package(main_tex_text: str) -> bool:
+    return re.search(r"\\usepackage(?:\[[^\]]*\])?\{pubify\}", main_tex_text) is not None
 
 
 def _run_figure_updates(

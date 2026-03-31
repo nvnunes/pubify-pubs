@@ -427,7 +427,8 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 </ul>
 <p><code>update</code> refreshes publication code/config state plus generated figures, stats, and tables. By default, <code>build</code> refreshes generated figures, stats, and tables before LaTeX build only when <code>figures.py</code> is newer than the generated outputs, <code>tex/autofigures/</code> is missing or empty, <code>tex/autostats.tex</code> is missing, or <code>tex/autotables.tex</code> is missing. <code>build --update</code> forces that refresh, and <code>build --skipupdate</code> skips it. In <code>pubs &lt;publication-id&gt; shell</code>, the first <code>build</code> after shell start or after <code>update</code> also forces one refresh unless <code>--skipupdate</code> is used.</p>
 <p><code>tables</code> is an alias for <code>table</code> in both the CLI and the publication shell.</p>
-<p>The <code>latex</code> commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. <code>tex</code> is accepted as an alias for <code>latex</code>.</p>
+<p>The <code>latex</code> commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. <code>tex</code> is accepted as an alias for <code>latex</code>.
+When possible, they also prepend a missing manuscript prelude line from the current <code>main.tex</code>: <code>figure ... latex</code> adds <code>\usepackage{pubify}</code> if needed, <code>stat ... latex</code> adds <code>\input{autostats.tex}</code> if needed, and <code>table ... latex</code> adds <code>\input{autotables.tex}</code> if needed.</p>
 <p>The shell command opens a publication-scoped interactive session with command history and automatic pickup of changes to <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers. Shell <code>update</code> forces a publication refresh and then regenerates figures, stats, and tables. Normal loader data is loaded on shell start and again when the publication is refreshed, then reused across shell commands. <code>nocache=True</code> loaders rerun once per command.</p>
 <p>Preview behavior is workspace-configured:</p>
 <ul>
@@ -551,5 +552,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-31 12:26:55.786281+00:00
+Build Date UTC : 2026-03-31 15:16:19.908826+00:00
 -->

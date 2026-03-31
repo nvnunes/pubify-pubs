@@ -1072,7 +1072,7 @@ def test_cli_figure_latex_emits_padded_figfloat_block(
 
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out.startswith("\n\\figfloat\n")
+    assert captured.out.startswith("\n\\usepackage{pubify}\n\\figfloat\n")
     assert captured.out.endswith("\n\n")
     assert r"\figone" in captured.out
     assert r"{autofigures/single}" in captured.out
@@ -1088,7 +1088,7 @@ def test_cli_figure_latex_subcaption_emits_wrapped_panels(
 
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out.startswith("\n\\figfloat\n")
+    assert captured.out.startswith("\n\\usepackage{pubify}\n\\figfloat\n")
     assert r"\figtwowide" in captured.out
     assert r"\fig{autofigures/compare_1}[Example subcaption][fig:compare:a]" in captured.out
     assert r"\fig{autofigures/compare_2}[Example subcaption][fig:compare:b]" in captured.out
@@ -1103,6 +1103,30 @@ def test_cli_figure_latex_subcaption_rejects_single_panel(
 
     captured = capsys.readouterr()
     assert "latex subcaption mode is only supported for multi-panel figures" in captured.err
+
+
+def test_cli_figure_latex_skips_existing_pubify_package_with_options(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (repo / "papers" / "demo" / "tex" / "main.tex").write_text(
+        "\n".join(
+            [
+                r"\documentclass{article}",
+                r"\usepackage[demo]{pubify}",
+                r"\begin{document}",
+                r"Demo",
+                r"\end{document}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["demo", "figure", "single", "latex"]) == 0
+
+    captured = capsys.readouterr()
+    assert not captured.out.startswith("\n\\usepackage{pubify}")
 
 
 def test_cli_preview_uses_vscode_backend_when_configured(
@@ -3089,10 +3113,34 @@ def test_cli_stat_latex_emits_macro_lines_with_padding(
 
     captured = capsys.readouterr()
     assert captured.err == ""
-    assert captured.out.startswith("\n")
+    assert captured.out.startswith("\n\\input{autostats.tex}\n")
     assert captured.out.endswith("\n\n")
     assert r"\StatTrainingSummaryValue{}" in captured.out
     assert r"\StatTrainingSummaryBundle{}" in captured.out
+
+
+def test_cli_stat_latex_skips_existing_autostats_input(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    (repo / "papers" / "demo" / "tex" / "main.tex").write_text(
+        "\n".join(
+            [
+                r"\documentclass{article}",
+                r"\input{autostats.tex}",
+                r"\begin{document}",
+                r"Demo",
+                r"\end{document}",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["demo", "stat", "training_summary", "latex"]) == 0
+
+    captured = capsys.readouterr()
+    assert not captured.out.startswith("\n\\input{autostats.tex}")
 
 
 def test_cli_table_update_writes_autotables_and_prints_table_block(
@@ -3164,6 +3212,7 @@ def test_cli_table_latex_emits_single_body_scaffold(
     assert r"Column 1 & Column 2 \\" in captured.out
     assert r"\TableSummary" in captured.out
     assert r"\label{tab:summary}" in captured.out
+    assert r"\input{autotables.tex}" not in captured.out
 
 
 def test_cli_table_latex_emits_grouped_multi_body_scaffold(
@@ -3198,6 +3247,35 @@ def test_cli_table_latex_emits_grouped_multi_body_scaffold(
     assert r"\TableSummary{1}" in captured.out
     assert r"\multicolumn{2}{l}{Body 2} \\" in captured.out
     assert r"\TableSummary{2}" in captured.out
+
+
+def test_cli_table_latex_emits_missing_autotables_input_when_needed(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write_table_paper(
+        repo,
+        publication_id="tablelatexinput",
+        figures_lines=[
+            "from pubify_pubs import TableResult",
+            "from pubify_pubs.decorators import table",
+            "",
+            "@table",
+            "def tabulate_summary(ctx):",
+            "    return TableResult([['Metric', 'Value']], formats=['{}', '{}'])",
+        ],
+        main_tex_lines=[
+            r"\documentclass{article}",
+            r"\begin{document}",
+            r"\end{document}",
+        ],
+    )
+
+    assert main(["tablelatexinput", "table", "summary", "latex"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out.startswith("\n\\input{autotables.tex}\n\\begin{table}[t]\n")
 
 
 def test_cli_table_check_validates_selected_and_all_tables(repo: Path) -> None:
