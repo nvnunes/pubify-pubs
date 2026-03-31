@@ -412,9 +412,9 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <li><code>pubs &lt;publication-id&gt; check</code></li>
 <li><code>pubs &lt;publication-id&gt; update</code></li>
 <li><code>pubs &lt;publication-id&gt; shell</code></li>
-<li><code>pubs &lt;publication-id&gt; figure [list|add &lt;figure-id&gt;|update|&lt;figure-id&gt; update|&lt;figure-id&gt; preview [&lt;subfig-idx&gt;]]</code></li>
-<li><code>pubs &lt;publication-id&gt; stat [list|add &lt;stat-id&gt;|update|&lt;stat-id&gt; update]</code></li>
-<li><code>pubs &lt;publication-id&gt; table [list|add &lt;table-id&gt;|update|check|&lt;table-id&gt; update|&lt;table-id&gt; check]</code></li>
+<li><code>pubs &lt;publication-id&gt; figure [list|add &lt;figure-id&gt;|update|&lt;figure-id&gt; update|&lt;figure-id&gt; preview [&lt;subfig-idx&gt;]|&lt;figure-id&gt; latex [subcaption]]</code></li>
+<li><code>pubs &lt;publication-id&gt; stat [list|add &lt;stat-id&gt;|update|&lt;stat-id&gt; update|&lt;stat-id&gt; latex]</code></li>
+<li><code>pubs &lt;publication-id&gt; table [list|add &lt;table-id&gt;|update|check|&lt;table-id&gt; update|&lt;table-id&gt; check|&lt;table-id&gt; latex]</code></li>
 <li><code>pubs &lt;publication-id&gt; tables ...</code></li>
 <li><code>pubs &lt;publication-id&gt; data [list|add &lt;data-id&gt;]</code></li>
 <li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
@@ -427,6 +427,7 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 </ul>
 <p><code>update</code> refreshes publication code/config state plus generated figures, stats, and tables. By default, <code>build</code> refreshes generated figures, stats, and tables before LaTeX build only when <code>figures.py</code> is newer than the generated outputs, <code>tex/autofigures/</code> is missing or empty, <code>tex/autostats.tex</code> is missing, or <code>tex/autotables.tex</code> is missing. <code>build --update</code> forces that refresh, and <code>build --skipupdate</code> skips it. In <code>pubs &lt;publication-id&gt; shell</code>, the first <code>build</code> after shell start or after <code>update</code> also forces one refresh unless <code>--skipupdate</code> is used.</p>
 <p><code>tables</code> is an alias for <code>table</code> in both the CLI and the publication shell.</p>
+<p>The <code>latex</code> commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. <code>tex</code> is accepted as an alias for <code>latex</code>.</p>
 <p>The shell command opens a publication-scoped interactive session with command history and automatic pickup of changes to <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers. Shell <code>update</code> forces a publication refresh and then regenerates figures, stats, and tables. Normal loader data is loaded on shell start and again when the publication is refreshed, then reused across shell commands. <code>nocache=True</code> loaders rerun once per command.</p>
 <p>Preview behavior is workspace-configured:</p>
 <ul>
@@ -550,5 +551,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-03-31 11:48:06.592724+00:00
+Build Date UTC : 2026-03-31 12:26:55.786281+00:00
 -->

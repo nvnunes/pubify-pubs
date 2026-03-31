@@ -305,9 +305,9 @@ The installed command is `pubs`:
 - `pubs <publication-id> check`
 - `pubs <publication-id> update`
 - `pubs <publication-id> shell`
-- `pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]`
-- `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update]`
-- `pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check]`
+- `pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]`
+- `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]`
+- `pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]`
 - `pubs <publication-id> tables ...`
 - `pubs <publication-id> data [list|add <data-id>]`
 - `pubs <publication-id> data <loader-id> pin`
@@ -344,6 +344,10 @@ The installed command is `pubs`:
 - `figure <figure-id> update`
   - regenerates one figure into `tex/autofigures/`
   - does not clear unrelated generated figure outputs
+- `figure <figure-id> latex`
+  - prints a paste-ready `\figfloat` scaffold with caption and `fig:<figure-id>` label
+  - `subcaption` adds per-panel `\fig{...}[...][...]` entries for multi-panel figures only
+  - `tex` is accepted as an alias for `latex`
 - `stat list`
   - lists discovered stats from `figures.py`
 - `stat add <stat-id>`
@@ -353,6 +357,9 @@ The installed command is `pubs`:
 - `stat <stat-id> update`
   - prints one selected stat block to the console
   - still rewrites the full `tex/autostats.tex` snapshot
+- `stat <stat-id> latex`
+  - prints the generated `\Stat...{}` macro names for copy/paste into LaTeX
+  - `tex` is accepted as an alias for `latex`
 - `table list`
   - lists discovered tables from `figures.py`
 - `table add <table-id>`
@@ -365,6 +372,10 @@ The installed command is `pubs`:
   - updates one selected table while still rewriting the full `tex/autotables.tex` snapshot
 - `table <table-id> check`
   - validates one selected table against direct manuscript uses
+- `table <table-id> latex`
+  - prints a paste-ready `table`/`tabular` scaffold with generic `Column N` headers
+  - multi-body tables are grouped with full-width `\multicolumn` separator rows
+  - `tex` is accepted as an alias for `latex`
 - `figure <figure-id> preview`
   - opens the exported PDF for one figure from `tex/autofigures/`
   - uses the `preview.figure` backend from `pubify.conf`
@@ -391,6 +402,8 @@ The installed command is `pubs`:
   - operate on the canonical publication-local TeX tree and mirror state using conservative sync rules
 
 `tables` is an alias for `table` in both the CLI and the publication shell.
+
+The `latex` commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier.
 
 ## Generated Figures, Stats, Tables, And TeX Assets
 

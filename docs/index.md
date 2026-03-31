@@ -344,9 +344,9 @@ Publication commands:
 - `pubs <publication-id> check`
 - `pubs <publication-id> update`
 - `pubs <publication-id> shell`
-- `pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]`
-- `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update]`
-- `pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check]`
+- `pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]`
+- `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]`
+- `pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]`
 - `pubs <publication-id> tables ...`
 - `pubs <publication-id> data [list|add <data-id>]`
 - `pubs <publication-id> data <loader-id> pin`
@@ -360,6 +360,8 @@ Publication commands:
 `update` refreshes publication code/config state plus generated figures, stats, and tables. By default, `build` refreshes generated figures, stats, and tables before LaTeX build only when `figures.py` is newer than the generated outputs, `tex/autofigures/` is missing or empty, `tex/autostats.tex` is missing, or `tex/autotables.tex` is missing. `build --update` forces that refresh, and `build --skipupdate` skips it. In `pubs <publication-id> shell`, the first `build` after shell start or after `update` also forces one refresh unless `--skipupdate` is used.
 
 `tables` is an alias for `table` in both the CLI and the publication shell.
+
+The `latex` commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. `tex` is accepted as an alias for `latex`.
 
 The shell command opens a publication-scoped interactive session with command history and automatic pickup of changes to `figures.py`, `pub.yaml`, and publication-local helpers. Shell `update` forces a publication refresh and then regenerates figures, stats, and tables. Normal loader data is loaded on shell start and again when the publication is refreshed, then reused across shell commands. `nocache=True` loaders rerun once per command.
 

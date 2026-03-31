@@ -688,6 +688,16 @@ def test_parser_supports_documented_surface() -> None:
     assert figure_preview_args.arg3 == "compare"
     assert figure_preview_args.arg4 == "preview"
     assert figure_preview_args.arg5 == "2"
+    figure_latex_args = parser.parse_args(["demo", "figure", "compare", "latex", "subcaption"])
+    assert figure_latex_args.arg3 == "compare"
+    assert figure_latex_args.arg4 == "latex"
+    assert figure_latex_args.arg5 == "subcaption"
+    stat_latex_args = parser.parse_args(["demo", "stat", "training_summary", "tex"])
+    assert stat_latex_args.arg3 == "training_summary"
+    assert stat_latex_args.arg4 == "tex"
+    table_latex_args = parser.parse_args(["demo", "table", "summary", "latex"])
+    assert table_latex_args.arg3 == "summary"
+    assert table_latex_args.arg4 == "latex"
     pin_args = parser.parse_args(["demo", "data", "training", "pin"])
     assert pin_args.subject == "demo"
     assert pin_args.arg2 == "data"
@@ -1054,6 +1064,47 @@ def test_cli_figure_preview_requires_exported_pdf(
     assert "Exported figure PDF does not exist for 'single'." in captured.err
 
 
+def test_cli_figure_latex_emits_padded_figfloat_block(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["demo", "figure", "single", "latex"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out.startswith("\n\\figfloat\n")
+    assert captured.out.endswith("\n\n")
+    assert r"\figone" in captured.out
+    assert r"{autofigures/single}" in captured.out
+    assert "[Example caption.]" in captured.out
+    assert "[fig:single]" in captured.out
+
+
+def test_cli_figure_latex_subcaption_emits_wrapped_panels(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["demo", "figure", "compare", "tex", "subcaption"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out.startswith("\n\\figfloat\n")
+    assert r"\figtwowide" in captured.out
+    assert r"\fig{autofigures/compare_1}[Example subcaption][fig:compare:a]" in captured.out
+    assert r"\fig{autofigures/compare_2}[Example subcaption][fig:compare:b]" in captured.out
+    assert "[fig:compare]" in captured.out
+
+
+def test_cli_figure_latex_subcaption_rejects_single_panel(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["demo", "figure", "single", "latex", "subcaption"]) == 1
+
+    captured = capsys.readouterr()
+    assert "latex subcaption mode is only supported for multi-panel figures" in captured.err
+
+
 def test_cli_preview_uses_vscode_backend_when_configured(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1245,8 +1296,9 @@ def test_cli_shell_help_and_rejects_top_level_commands(
     assert "Shell commands for demo:" in captured.out
     assert "  prepare" in captured.out
     assert "  data [list|add <data-id>]" in captured.out
-    assert "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]" in captured.out
-    assert "  stat [list|add <stat-id>|update|<stat-id> update]" in captured.out
+    assert "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]" in captured.out
+    assert "  stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]" in captured.out
+    assert "  table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]" in captured.out
     assert "  update" in captured.out
     assert "  preview" in captured.out
     assert "Error: unsupported shell command 'list'" in captured.err
@@ -1269,6 +1321,22 @@ def test_cli_shell_stat_commands(
     assert "Stats" in captured.out
     assert r"  \StatTrainingSummaryValue = training" in captured.out
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
+
+
+def test_cli_shell_figure_latex_command_emits_padded_snippet(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    commands = iter(["figure compare latex subcaption", "quit"])
+
+    monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
+    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
+
+    assert main(["demo", "shell"]) == 0
+    captured = capsys.readouterr()
+    assert "\n\\figfloat\n" in captured.out
+    assert r"\fig{autofigures/compare_1}[Example subcaption][fig:compare:a]" in captured.out
 
 
 def test_cli_data_add_inserts_stub_after_last_loader(
@@ -3013,6 +3081,20 @@ def test_cli_stat_update_selected_stat_prints_only_selected_block(
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
 
 
+def test_cli_stat_latex_emits_macro_lines_with_padding(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["demo", "stat", "training_summary", "latex"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out.startswith("\n")
+    assert captured.out.endswith("\n\n")
+    assert r"\StatTrainingSummaryValue{}" in captured.out
+    assert r"\StatTrainingSummaryBundle{}" in captured.out
+
+
 def test_cli_table_update_writes_autotables_and_prints_table_block(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -3046,6 +3128,76 @@ def test_cli_table_update_writes_autotables_and_prints_table_block(
     assert "Tables" in captured.out
     assert "- summary: updated" in _strip_ansi(captured.out)
     assert (repo / "papers" / "tablesdemo" / "tex" / "autotables.tex").read_text(encoding="utf-8")
+
+
+def test_cli_table_latex_emits_single_body_scaffold(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write_table_paper(
+        repo,
+        publication_id="tablelatex",
+        figures_lines=[
+            "from pubify_pubs import TableResult",
+            "from pubify_pubs.decorators import table",
+            "",
+            "@table",
+            "def tabulate_summary(ctx):",
+            "    return TableResult([['Metric', 'Value'], ['Count', 3]], formats=['{}', '{}'])",
+        ],
+        main_tex_lines=[
+            r"\documentclass{article}",
+            r"\usepackage{pubify}",
+            r"\begin{document}",
+            r"\input{autotables.tex}",
+            r"\end{document}",
+        ],
+    )
+
+    assert main(["tablelatex", "table", "summary", "latex"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert captured.out.startswith("\n\\begin{table}[t]\n")
+    assert captured.out.endswith("\n\n")
+    assert r"\begin{tabular}{ll}" in captured.out
+    assert r"Column 1 & Column 2 \\" in captured.out
+    assert r"\TableSummary" in captured.out
+    assert r"\label{tab:summary}" in captured.out
+
+
+def test_cli_table_latex_emits_grouped_multi_body_scaffold(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write_table_paper(
+        repo,
+        publication_id="tablelatexmulti",
+        figures_lines=[
+            "from pubify_pubs import TableResult",
+            "from pubify_pubs.decorators import table",
+            "",
+            "@table",
+            "def tabulate_summary(ctx):",
+            "    return TableResult([[['A', 'B']], [['C', 'D']]], formats=['{}', '{}'])",
+        ],
+        main_tex_lines=[
+            r"\documentclass{article}",
+            r"\usepackage{pubify}",
+            r"\begin{document}",
+            r"\input{autotables.tex}",
+            r"\end{document}",
+        ],
+    )
+
+    assert main(["tablelatexmulti", "table", "summary", "tex"]) == 0
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert r"\multicolumn{2}{l}{Body 1} \\" in captured.out
+    assert r"\TableSummary{1}" in captured.out
+    assert r"\multicolumn{2}{l}{Body 2} \\" in captured.out
+    assert r"\TableSummary{2}" in captured.out
 
 
 def test_cli_table_check_validates_selected_and_all_tables(repo: Path) -> None:
@@ -5023,14 +5175,16 @@ def test_no_arg_invocation_prints_multiline_help_block(
     assert "Commands:" in captured.err
     assert "  pubs list" in captured.err
     assert "  pubs init <publication-id>" in captured.err
-    assert "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update]" in captured.err
+    assert "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]" in captured.err
     assert "  pubs <publication-id> prepare" in captured.err
     assert "  pubs <publication-id> shell" in captured.err
     assert "  pubs <publication-id> build [--update|--skipupdate] [--clear]" in captured.err
     assert "  pubs <publication-id> preview" in captured.err
     assert "  pubs <publication-id> data [list|add <data-id>]" in captured.err
     assert "  pubs <publication-id> data <loader-id> pin" in captured.err
-    assert "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]" in captured.err
+    assert "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]" in captured.err
+    assert "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]" in captured.err
+    assert "  pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]" in captured.err
     assert "  pubs <publication-id> diff [list|<relative-path>]" in captured.err
     assert "positional arguments:" not in captured.err
     assert "subject" not in captured.err

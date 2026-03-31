@@ -177,6 +177,31 @@ def run_figures(
     return outputs
 
 
+def inspect_figure(
+    publication: PublicationDefinition,
+    figure_id: str,
+    ctx: RunContext | None = None,
+) -> FigureExport:
+    """Resolve one figure to its normalized ``FigureExport`` without exporting files."""
+
+    errors = validate_publication_definition(publication, require_tex_support=False)
+    if errors:
+        joined = "\n".join(f"- {message}" for message in errors)
+        raise ValueError(
+            f"Publication '{publication.publication_id}' failed validation:\n{joined}"
+        )
+    if figure_id not in publication.figures:
+        raise KeyError(f"Unknown figure '{figure_id}'")
+    run_ctx = ctx or build_run_context(publication)
+    figure = publication.figures[figure_id]
+    resolved_args = [_resolve_loader(run_ctx, dep_id) for dep_id in figure.dependency_ids]
+    result = normalize_figure_result(
+        _capture_dynamic_output(run_ctx, "figure", figure.func, run_ctx, *resolved_args),
+        publication.config,
+    )
+    return result
+
+
 def run_stats(
     publication: PublicationDefinition,
     stat_id: str | None = None,

@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 
+from pubify_pubs.export import close_figure_export_sources
 from pubify_pubs.config import add_sync_exclude, load_workspace_config
 from pubify_pubs.discovery import (
     PublicationDefinition,
@@ -18,6 +19,12 @@ from pubify_pubs.discovery import (
     find_workspace_root,
     list_publication_ids,
     load_publication_definition,
+)
+from pubify_pubs.latex_bootstrap import (
+    build_figure_latex_spec,
+    render_figure_latex,
+    render_stat_latex,
+    render_table_latex,
 )
 from pubify_pubs.mirror import diff_publication, merge_conflicting_file, pull_publication, push_publication
 from pubify_pubs.pinning import pin_loader
@@ -34,6 +41,7 @@ from pubify_pubs.runtime import (
     generated_outputs_are_stale,
     init_publication,
     init_publication_by_id,
+    inspect_figure,
     preload_loaders,
     resolve_loader,
     run_figures,
@@ -253,9 +261,9 @@ def build_parser() -> argparse.ArgumentParser:
             "  pubs <publication-id> shell\n"
             "  pubs <publication-id> data [list|add <data-id>]\n"
             "  pubs <publication-id> data <loader-id> pin\n"
-            "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]\n"
-            "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update]\n"
-            "  pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check]\n"
+            "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]\n"
+            "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]\n"
+            "  pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]\n"
             "  pubs <publication-id> ignore <relative-path>\n"
             "  pubs <publication-id> build [--update|--skipupdate] [--clear]\n"
             "  pubs <publication-id> preview\n"
@@ -605,8 +613,28 @@ def _run_publication_command(
             _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
             _run_figure_updates(publication, ctx, figure_ids, use_color=use_color)
             return 0
+        if _is_latex_alias(command.arg4):
+            selected_id = command.arg3
+            if selected_id not in publication.figures:
+                raise KeyError(f"Unknown figure '{selected_id}'")
+            if command.arg5 not in {None, "subcaption"}:
+                error("figure <figure-id> latex accepts only optional 'subcaption'")
+            ctx = _command_run_context(publication, loader_cache=loader_cache)
+            export = inspect_figure(publication, selected_id, ctx=ctx)
+            try:
+                snippet = render_figure_latex(
+                    build_figure_latex_spec(selected_id, export),
+                    subcaption=command.arg5 == "subcaption",
+                )
+            finally:
+                close_figure_export_sources(export)
+            _print_emitted_latex(snippet)
+            return 0
         if command.arg4 != "preview":
-            error("figure supports only 'list', 'add <figure-id>', 'update', '<figure-id> update', or '<figure-id> preview [<subfig-idx>]'")
+            error(
+                "figure supports only 'list', 'add <figure-id>', 'update', '<figure-id> update', "
+                "'<figure-id> preview [<subfig-idx>]', or '<figure-id> latex [subcaption]'"
+            )
         subfigure_index = None if command.arg5 is None else _parse_subfig_idx_value(command.arg5, error)
         preview_paths = _preview_figure_paths(
             publication,
@@ -653,8 +681,17 @@ def _run_publication_command(
             _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
             _run_stat_updates(publication, ctx, tuple(sorted(publication.stats)), use_color=use_color)
             return 0
+        if _is_latex_alias(command.arg4):
+            if command.arg5 is not None:
+                error("stat <stat-id> latex does not accept additional arguments")
+            selected_id = command.arg3
+            if selected_id not in publication.stats:
+                raise KeyError(f"Unknown stat '{selected_id}'")
+            ctx = _command_run_context(publication, loader_cache=loader_cache)
+            _print_emitted_latex(render_stat_latex(run_stats(publication, selected_id, ctx=ctx)[0]))
+            return 0
         if command.arg4 != "update" or command.arg5 is not None:
-            error("stat supports only 'list', 'add <stat-id>', 'update', or '<stat-id> update'")
+            error("stat supports only 'list', 'add <stat-id>', 'update', '<stat-id> update', or '<stat-id> latex'")
         selected_id = command.arg3
         if selected_id not in publication.stats:
             raise KeyError(f"Unknown stat '{selected_id}'")
@@ -708,6 +745,15 @@ def _run_publication_command(
             check_tables(publication)
             print(f"{publication.publication_id}: ok")
             return 0
+        if _is_latex_alias(command.arg4):
+            if command.arg5 is not None:
+                error("table <table-id> latex does not accept additional arguments")
+            selected_id = command.arg3
+            if selected_id not in publication.tables:
+                raise KeyError(f"Unknown table '{selected_id}'")
+            ctx = _command_run_context(publication, loader_cache=loader_cache)
+            _print_emitted_latex(render_table_latex(run_tables(publication, selected_id, ctx=ctx)[0]))
+            return 0
         if command.arg4 == "update":
             if command.arg5 is not None:
                 error("table <table-id> update does not accept additional arguments")
@@ -730,7 +776,10 @@ def _run_publication_command(
             check_tables(publication, selected_id)
             print(f"{selected_id}: ok")
             return 0
-        error("table supports only 'list', 'add <table-id>', 'update', 'check', '<table-id> update', or '<table-id> check'")
+        error(
+            "table supports only 'list', 'add <table-id>', 'update', 'check', '<table-id> update', "
+            "'<table-id> check', or '<table-id> latex'"
+        )
 
     if command.command == "build":
         if command.force:
@@ -1128,9 +1177,9 @@ def _shell_help_text(publication_id: str) -> str:
             "  check",
             "  data [list|add <data-id>]",
             "  data <loader-id> pin",
-            "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]",
-            "  stat [list|add <stat-id>|update|<stat-id> update]",
-            "  table [list|add <table-id>|update|check|<table-id> update|<table-id> check]",
+            "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]",
+            "  stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]",
+            "  table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]",
             "  update",
             "  ignore <relative-path>",
             "  build [--update|--skipupdate] [--clear]",
@@ -1151,6 +1200,10 @@ class _ShellArgumentParser(argparse.ArgumentParser):
 
 def _is_add_stub_command(command: PublicationCommand) -> bool:
     return command.command in {"data", "figure", "stat", "table"} and command.arg3 == "add"
+
+
+def _is_latex_alias(value: str | None) -> bool:
+    return value in {"latex", "tex"}
 
 
 def _parse_subfig_idx_value(value: str, error: Callable[[str], None]) -> int:
@@ -1234,6 +1287,12 @@ def _print_updated_publication_files(
 def _print_added_stub(section: str, stub_id: str, *, use_color: bool) -> None:
     print(_render_section_heading(section, use_color=use_color))
     print(_render_execution_status_line(stub_id, "added", use_color=use_color, state="success"))
+    print()
+
+
+def _print_emitted_latex(snippet: str) -> None:
+    print()
+    print(snippet)
     print()
 
 

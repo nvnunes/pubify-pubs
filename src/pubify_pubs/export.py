@@ -183,6 +183,13 @@ def save_pubify_figure(
     backend.save_fig(figure, layout, path, template=template, **kwargs)
 
 
+def close_figure_export_sources(result: FigureExport) -> None:
+    """Close all Matplotlib sources referenced by a normalized ``FigureExport``."""
+
+    for panel in result.panels:
+        _close_export_source(panel.figure)
+
+
 def output_filename(figure_id: str, count: int, idx: int, extension: str) -> str:
     """Return the framework-owned filename for one exported figure panel."""
 
