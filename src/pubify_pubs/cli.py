@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 import re
 import subprocess
@@ -58,6 +59,13 @@ from pubify_pubs.stubs import (
     generated_stub_function_name,
     module_function_names,
     validate_stub_id,
+)
+from pubify_pubs.versioning import (
+    PublicationVersion,
+    build_publication_version_diff,
+    create_publication_version,
+    list_publication_versions,
+    undo_publication_version_create,
 )
 
 STATUS_WIDTH = 14
@@ -265,6 +273,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]\n"
             "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]\n"
             "  pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]\n"
+            "  pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]\n"
             "  pubs <publication-id> ignore <relative-path>\n"
             "  pubs <publication-id> build [--update|--skipupdate] [--clear]\n"
             "  pubs <publication-id> preview\n"
@@ -326,6 +335,8 @@ def main(argv: list[str] | None = None) -> int:
             command = "stat"
         if command == "tables":
             command = "table"
+        if command == "versions":
+            command = "version"
         if command == "init":
             parser.error("use 'pubs init <publication-id>'")
         if command not in {
@@ -337,6 +348,7 @@ def main(argv: list[str] | None = None) -> int:
             "figure",
             "stat",
             "table",
+            "version",
             "ignore",
             "build",
             "preview",
@@ -794,6 +806,47 @@ def _run_publication_command(
             "'<table-id> check', or '<table-id> latex'"
         )
 
+    if command.command == "version":
+        _reject_build_flags_from_command(command, error)
+        if command.force:
+            error("version does not accept --force")
+        if command.arg3 in {None, "list"}:
+            if command.arg4 is not None or command.arg5 is not None:
+                error("version list does not accept additional arguments")
+            versions = list_publication_versions(publication)
+            if not versions:
+                print(f"{publication.publication_id}: no versions")
+                return 0
+            for version in versions:
+                print(_render_version_line(version))
+            return 0
+        if command.arg3 == "create":
+            if command.arg4 == "undo":
+                if command.arg5 is not None:
+                    error("version create undo does not accept additional arguments")
+                version = undo_publication_version_create(publication)
+                print(f"{version.version_id}: removed")
+                return 0
+            if command.arg5 is not None:
+                error("version create accepts at most one optional note")
+            version = create_publication_version(
+                publication,
+                note=command.arg4 or "",
+            )
+            print(_render_version_line(version))
+            return 0
+        if command.arg3 == "diff":
+            if command.arg4 is None:
+                error("version diff requires <version-id> [<version-id>]")
+            pdf_path = build_publication_version_diff(
+                publication,
+                command.arg4,
+                command.arg5,
+            )
+            print(pdf_path)
+            return 0
+        error("version supports only 'list', 'create [note|undo]', or 'diff <version-id> [<version-id>]'")
+
     if command.command == "build":
         if command.force:
             error("build does not accept --force")
@@ -956,6 +1009,8 @@ def run_publication_shell(
                     parsed_command = "stat"
                 if parsed_command == "tables":
                     parsed_command = "table"
+                if parsed_command == "versions":
+                    parsed_command = "version"
                 publication_command = PublicationCommand(
                     command=parsed_command,
                     arg3=parsed.arg3,
@@ -1193,6 +1248,7 @@ def _shell_help_text(publication_id: str) -> str:
             "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]",
             "  stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]",
             "  table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]",
+            "  version [list|create [note]|diff <version-id> [<version-id>]]",
             "  update",
             "  ignore <relative-path>",
             "  build [--update|--skipupdate] [--clear]",
@@ -1301,6 +1357,16 @@ def _print_added_stub(section: str, stub_id: str, *, use_color: bool) -> None:
     print(_render_section_heading(section, use_color=use_color))
     print(_render_execution_status_line(stub_id, "added", use_color=use_color, state="success"))
     print()
+
+
+def _render_version_line(version: PublicationVersion) -> str:
+    try:
+        formatted_created_at = datetime.fromisoformat(version.created_at).strftime("%Y-%m-%d %I:%M %p")
+    except ValueError:
+        formatted_created_at = version.created_at
+    if version.note:
+        return f"{version.version_id}  {formatted_created_at}  {version.note}"
+    return f"{version.version_id}  {formatted_created_at}"
 
 
 def _print_emitted_latex(snippet: str) -> None:

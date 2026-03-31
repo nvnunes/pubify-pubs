@@ -348,6 +348,7 @@ Publication commands:
 - `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]`
 - `pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]`
 - `pubs <publication-id> tables ...`
+- `pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]`
 - `pubs <publication-id> data [list|add <data-id>]`
 - `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> ignore <relative-path>`
@@ -363,6 +364,8 @@ Publication commands:
 
 The `latex` commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. `tex` is accepted as an alias for `latex`.
 When possible, they also prepend a missing manuscript prelude line from the current `main.tex`: `figure ... latex` adds `\usepackage{pubify}` if needed, `stat ... latex` adds `\input{autostats.tex}` if needed, and `table ... latex` adds `\input{autotables.tex}` if needed.
+
+Version snapshots live under `tex/versions/`. `version create [note]` stores the current non-build TeX tree as the next `vN` snapshot and records metadata in `tex/versions/metadata.yaml`. `version diff v1` compares `v1` to the current live `tex/` tree; `version diff v1 v2` compares two stored versions regardless of argument order. In both cases, pubify prepares a temporary TeX tree, runs `latexdiff` plus `latexmk`, and copies the resulting redline PDF back into `tex/build/` using the standardized name `<main-stem>-diff-v<older>-v<newer/current>.pdf`.
 
 The shell command opens a publication-scoped interactive session with command history and automatic pickup of changes to `figures.py`, `pub.yaml`, and publication-local helpers. Shell `update` forces a publication refresh and then regenerates figures, stats, and tables. Normal loader data is loaded on shell start and again when the publication is refreshed, then reused across shell commands. `nocache=True` loaders rerun once per command.
 

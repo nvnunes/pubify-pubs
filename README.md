@@ -309,6 +309,7 @@ The installed command is `pubs`:
 - `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]`
 - `pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]`
 - `pubs <publication-id> tables ...`
+- `pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]`
 - `pubs <publication-id> data [list|add <data-id>]`
 - `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> ignore <relative-path>`
@@ -376,6 +377,17 @@ The installed command is `pubs`:
   - prints a paste-ready `table`/`tabular` scaffold with generic `Column N` headers
   - multi-body tables are grouped with full-width `\multicolumn` separator rows
   - `tex` is accepted as an alias for `latex`
+- `version list`
+  - lists stored TeX snapshots under `tex/versions/`
+- `version create [note]`
+  - snapshots the current non-build TeX tree into the next `tex/versions/vN/`
+  - stores the optional note plus timestamp in `tex/versions/metadata.yaml`
+- `version diff <version-id>`
+  - compares one stored version to the current live `tex/` tree
+  - runs `latexdiff`, builds the redline PDF, and writes it into `tex/build/`
+- `version diff <version-id> <version-id>`
+  - compares two stored versions regardless of argument order
+  - normalizes internally to older -> newer and writes `<main-stem>-diff-v<older>-v<newer>.pdf` into `tex/build/`
 - `figure <figure-id> preview`
   - opens the exported PDF for one figure from `tex/autofigures/`
   - uses the `preview.figure` backend from `pubify.conf`
@@ -405,6 +417,8 @@ The installed command is `pubs`:
 
 The `latex` commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier.
 When possible, they also prepend a missing manuscript prelude line from the current `main.tex`: `figure ... latex` adds `\usepackage{pubify}` if needed, `stat ... latex` adds `\input{autostats.tex}` if needed, and `table ... latex` adds `\input{autotables.tex}` if needed.
+
+The `version diff` workflow prepares a temporary TeX tree, overlays newer assets on older assets, writes the diffed `main_tex` entrypoint into that tree, runs `latexmk` there, and copies the resulting redline PDF back into the live `tex/build/` directory.
 
 ## Generated Figures, Stats, Tables, And TeX Assets
 

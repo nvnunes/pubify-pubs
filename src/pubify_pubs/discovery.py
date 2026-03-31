@@ -72,6 +72,8 @@ class PublicationPaths:
     tex_root: Path
     sync_base_root: Path
     build_root: Path
+    versions_root: Path
+    versions_metadata_path: Path
     autofigures_root: Path
     autostats_path: Path
     autotables_path: Path
@@ -237,6 +239,8 @@ def build_publication_paths(workspace_root: Path, publication_id: str) -> Public
         tex_root=tex_root,
         sync_base_root=tex_root / ".pubs-sync-base",
         build_root=tex_root / "build",
+        versions_root=tex_root / "versions",
+        versions_metadata_path=tex_root / "versions" / "metadata.yaml",
         autofigures_root=tex_root / "autofigures",
         autostats_path=tex_root / "autostats.tex",
         autotables_path=tex_root / "autotables.tex",
