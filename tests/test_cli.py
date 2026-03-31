@@ -29,7 +29,6 @@ from pubify_pubs.runtime import (
     run_figures,
     run_stats,
 )
-from pubify_pubs.stats import Stat
 from pubify_pubs.config import load_workspace_config
 
 
@@ -155,7 +154,6 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs import Stat",
                 "from pubify_pubs.decorators import data, figure, stat",
                 "",
                 "CALLS = {'training': 0, 'bundle': 0}",
@@ -189,10 +187,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "",
                 "@stat",
                 "def compute_training_summary(ctx, training, bundle):",
-                "    return (",
-                "        Stat(display=training),",
-                "        Stat(suffix='Bundle', display=bundle, tex=rf'\\texttt{{{bundle}}}'),",
-                "    )",
+                "    return {'Value': training, 'Bundle': rf'\\texttt{{{bundle}}}'}",
             ]
         )
         + "\n",
@@ -596,7 +591,7 @@ def test_external_data_decorator_rejects_parent_traversal() -> None:
 def test_stat_decorator_marks_callable() -> None:
     @stat
     def compute_sample_count(ctx):
-        return Stat(display="42")
+        return "42"
 
     assert getattr(compute_sample_count, "__pubs_stat__", False) is True
 
@@ -733,12 +728,11 @@ def test_check_fails_when_stat_depends_on_unknown_loader(repo: Path) -> None:
         publication_id="badstats",
         external_root_lines=["  project: output"],
         figure_lines=[
-            "from pubify_pubs import Stat",
             "from pubify_pubs.decorators import stat",
             "",
             "@stat",
             "def compute_missing_dep(ctx, missing_loader):",
-            "    return Stat(display='x')",
+            "    return 'x'",
         ],
     )
 
@@ -754,16 +748,15 @@ def test_load_publication_definition_rejects_duplicate_stat_ids(repo: Path) -> N
         publication_id="dupes",
         external_root_lines=["  project: output"],
         figure_lines=[
-            "from pubify_pubs import Stat",
             "from pubify_pubs.decorators import stat",
             "",
             "@stat",
             "def compute_same(ctx):",
-            "    return Stat(display='a')",
+            "    return 'a'",
             "",
             "@stat",
             "def same(ctx):",
-            "    return Stat(display='b')",
+            "    return 'b'",
         ],
     )
 
@@ -817,7 +810,7 @@ def test_run_stats_resolves_loader_dependencies(repo: Path) -> None:
 
     assert [item.stat_id for item in computed] == ["training_summary"]
     assert [value.macro_name for value in computed[0].values] == [
-        "StatTrainingSummary",
+        "StatTrainingSummaryValue",
         "StatTrainingSummaryBundle",
     ]
     assert [value.display for value in computed[0].values] == ["training", "meta|model"]
@@ -1192,7 +1185,7 @@ def test_cli_shell_runs_paper_scoped_commands(
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
     assert prompts == ["demo> "] * 9
-    assert "demo: ok" in captured.out
+    assert "pinned   training   training.npy" in captured.out
     assert "tex/autofigures/single.pdf" in captured.out
     assert "pinned   " in captured.out
     assert "training_summary" in captured.out
@@ -1241,7 +1234,7 @@ def test_cli_shell_stat_commands(
     captured = capsys.readouterr()
     assert "training_summary" in captured.out
     assert "Stats" in captured.out
-    assert r"  \StatTrainingSummary = training" in captured.out
+    assert r"  \StatTrainingSummaryValue = training" in captured.out
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
 
 
@@ -1290,7 +1283,7 @@ def test_cli_figure_add_appends_stub_and_adds_missing_imports(
     assert "Figures" in captured.out
     assert "- sample_plot: added" in _strip_ansi(captured.out)
     assert "import matplotlib.pyplot as plt" in figures_text
-    assert "from pubify_pubs import FigureExport, panel" in figures_text
+    assert "from pubify_pubs import FigureExport" in figures_text
     assert "from pubify_pubs.decorators import data, figure" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
@@ -1300,7 +1293,7 @@ def test_cli_figure_add_appends_stub_and_adds_missing_imports(
                 "    fig, ax = plt.subplots()",
                 '    ax.scatter(example_data["x"], example_data["y"])',
                 "    return FigureExport(",
-                "        panels=(panel(fig),),",
+                "        fig,",
                 '        layout="one",',
                 "    )",
             ]
@@ -1333,7 +1326,6 @@ def test_cli_stat_add_appends_stub_and_adds_missing_imports(
     figures_text = figures_path.read_text(encoding="utf-8")
     assert "Stats" in captured.out
     assert "- sample_stat: added" in _strip_ansi(captured.out)
-    assert "from pubify_pubs import Stat" in figures_text
     assert "from pubify_pubs.decorators import data, stat" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
@@ -1341,10 +1333,10 @@ def test_cli_stat_add_appends_stub_and_adds_missing_imports(
                 "@stat",
                 "def compute_sample_stat(ctx, example_data):",
                 '    y_values = example_data["y"]',
-                "    return (",
-                '        Stat(suffix="Count", display=str(len(example_data["x"]))),',
-                '        Stat(suffix="Mean", display=str(sum(y_values) / len(y_values))),',
-                "    )",
+                "    return {",
+                '        "Count": str(len(example_data["x"])),',
+                '        "Mean": str(sum(y_values) / len(y_values)),',
+                "    }",
             ]
         )
     )
@@ -1540,7 +1532,6 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs import Stat",
                 "from pubify_pubs.decorators import figure, stat",
                 "",
                 "@figure",
@@ -1550,7 +1541,7 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
                 "",
                 "@stat",
                 "def compute_summary(ctx, training):",
-                "    return Stat(display=training)",
+                "    return training",
                 "",
             ]
         )
@@ -1590,7 +1581,6 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
                         "import matplotlib",
                         "matplotlib.use('Agg')",
                         "import matplotlib.pyplot as plt",
-                        "from pubify_pubs import Stat",
                         "from pubify_pubs.decorators import figure, stat",
                         "",
                         "@figure",
@@ -1600,7 +1590,7 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
                         "",
                         "@stat",
                         "def compute_summary(ctx, dataset):",
-                        "    return Stat(display=dataset)",
+                        "    return dataset",
                         "",
                     ]
                 )
@@ -1689,6 +1679,156 @@ def test_cli_shell_user_code_exception_keeps_session_alive(
     assert "demo: ok" in captured.out
 
 
+def test_cli_figure_update_fails_cleanly_for_tuple_returning_loader(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    figures_path = repo / "papers" / "demo" / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "from pubify_pubs.decorators import data, figure",
+                "",
+                "@data('training.npy')",
+                "def load_training(ctx, path):",
+                "    return path, path",
+                "",
+                "@figure",
+                "def plot_single(ctx, training):",
+                "    fig, ax = plt.subplots()",
+                "    ax.plot([0, 1], [0, 1])",
+                "    return fig",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["demo", "figure", "update"]) == 1
+
+    captured = capsys.readouterr()
+    assert "Loader 'training' returned a tuple." in captured.out
+    assert "wrap multiple values in a dict, dataclass, or other single container." in captured.out
+
+
+def test_cli_figure_update_fails_cleanly_for_none_returning_loader(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    figures_path = repo / "papers" / "demo" / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "from pubify_pubs.decorators import data, figure",
+                "",
+                "@data('training.npy')",
+                "def load_training(ctx, path):",
+                "    return None",
+                "",
+                "@figure",
+                "def plot_single(ctx, training):",
+                "    fig, ax = plt.subplots()",
+                "    ax.plot([0, 1], [0, 1])",
+                "    return fig",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["demo", "figure", "update"]) == 1
+
+    captured = capsys.readouterr()
+    assert "Loader 'training' returned None. Loaders must return one object." in captured.out
+
+
+def test_cli_shell_loader_tuple_return_keeps_session_alive(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    figures_path = repo / "papers" / "demo" / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "from pubify_pubs.decorators import data, figure",
+                "",
+                "@data('training.npy', nocache=True)",
+                "def load_training(ctx, path):",
+                "    return path, path",
+                "",
+                "@figure",
+                "def plot_single(ctx, training):",
+                "    fig, ax = plt.subplots()",
+                "    ax.plot([0, 1], [0, 1])",
+                "    return fig",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    commands = iter(["figure update", "data list", "quit"])
+
+    monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
+    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
+
+    assert main(["demo", "shell"]) == 0
+
+    captured = capsys.readouterr()
+    assert "Loader 'training' returned a tuple." in captured.out
+    assert "wrap multiple values in a dict, dataclass, or other single container." in captured.out
+    assert "pinned   training   training.npy" in captured.out
+
+
+def test_cli_shell_loader_none_return_keeps_session_alive(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    figures_path = repo / "papers" / "demo" / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "from pubify_pubs.decorators import data, figure",
+                "",
+                "@data('training.npy', nocache=True)",
+                "def load_training(ctx, path):",
+                "    return None",
+                "",
+                "@figure",
+                "def plot_single(ctx, training):",
+                "    fig, ax = plt.subplots()",
+                "    ax.plot([0, 1], [0, 1])",
+                "    return fig",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    commands = iter(["figure update", "data list", "quit"])
+
+    monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
+    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
+
+    assert main(["demo", "shell"]) == 0
+
+    captured = capsys.readouterr()
+    assert "Loader 'training' returned None. Loaders must return one object." in captured.out
+    assert "pinned" in captured.out
+
+
 def test_cli_shell_update_recomputes_loader_data(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1700,7 +1840,6 @@ def test_cli_shell_update_recomputes_loader_data(
         "\n".join(
             [
                 "from pathlib import Path",
-                "from pubify_pubs import Stat",
                 "from pubify_pubs.decorators import data, stat",
                 "",
                 "@data('training.txt')",
@@ -1709,7 +1848,7 @@ def test_cli_shell_update_recomputes_loader_data(
                 "",
                 "@stat",
                 "def compute_training_value(ctx, training):",
-                "    return Stat(display=training)",
+                "    return training",
                 "",
             ]
         )
@@ -1747,7 +1886,6 @@ def test_cli_shell_preloads_normal_loaders_once_and_reuses_them_across_commands(
         "\n".join(
             [
                 "from pathlib import Path",
-                "from pubify_pubs import Stat",
                 "from pubify_pubs.decorators import data, stat",
                 "",
                 "@data('training.txt')",
@@ -1758,7 +1896,7 @@ def test_cli_shell_preloads_normal_loaders_once_and_reuses_them_across_commands(
                 "",
                 "@stat",
                 "def compute_training_value(ctx, training):",
-                "    return Stat(display=training)",
+                "    return training",
                 "",
             ]
         )
@@ -1791,7 +1929,6 @@ def test_cli_shell_nocache_loader_runs_once_per_command(
         "\n".join(
             [
                 "from pathlib import Path",
-                "from pubify_pubs import Stat",
                 "from pubify_pubs.decorators import data, stat",
                 "",
                 "@data('training.txt', nocache=True)",
@@ -1802,11 +1939,11 @@ def test_cli_shell_nocache_loader_runs_once_per_command(
                 "",
                 "@stat",
                 "def compute_training_value(ctx, training):",
-                "    return Stat(display=training)",
+                "    return training",
                 "",
                 "@stat",
                 "def compute_training_again(ctx, training):",
-                "    return Stat(display=training)",
+                "    return training",
                 "",
             ]
         )
@@ -2769,11 +2906,11 @@ def test_cli_stat_update_writes_autostats_and_prints_all_stats(
     assert "- training: loaded" in captured.out
     assert "Stats" in captured.out
     assert "- training_summary" in captured.out
-    assert r"  \StatTrainingSummary = training" in captured.out
+    assert r"  \StatTrainingSummaryValue = training" in captured.out
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
     assert publication.paths.autostats_path.read_text(encoding="utf-8") == "\n".join(
         [
-            r"\newcommand{\StatTrainingSummary}{training}",
+            r"\newcommand{\StatTrainingSummaryValue}{training}",
             r"\newcommand{\StatTrainingSummaryBundle}{\texttt{meta|model}}",
             "",
         ]
@@ -2789,7 +2926,7 @@ def test_cli_stat_update_selected_stat_prints_only_selected_block(
     captured = capsys.readouterr()
     assert "Stats" in captured.out
     assert "- training_summary" in captured.out
-    assert r"  \StatTrainingSummary = training" in captured.out
+    assert r"  \StatTrainingSummaryValue = training" in captured.out
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
 
 
@@ -2823,7 +2960,7 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     figures_py = (fresh_root / "figures.py").read_text(encoding="utf-8")
     assert '"""Figures entrypoint for publication figures."""' in figures_py
     assert "import matplotlib.pyplot as plt" in figures_py
-    assert "from pubify_pubs import FigureExport, Stat, panel" in figures_py
+    assert "from pubify_pubs import FigureExport" in figures_py
     assert "from pubify_pubs.decorators import data, figure, stat" in figures_py
     assert "# Data" in figures_py
     assert "# Figures & Stats" in figures_py
@@ -2834,8 +2971,8 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     assert 'ax.scatter(example_data["x"], example_data["y"])' in figures_py
     assert 'layout="one"' in figures_py
     assert "def compute_example(ctx, example_data):" in figures_py
-    assert 'Stat(suffix="Count", display=str(len(example_data["x"])))' in figures_py
-    assert 'Stat(suffix="Mean", display=str(sum(y_values) / len(y_values)))' in figures_py
+    assert '"Count": str(len(example_data["x"]))' in figures_py
+    assert '"Mean": str(sum(y_values) / len(y_values))' in figures_py
     assert "# pubs:" not in figures_py
     main_tex = fresh_root / "tex" / "main.tex"
     assert main_tex.exists()

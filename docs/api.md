@@ -58,12 +58,6 @@ This page is generated from the public Python docstrings.
 
 ## Export Model
 
-### Stat
-
-::: pubify_pubs.stats.Stat
-    options:
-      show_source: false
-
 ### FigurePanel
 
 ::: pubify_pubs.export.FigurePanel

@@ -222,7 +222,7 @@ def test_normalize_explicit_figure_export_uses_publication_default_layout_when_o
     paper_config: PublicationConfig,
 ) -> None:
     fig = plt.figure()
-    explicit = FigureExport(panels=(panel(fig),))
+    explicit = FigureExport(fig)
 
     result = normalize_figure_result(explicit, paper_config)
 
@@ -234,6 +234,54 @@ def test_normalize_explicit_figure_export_uses_publication_default_layout_when_o
 def test_normalize_rejects_unsupported_object_type(paper_config: PublicationConfig) -> None:
     with pytest.raises(ValueError, match="Matplotlib Figure or Axes"):
         normalize_figure_result(UnsupportedObject(), paper_config)
+
+
+def test_figure_export_accepts_single_raw_figure_or_axes() -> None:
+    fig = plt.figure()
+    axes_figure, ax = plt.subplots()
+
+    figure_export = FigureExport(fig, layout="onewide")
+    axes_export = FigureExport(ax, layout="onewide")
+
+    assert len(figure_export.panels) == 1
+    assert figure_export.panels[0].figure is fig
+    assert len(axes_export.panels) == 1
+    assert axes_export.panels[0].figure is ax
+    plt.close(fig)
+    plt.close(axes_figure)
+
+
+def test_figure_export_accepts_list_or_tuple_of_raw_targets_and_panels() -> None:
+    fig1 = plt.figure()
+    fig2 = plt.figure()
+    fig3 = plt.figure()
+
+    list_export = FigureExport([fig1, fig2], layout="twowide")
+    mixed_export = FigureExport((panel(fig1), fig3), layout="twowide")
+
+    assert [item.figure for item in list_export.panels] == [fig1, fig2]
+    assert [item.figure for item in mixed_export.panels] == [fig1, fig3]
+    plt.close(fig1)
+    plt.close(fig2)
+    plt.close(fig3)
+
+
+def test_figure_export_rejects_missing_or_invalid_panel_payload() -> None:
+    fig = plt.figure()
+
+    with pytest.raises(ValueError, match="requires at least one panel"):
+        FigureExport()
+
+    with pytest.raises(ValueError, match="requires at least one panel"):
+        FigureExport([])
+
+    with pytest.raises(ValueError, match="either a positional panel payload or panels="):
+        FigureExport(fig, panels=(panel(fig),))
+
+    with pytest.raises(ValueError, match="Matplotlib Figure or Axes"):
+        FigureExport([fig, UnsupportedObject()])
+
+    plt.close(fig)
 
 
 def test_export_figure_single_panel_uses_shared_layout_and_kwargs(

@@ -7,15 +7,13 @@ import re
 
 AUTOSTATS_FILENAME = "autostats.tex"
 _MACRO_NAME_PART = re.compile(r"[A-Za-z0-9]+")
-
-
-@dataclass(frozen=True)
-class Stat:
-    """One returned publication stat value for console display and TeX emission."""
-
-    display: str
-    tex: str | None = None
-    suffix: str | None = None
+_DISPLAY_MATH_DELIMS = re.compile(r"^\$(.*)\$$")
+_DISPLAY_COMMANDS = (
+    (re.compile(r"\\,"), " "),
+    (re.compile(r"\\mathrm\{([^}]*)\}"), r"\1"),
+    (re.compile(r"\\text\{([^}]*)\}"), r"\1"),
+    (re.compile(r"\\texttt\{([^}]*)\}"), r"\1"),
+)
 
 
 @dataclass(frozen=True)
@@ -35,37 +33,32 @@ class ComputedStat:
     values: tuple[ResolvedStat, ...]
 
 
-def normalize_stat_result(stat_id: str, result: object) -> tuple[Stat, ...]:
-    """Normalize one stat return value into a validated tuple of ``Stat`` objects."""
+def normalize_stat_result(stat_id: str, result: object) -> tuple[tuple[str | None, str], ...]:
+    """Normalize one stat return value into a validated tuple of ``(key, value)`` pairs."""
 
-    if isinstance(result, Stat):
-        values = (result,)
-    elif isinstance(result, tuple):
-        values = result
-    elif isinstance(result, list):
-        values = tuple(result)
-    else:
+    if not isinstance(result, dict):
+        value = _coerce_stat_value(stat_id, result)
+        return ((None, value),)
+    if isinstance(result, dict):
+        if not result:
+            raise ValueError(f"Stat '{stat_id}' must return a non-empty dict when using named values")
+        normalized: list[tuple[str | None, str]] = []
+        for key, value in result.items():
+            if not isinstance(key, str) or not key:
+                raise ValueError(f"Stat '{stat_id}' dict keys must be non-empty strings")
+            normalized.append((key, _coerce_stat_value(stat_id, value, key=key)))
+        return tuple(normalized)
+
+
+def _coerce_stat_value(stat_id: str, value: object, *, key: str | None = None) -> str:
+    text = value if isinstance(value, str) else str(value)
+    if not text:
+        if key is None:
+            raise ValueError(f"Stat '{stat_id}' value must be non-empty after str() coercion")
         raise ValueError(
-            f"Stat '{stat_id}' must return a Stat, tuple[Stat, ...], or list[Stat]"
+            f"Stat '{stat_id}' dict value for key '{key}' must be non-empty after str() coercion"
         )
-
-    if not values:
-        raise ValueError(f"Stat '{stat_id}' must return at least one Stat")
-
-    normalized: list[Stat] = []
-    for index, item in enumerate(values):
-        if not isinstance(item, Stat):
-            raise ValueError(f"Stat '{stat_id}' returned a non-Stat value at position {index + 1}")
-        if not isinstance(item.display, str) or not item.display:
-            raise ValueError(f"Stat '{stat_id}' display must be a non-empty string")
-        if item.tex is not None and (not isinstance(item.tex, str) or not item.tex):
-            raise ValueError(f"Stat '{stat_id}' tex must be a non-empty string when set")
-        if item.suffix is not None and (not isinstance(item.suffix, str) or not item.suffix):
-            raise ValueError(f"Stat '{stat_id}' suffix must be a non-empty string when set")
-        if index > 0 and item.suffix is None:
-            raise ValueError(f"Stat '{stat_id}' additional values must set suffix")
-        normalized.append(item)
-    return tuple(normalized)
+    return text
 
 
 def compute_resolved_stat(stat_id: str, result: object) -> ComputedStat:
@@ -74,11 +67,11 @@ def compute_resolved_stat(stat_id: str, result: object) -> ComputedStat:
     values = normalize_stat_result(stat_id, result)
     resolved_values = tuple(
         ResolvedStat(
-            macro_name=macro_name_for_stat(stat_id, item.suffix),
-            display=item.display,
-            tex=item.display if item.tex is None else item.tex,
+            macro_name=macro_name_for_stat(stat_id, key),
+            display=_display_from_tex(value),
+            tex=value,
         )
-        for item in values
+        for key, value in values
     )
     return ComputedStat(stat_id=stat_id, values=resolved_values)
 
@@ -113,13 +106,25 @@ def autostats_path(tex_root: Path) -> Path:
     return tex_root / AUTOSTATS_FILENAME
 
 
-def macro_name_for_stat(stat_id: str, suffix: str | None = None) -> str:
-    """Return the final TeX macro name for one stat id and optional suffix."""
+def macro_name_for_stat(stat_id: str, key: str | None = None) -> str:
+    """Return the final TeX macro name for one stat id and optional keyed value name."""
 
     base_name = "Stat" + _camel_case_token_string(stat_id, kind="stat id")
-    if suffix is None:
+    if key is None:
         return base_name
-    return base_name + _camel_case_token_string(suffix, kind="stat suffix")
+    return base_name + _camel_case_token_string(key, kind="stat key")
+
+
+def _display_from_tex(value: str) -> str:
+    stripped = value.strip()
+    match = _DISPLAY_MATH_DELIMS.fullmatch(stripped)
+    if match is not None:
+        stripped = match.group(1)
+    for pattern, replacement in _DISPLAY_COMMANDS:
+        stripped = pattern.sub(replacement, stripped)
+    stripped = stripped.replace("{", "").replace("}", "")
+    stripped = stripped.replace("\\", "")
+    return " ".join(stripped.split())
 
 
 def _camel_case_token_string(value: str, *, kind: str) -> str:

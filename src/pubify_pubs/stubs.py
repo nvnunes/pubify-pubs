@@ -98,9 +98,6 @@ def _ensure_required_imports(text: str, kind: str) -> str:
     if kind == "figure":
         lines = _ensure_plain_import(lines, "import matplotlib.pyplot as plt")
         lines = _ensure_from_import(lines, "pubify_pubs", "FigureExport")
-        lines = _ensure_from_import(lines, "pubify_pubs", "panel")
-    if kind == "stat":
-        lines = _ensure_from_import(lines, "pubify_pubs", "Stat")
     lines = _ensure_from_import(lines, "pubify_pubs.decorators", kind)
     return "\n".join(lines) + ("\n" if lines else "")
 

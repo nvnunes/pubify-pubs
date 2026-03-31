@@ -153,6 +153,22 @@ from pubify_pubs.export import FigureExport, panel
 - a sequence of figures or axes
 - a `FigureExport` value for explicit multi-panel control
 
+`FigureExport` accepts a single Matplotlib `Figure` or `Axes`, a list/tuple of them, one `panel(...)`, or a list/tuple of `panel(...)` values. Prefer passing raw figures or axes directly:
+
+```python
+return FigureExport(fig, layout="one")
+return FigureExport([fig1, fig2], layout="two")
+```
+
+Use `panel(...)` only when one panel needs extra pubify export metadata beyond the figure or axes itself, such as `subcaption_lines` or per-panel export overrides:
+
+```python
+return FigureExport(
+    [panel(fig1), panel(fig2, subcaption_lines=2, hide_cbar=True)],
+    layout="two",
+)
+```
+
 `FigureExport` also carries first-class caption sizing metadata for `pubify-mpl`:
 
 - `layout`
@@ -190,10 +206,7 @@ def prepare_export(fig_export, style):
         text.set_fontfamily(style.font_family)
         text.set_fontsize(style.tick_labelsize_pt)
 
-return FigureExport(
-    panels=(panel(fig),),
-    kwargs={"prepare_export": prepare_export},
-)
+return FigureExport(fig, kwargs={"prepare_export": prepare_export})
 ```
 
 One-argument callbacks still work, but the two-argument form is preferred for figure-specific styling adjustments after the generic pubify passes have already run.
@@ -293,7 +306,6 @@ Primary entrypoints:
 - `save_publication_data_npz(...)`
 - `load_publication_data_npz(...)`
 - `FigureExport`
-- `Stat`
 
 ## Generated Stats
 
@@ -302,6 +314,10 @@ Primary entrypoints:
 - `pubs <publication-id> stat update` rewrites it as one authoritative snapshot
 - `pubs <publication-id> stat <stat-id> update` prints one stat block to the console while still rewriting the full snapshot
 - TeX should include it explicitly, for example with `\input{autostats.tex}`
+- stats return either:
+  - one value, which is coerced with `str(...)` and emits `\Stat<StatId>`
+  - or a `dict[str, object]`, whose values are coerced with `str(...)` and emit `\Stat<StatId><Key>`
+- console display is derived from the TeX-facing value with light cleanup for common TeX markup such as `$...$`, `\,`, and `\mathrm{...}`
 - In prose, use `{}` after a stat macro before following letters, for example `\StatFavorableAsterismCount{} targets`.
 - stat ids stay `snake_case` in Python, but generated TeX macro names use CamelCase
   - `compute_favorable_asterism_count(...)` maps to `\StatFavorableAsterismCount`
@@ -310,6 +326,6 @@ Primary entrypoints:
 Generated stat macros use the forms:
 
 - `\Stat<StatId>`
-- `\Stat<StatId><Suffix>`
+- `\Stat<StatId><Key>`
 
 See the [API reference](api.md) for the docstring-driven reference pages.

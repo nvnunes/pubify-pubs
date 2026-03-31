@@ -5,12 +5,10 @@ from .data import load_publication_data_npz, publication_data_path, save_publica
 from .decorators import data, external_data, figure, stat
 from .discovery import find_workspace_root
 from .export import FigureExport, FigurePanel, panel
-from .stats import Stat
 
 __all__ = [
     "FigureExport",
     "FigurePanel",
-    "Stat",
     "data",
     "external_data",
     "figure",

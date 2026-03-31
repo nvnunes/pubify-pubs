@@ -2,7 +2,7 @@
 
 import matplotlib.pyplot as plt
 
-from pubify_pubs import FigureExport, Stat, panel
+from pubify_pubs import FigureExport
 from pubify_pubs.decorators import data, figure, stat
 
 # Data
@@ -25,7 +25,7 @@ def plot_<figure-id>(ctx, example_data):
     fig, ax = plt.subplots()
     ax.scatter(example_data["x"], example_data["y"])
     return FigureExport(
-        panels=(panel(fig),),
+        fig,
         layout="one",
     )
 # pubs:figure-stub:end
@@ -35,8 +35,8 @@ def plot_<figure-id>(ctx, example_data):
 @stat
 def compute_<stat-id>(ctx, example_data):
     y_values = example_data["y"]
-    return (
-        Stat(suffix="Count", display=str(len(example_data["x"]))),
-        Stat(suffix="Mean", display=str(sum(y_values) / len(y_values))),
-    )
+    return {
+        "Count": str(len(example_data["x"])),
+        "Mean": str(sum(y_values) / len(y_values)),
+    }
 # pubs:stat-stub:end

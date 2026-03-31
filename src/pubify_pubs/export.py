@@ -21,7 +21,7 @@ class FigurePanel:
     overrides: dict[str, object] = field(default_factory=dict)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class FigureExport:
     """Normalized logical-figure export payload for the publication runtime."""
 
@@ -30,6 +30,27 @@ class FigureExport:
     caption_lines: int | None = None
     subcaption_lines: int | None = None
     kwargs: dict[str, object] = field(default_factory=dict)
+
+    def __init__(
+        self,
+        panels_or_panel: object | Sequence[object] | None = None,
+        *,
+        panels: object | Sequence[object] | None = None,
+        layout: str | None = None,
+        caption_lines: int | None = None,
+        subcaption_lines: int | None = None,
+        kwargs: dict[str, object] | None = None,
+    ) -> None:
+        if panels_or_panel is not None and panels is not None:
+            raise ValueError("FigureExport accepts either a positional panel payload or panels=, not both")
+        payload = panels if panels is not None else panels_or_panel
+        normalized_panels = _normalize_export_panels(payload)
+        object.__setattr__(self, "panels", normalized_panels)
+        object.__setattr__(self, "layout", layout)
+        object.__setattr__(self, "caption_lines", caption_lines)
+        object.__setattr__(self, "subcaption_lines", subcaption_lines)
+        object.__setattr__(self, "kwargs", dict(kwargs or {}))
+        self.__post_init__()
 
     def __post_init__(self) -> None:
         if not self.panels:
@@ -70,21 +91,9 @@ def normalize_figure_result(result: object, config: PublicationConfig) -> Figure
     if isinstance(result, FigureExport):
         return _with_default_layout(result, config)
     if _is_pubify_export_target(result):
-        return FigureExport(
-            panels=(FigurePanel(result),),
-            layout=config.pubify_mpl.default_layout,
-        )
+        return FigureExport(result, layout=config.pubify_mpl.default_layout)
     if isinstance(result, Sequence) and not isinstance(result, (str, bytes, bytearray)):
-        panels = tuple(result)
-        if not panels:
-            raise ValueError("Figure returned an empty sequence")
-        if all(isinstance(item, FigurePanel) for item in panels):
-            return FigureExport(panels=panels, layout=config.pubify_mpl.default_layout)
-        if all(_is_pubify_export_target(item) for item in panels):
-            return FigureExport(
-                panels=tuple(FigurePanel(item) for item in panels),
-                layout=config.pubify_mpl.default_layout,
-            )
+        return FigureExport(result, layout=config.pubify_mpl.default_layout)
     raise ValueError(
         "Figure must return a Matplotlib Figure or Axes, a sequence of those objects, "
         "or FigureExport"
@@ -190,12 +199,36 @@ def _with_default_layout(result: FigureExport, config: PublicationConfig) -> Fig
     if result.layout is not None:
         return result
     return FigureExport(
-        panels=result.panels,
+        result.panels,
         layout=config.pubify_mpl.default_layout,
         caption_lines=result.caption_lines,
         subcaption_lines=result.subcaption_lines,
         kwargs=result.kwargs,
     )
+
+
+def _normalize_export_panels(value: object | Sequence[object] | None) -> tuple[FigurePanel, ...]:
+    if value is None:
+        raise ValueError("FigureExport requires at least one panel")
+    if isinstance(value, FigurePanel):
+        return (value,)
+    if _is_pubify_export_target(value):
+        return (FigurePanel(value),)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        items = tuple(value)
+        if not items:
+            raise ValueError("FigureExport requires at least one panel")
+        normalized: list[FigurePanel] = []
+        for item in items:
+            if isinstance(item, FigurePanel):
+                normalized.append(item)
+                continue
+            if _is_pubify_export_target(item):
+                normalized.append(FigurePanel(item))
+                continue
+            raise ValueError("Each FigureExport panel must contain a Matplotlib Figure or Axes")
+        return tuple(normalized)
+    raise ValueError("Each FigureExport panel must contain a Matplotlib Figure or Axes")
 
 
 def _close_export_source(value: object) -> None:

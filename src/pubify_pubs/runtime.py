@@ -539,6 +539,17 @@ def _capture_loader_output(
             if line.rstrip("\n")
         )
         raise UserCodeExecutionError(lines) from exc
+    if result is None:
+        lines = stream.getvalue().splitlines()
+        lines.append(f"Loader '{loader_id}' returned None. Loaders must return one object.")
+        raise UserCodeExecutionError(lines)
+    if isinstance(result, tuple):
+        lines = stream.getvalue().splitlines()
+        lines.append(
+            f"Loader '{loader_id}' returned a tuple. Loaders must return one object; "
+            "wrap multiple values in a dict, dataclass, or other single container."
+        )
+        raise UserCodeExecutionError(lines)
     output = stream.getvalue()
     if output:
         ctx.captured_data_output.setdefault(loader_id, []).extend(output.splitlines())
