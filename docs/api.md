@@ -24,6 +24,12 @@ This page is generated from the public Python docstrings.
     options:
       show_source: false
 
+### table
+
+::: pubify_pubs.table
+    options:
+      show_source: false
+
 ### data
 
 ::: pubify_pubs.data
@@ -73,6 +79,14 @@ This page is generated from the public Python docstrings.
 ### panel
 
 ::: pubify_pubs.panel
+    options:
+      show_source: false
+
+## Table Model
+
+### TableResult
+
+::: pubify_pubs.TableResult
     options:
       show_source: false
 

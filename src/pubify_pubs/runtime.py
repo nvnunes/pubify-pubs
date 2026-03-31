@@ -22,6 +22,7 @@ from pubify_pubs.discovery import (
     FigureSpec,
     PublicationDefinition,
     StatSpec,
+    TableSpec,
     build_publication_paths,
     validate_publication_definition,
 )
@@ -32,6 +33,13 @@ from pubify_pubs.stats import (
     compute_resolved_stat,
     ensure_unique_macro_names,
     render_autostats_text,
+)
+from pubify_pubs.tables import (
+    ComputedTable,
+    autotables_path,
+    check_table_references,
+    compute_table,
+    render_autotables_text,
 )
 from pubify_pubs.texlog import build_log_path, extract_latex_diagnostic
 
@@ -45,7 +53,7 @@ class RunContext:
     updated_loader_ids: set[str] = field(default_factory=set)
     captured_data_output: dict[str, list[str]] = field(default_factory=dict)
     captured_output: dict[str, list[str]] = field(
-        default_factory=lambda: {"figure": [], "stat": []}
+        default_factory=lambda: {"figure": [], "stat": [], "table": []}
     )
     rc: AbstractContextManager[None] | None = None
 
@@ -84,6 +92,7 @@ def check_publication(publication: PublicationDefinition) -> None:
     if errors:
         joined = "\n".join(f"- {message}" for message in errors)
         raise ValueError(f"Publication '{publication.publication_id}' failed validation:\n{joined}")
+    check_tables(publication)
 
 
 def init_publication(
@@ -204,6 +213,70 @@ def update_stats(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_autostats_text(computed), encoding="utf-8")
     return output_path, computed
+
+
+def run_tables(
+    publication: PublicationDefinition,
+    table_id: str | None = None,
+    ctx: RunContext | None = None,
+) -> tuple[ComputedTable, ...]:
+    """Run one or more tables and return normalized computed table bodies."""
+
+    errors = validate_publication_definition(publication, require_tex_support=False)
+    if errors:
+        joined = "\n".join(f"- {message}" for message in errors)
+        raise ValueError(
+            f"Publication '{publication.publication_id}' failed validation:\n{joined}"
+        )
+    run_ctx = ctx or build_run_context(publication)
+    table_ids = [table_id] if table_id is not None else sorted(publication.tables)
+    computed: list[ComputedTable] = []
+    for current_id in table_ids:
+        if current_id not in publication.tables:
+            raise KeyError(f"Unknown table '{current_id}'")
+        computed.append(_run_one_table(run_ctx, publication.tables[current_id]))
+    return tuple(computed)
+
+
+def update_tables(
+    publication: PublicationDefinition,
+    ctx: RunContext | None = None,
+) -> tuple[Path, tuple[ComputedTable, ...]]:
+    """Compute all tables and rewrite the framework-owned ``autotables.tex`` snapshot."""
+
+    computed = run_tables(publication, ctx=ctx)
+    output_path = autotables_path(publication.paths.tex_root)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(render_autotables_text(computed), encoding="utf-8")
+    return output_path, computed
+
+
+def write_computed_tables(
+    publication: PublicationDefinition,
+    computed: tuple[ComputedTable, ...],
+) -> Path:
+    """Write an already-computed table snapshot to ``autotables.tex``."""
+
+    output_path = autotables_path(publication.paths.tex_root)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(render_autotables_text(computed), encoding="utf-8")
+    return output_path
+
+
+def check_tables(
+    publication: PublicationDefinition,
+    table_id: str | None = None,
+    ctx: RunContext | None = None,
+) -> None:
+    """Validate discovered tables against surrounding manuscript table definitions."""
+
+    computed = run_tables(publication, table_id=table_id, ctx=ctx)
+    check_table_references(
+        publication.paths.tex_root,
+        publication.config.main_tex_path,
+        computed,
+        table_id=table_id,
+    )
 
 
 def write_computed_stats(
@@ -347,6 +420,13 @@ def generated_outputs_are_stale(publication: PublicationDefinition) -> bool:
         if entrypoint_mtime > autostats.stat().st_mtime:
             return True
 
+    if publication.tables:
+        autotables = publication.paths.autotables_path
+        if not autotables.exists():
+            return True
+        if entrypoint_mtime > autotables.stat().st_mtime:
+            return True
+
     return False
 
 
@@ -416,6 +496,14 @@ def _run_one_stat(ctx: RunContext, stat: StatSpec) -> ComputedStat:
     return compute_resolved_stat(
         stat.stat_id,
         _capture_dynamic_output(ctx, "stat", stat.func, ctx, *resolved_args),
+    )
+
+
+def _run_one_table(ctx: RunContext, table: TableSpec) -> ComputedTable:
+    resolved_args = [_resolve_loader(ctx, dep_id) for dep_id in table.dependency_ids]
+    return compute_table(
+        table.table_id,
+        _capture_dynamic_output(ctx, "table", table.func, ctx, *resolved_args),
     )
 
 

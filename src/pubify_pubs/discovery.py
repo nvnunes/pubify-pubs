@@ -54,6 +54,15 @@ class StatSpec:
 
 
 @dataclass(frozen=True)
+class TableSpec:
+    """Discovered table metadata derived from one decorated table function."""
+
+    table_id: str
+    func: object
+    dependency_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PublicationPaths:
     """Resolved workspace and publication paths used by the runtime."""
 
@@ -65,6 +74,7 @@ class PublicationPaths:
     build_root: Path
     autofigures_root: Path
     autostats_path: Path
+    autotables_path: Path
     entrypoint: Path
     config_path: Path
 
@@ -80,6 +90,7 @@ class PublicationDefinition:
     loaders: dict[str, LoaderSpec]
     figures: dict[str, FigureSpec]
     stats: dict[str, StatSpec]
+    tables: dict[str, TableSpec]
 
 
 def find_workspace_root(start: Path | None = None) -> Path:
@@ -113,6 +124,7 @@ def load_publication_definition(workspace_root: Path, publication_id: str) -> Pu
     loaders = _discover_loaders(module)
     figures = _discover_figures(module)
     stats = _discover_stats(module)
+    tables = _discover_tables(module)
     return PublicationDefinition(
         publication_id=publication_id,
         paths=paths,
@@ -121,6 +133,7 @@ def load_publication_definition(workspace_root: Path, publication_id: str) -> Pu
         loaders=loaders,
         figures=figures,
         stats=stats,
+        tables=tables,
     )
 
 
@@ -182,6 +195,13 @@ def validate_publication_definition(
                     f"Stat '{stat.stat_id}' depends on unknown loader '{dep}'"
                 )
 
+    for table in publication.tables.values():
+        for dep in table.dependency_ids:
+            if dep not in publication.loaders:
+                errors.append(
+                    f"Table '{table.table_id}' depends on unknown loader '{dep}'"
+                )
+
     if not publication.paths.tex_root.exists():
         errors.append(f"Missing tex directory: {publication.paths.tex_root}")
 
@@ -219,6 +239,7 @@ def build_publication_paths(workspace_root: Path, publication_id: str) -> Public
         build_root=tex_root / "build",
         autofigures_root=tex_root / "autofigures",
         autostats_path=tex_root / "autostats.tex",
+        autotables_path=tex_root / "autotables.tex",
         entrypoint=publication_root / PUBLICATION_ENTRYPOINT,
         config_path=publication_root / PUBLICATION_CONFIG,
     )
@@ -331,6 +352,22 @@ def _discover_stats(module: ModuleType) -> dict[str, StatSpec]:
             dependency_ids=_dependency_ids(member, kind="Stat"),
         )
     return stats
+
+
+def _discover_tables(module: ModuleType) -> dict[str, TableSpec]:
+    tables: dict[str, TableSpec] = {}
+    for _, member in inspect.getmembers(module):
+        if not getattr(member, "__pubs_table__", False):
+            continue
+        table_id = _strip_prefix(member.__name__, "tabulate_")
+        if table_id in tables:
+            raise ValueError(f"Duplicate table id '{table_id}'")
+        tables[table_id] = TableSpec(
+            table_id=table_id,
+            func=member,
+            dependency_ids=_dependency_ids(member, kind="Table"),
+        )
+    return tables
 
 
 def _validate_loader_signature(

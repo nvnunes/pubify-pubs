@@ -11,16 +11,19 @@ STUB_MARKERS = {
     "data": ("# pubs:data-stub:start", "# pubs:data-stub:end"),
     "figure": ("# pubs:figure-stub:start", "# pubs:figure-stub:end"),
     "stat": ("# pubs:stat-stub:start", "# pubs:stat-stub:end"),
+    "table": ("# pubs:table-stub:start", "# pubs:table-stub:end"),
 }
 STUB_PLACEHOLDERS = {
     "data": "<data-id>",
     "figure": "<figure-id>",
     "stat": "<stat-id>",
+    "table": "<table-id>",
 }
 FUNCTION_PREFIXES = {
     "data": "load_",
     "figure": "plot_",
     "stat": "compute_",
+    "table": "tabulate_",
 }
 VALID_STUB_ID_RE = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -31,6 +34,7 @@ def render_init_figures_module() -> str:
         "data": "example_data",
         "figure": "example",
         "stat": "example",
+        "table": "example",
     }
     for kind, placeholder in STUB_PLACEHOLDERS.items():
         text = text.replace(placeholder, replacements[kind])
@@ -95,9 +99,13 @@ def _extract_marked_block(text: str, start_marker: str, end_marker: str) -> str:
 
 def _ensure_required_imports(text: str, kind: str) -> str:
     lines = text.splitlines()
+    if kind in {"data", "stat", "table"}:
+        lines = _ensure_plain_import(lines, "import numpy as np")
     if kind == "figure":
         lines = _ensure_plain_import(lines, "import matplotlib.pyplot as plt")
         lines = _ensure_from_import(lines, "pubify_pubs", "FigureExport")
+    if kind == "table":
+        lines = _ensure_from_import(lines, "pubify_pubs", "TableResult")
     lines = _ensure_from_import(lines, "pubify_pubs.decorators", kind)
     return "\n".join(lines) + ("\n" if lines else "")
 

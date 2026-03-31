@@ -1,9 +1,10 @@
 """Figures entrypoint for publication figures."""
 
 import matplotlib.pyplot as plt
+import numpy as np
 
-from pubify_pubs import FigureExport
-from pubify_pubs.decorators import data, figure, stat
+from pubify_pubs import FigureExport, TableResult
+from pubify_pubs.decorators import data, figure, stat, table
 
 # Data
 
@@ -11,13 +12,13 @@ from pubify_pubs.decorators import data, figure, stat
 @data("path/to/file")
 def load_<data-id>(ctx, file_path):
     return {
-        "x": [1, 2, 3],
-        "y": [1, 2, 3],
+        "x": np.array([1, 2, 3]),
+        "y": np.array([1, 2, 3]),
     }
 # pubs:data-stub:end
 
 
-# Figures & Stats
+# Figures, Stats & Tables
 
 # pubs:figure-stub:start
 @figure
@@ -34,9 +35,18 @@ def plot_<figure-id>(ctx, example_data):
 # pubs:stat-stub:start
 @stat
 def compute_<stat-id>(ctx, example_data):
-    y_values = example_data["y"]
     return {
-        "Count": str(len(example_data["x"])),
-        "Mean": str(sum(y_values) / len(y_values)),
+        "Count": str(example_data["x"].size),
+        "Mean": str(example_data["y"].mean()),
     }
 # pubs:stat-stub:end
+
+
+# pubs:table-stub:start
+@table
+def tabulate_<table-id>(ctx, example_data):
+    return TableResult(
+        np.column_stack((example_data["x"], example_data["y"])),
+        formats=["{}", "{}"],
+    )
+# pubs:table-stub:end

@@ -12,6 +12,7 @@ from collections.abc import Callable
 from pubify_pubs.config import SYNC_STATE_FILENAME, dump_sync_state, load_sync_state
 from pubify_pubs.discovery import PublicationDefinition
 from pubify_pubs.stats import AUTOSTATS_FILENAME
+from pubify_pubs.tables import AUTOTABLES_FILENAME
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,7 @@ def push_publication(
 
     _deliver_figures(publication.paths.autofigures_root, mirror_root / "autofigures")
     _deliver_autostats(publication.paths.autostats_path, mirror_root / AUTOSTATS_FILENAME)
+    _deliver_autotables(publication.paths.autotables_path, mirror_root / AUTOTABLES_FILENAME)
     next_manifest = _next_manifest_for_push(states, initial_sync=initial_sync, force=force)
     _write_sync_manifest(publication.paths.tex_root, next_manifest)
     _write_sync_manifest(mirror_root, next_manifest)
@@ -436,6 +438,8 @@ def _is_excluded(rel_path: str, excludes: tuple[str, ...]) -> bool:
         return True
     if rel_path == AUTOSTATS_FILENAME:
         return True
+    if rel_path == AUTOTABLES_FILENAME:
+        return True
     if rel_path.startswith(".pubs-sync-base/"):
         return True
     return any(fnmatch(rel_path, pattern) for pattern in excludes)
@@ -464,6 +468,12 @@ def _deliver_autostats(local_autostats_path: Path, mirror_autostats_path: Path) 
     if not local_autostats_path.exists():
         return
     _copy_file(local_autostats_path, mirror_autostats_path)
+
+
+def _deliver_autotables(local_autotables_path: Path, mirror_autotables_path: Path) -> None:
+    if not local_autotables_path.exists():
+        return
+    _copy_file(local_autotables_path, mirror_autotables_path)
 
 
 def _refresh_sync_base(

@@ -18,7 +18,8 @@ import pubify_pubs.mirror as core_mirror
 import pubify_pubs.pinning as core_pinning
 import pubify_pubs.runtime as core_runtime
 from pubify_pubs.data import load_publication_data_npz, publication_data_path, save_publication_data_npz
-from pubify_pubs.decorators import data, external_data, figure, stat
+from pubify_pubs import TableResult
+from pubify_pubs.decorators import data, external_data, figure, stat, table
 from pubify_pubs.discovery import find_workspace_root, list_publication_ids, load_publication_definition
 from pubify_pubs.mirror import diff_publication, pull_publication, push_publication
 from pubify_pubs.runtime import (
@@ -28,6 +29,7 @@ from pubify_pubs.runtime import (
     init_publication,
     run_figures,
     run_stats,
+    run_tables,
 )
 from pubify_pubs.config import load_workspace_config
 
@@ -261,6 +263,37 @@ def _write_external_paper(
         "\\documentclass{article}\n\\usepackage{pubify}\n\\begin{document}\nX\n\\end{document}\n",
         encoding="utf-8",
     )
+    return publication_root
+
+
+def _write_table_paper(
+    repo: Path,
+    *,
+    publication_id: str,
+    figures_lines: list[str],
+    main_tex_lines: list[str],
+) -> Path:
+    publication_root = repo / "papers" / publication_id
+    (publication_root / "tex").mkdir(parents=True, exist_ok=True)
+    (repo / "output" / "papers" / publication_id).mkdir(parents=True, exist_ok=True)
+    (publication_root / "pub.yaml").write_text(
+        "\n".join(
+            [
+                'mirror_root: ""',
+                "main_tex: main.tex",
+                "pubify-mpl-template:",
+                "  textwidth_in: 6.75",
+                "  textheight_in: 9.7",
+                "  base_fontsize_pt: 10",
+                "pubify-mpl-defaults:",
+                "  layout: one",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (publication_root / "figures.py").write_text("\n".join(figures_lines) + "\n", encoding="utf-8")
+    (publication_root / "tex" / "main.tex").write_text("\n".join(main_tex_lines) + "\n", encoding="utf-8")
     return publication_root
 
 
@@ -1250,9 +1283,10 @@ def test_cli_data_add_inserts_stub_after_last_loader(
 
     assert "Data" in captured.out
     assert "- sample_data: added" in _strip_ansi(captured.out)
+    assert "import numpy as np" in figures_text
     assert "def load_sample_data(ctx, file_path):" in figures_text
-    assert '"x": [1, 2, 3],' in figures_text
-    assert '"y": [' in figures_text
+    assert '"x": np.array([1, 2, 3]),' in figures_text
+    assert '"y": np.array([1, 2, 3]),' in figures_text
     assert figures_text.index("def load_bundle") < figures_text.index("def load_sample_data")
     assert figures_text.index("def load_sample_data") < figures_text.index("def plot_single")
 
@@ -1326,17 +1360,59 @@ def test_cli_stat_add_appends_stub_and_adds_missing_imports(
     figures_text = figures_path.read_text(encoding="utf-8")
     assert "Stats" in captured.out
     assert "- sample_stat: added" in _strip_ansi(captured.out)
+    assert "import numpy as np" in figures_text
     assert "from pubify_pubs.decorators import data, stat" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
             [
                 "@stat",
                 "def compute_sample_stat(ctx, example_data):",
-                '    y_values = example_data["y"]',
                 "    return {",
-                '        "Count": str(len(example_data["x"])),',
-                '        "Mean": str(sum(y_values) / len(y_values)),',
+                '        "Count": str(example_data["x"].size),',
+                '        "Mean": str(example_data["y"].mean()),',
                 "    }",
+            ]
+        )
+    )
+
+
+def test_cli_table_add_appends_stub_and_adds_missing_imports(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    figures_path = repo / "papers" / "demo" / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs.decorators import data",
+                "",
+                "@data('training.npy')",
+                "def load_training(ctx, path):",
+                "    return path.read_text(encoding='utf-8')",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert main(["demo", "table", "add", "sample_table"]) == 0
+
+    captured = capsys.readouterr()
+    figures_text = figures_path.read_text(encoding="utf-8")
+    assert "Tables" in captured.out
+    assert "- sample_table: added" in _strip_ansi(captured.out)
+    assert "import numpy as np" in figures_text
+    assert "from pubify_pubs import TableResult" in figures_text
+    assert "from pubify_pubs.decorators import data, table" in figures_text
+    assert figures_text.rstrip().endswith(
+        "\n".join(
+            [
+                "@table",
+                "def tabulate_sample_table(ctx, example_data):",
+                "    return TableResult(",
+                '        np.column_stack((example_data["x"], example_data["y"])),',
+                '        formats=["{}", "{}"],',
+                "    )",
             ]
         )
     )
@@ -1348,6 +1424,10 @@ def test_cli_stat_add_appends_stub_and_adds_missing_imports(
         (["demo", "data", "add", "training"], "Loader 'training' already exists"),
         (["demo", "figure", "add", "single"], "Figure 'single' already exists"),
         (["demo", "stat", "add", "training_summary"], "Stat 'training_summary' already exists"),
+        (
+            ["demo", "table", "add", "Bad-Id"],
+            "Invalid id 'Bad-Id': ids must be snake_case and start with a letter",
+        ),
         (
             ["demo", "data", "add", "Bad-Id"],
             "Invalid id 'Bad-Id': ids must be snake_case and start with a letter",
@@ -1391,6 +1471,7 @@ def test_cli_shell_add_commands_mutate_figures_module(
             "data add sample_data",
             "figure add sample_plot",
             "stat add sample_stat",
+            "table add sample_table",
             "quit",
         ]
     )
@@ -1401,11 +1482,13 @@ def test_cli_shell_add_commands_mutate_figures_module(
     assert main(["demo", "shell"]) == 0
 
     figures_text = (repo / "papers" / "demo" / "figures.py").read_text(encoding="utf-8")
+    assert "import numpy as np" in figures_text
     assert "def load_sample_data(ctx, file_path):" in figures_text
-    assert '"x": [1, 2, 3],' in figures_text
-    assert '"y": [' in figures_text
+    assert '"x": np.array([1, 2, 3]),' in figures_text
+    assert '"y": np.array([1, 2, 3]),' in figures_text
     assert "def plot_sample_plot(ctx, example_data):" in figures_text
     assert "def compute_sample_stat(ctx, example_data):" in figures_text
+    assert "def tabulate_sample_table(ctx, example_data):" in figures_text
 
 
 def test_cli_shell_update_forces_publication_refresh(
@@ -2930,6 +3013,101 @@ def test_cli_stat_update_selected_stat_prints_only_selected_block(
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
 
 
+def test_cli_table_update_writes_autotables_and_prints_table_block(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _write_table_paper(
+        repo,
+        publication_id="tablesdemo",
+        figures_lines=[
+            "from pubify_pubs import TableResult",
+            "from pubify_pubs.decorators import table",
+            "",
+            "@table",
+            "def tabulate_summary(ctx):",
+            "    return TableResult([['Metric', 'Value'], ['Count', 3]], formats=['{}', '{}'])",
+        ],
+        main_tex_lines=[
+            r"\documentclass{article}",
+            r"\usepackage{pubify}",
+            r"\begin{document}",
+            r"\input{autotables.tex}",
+            r"\begin{tabular}{ll}",
+            r"\TableSummary",
+            r"\end{tabular}",
+            r"\end{document}",
+        ],
+    )
+
+    assert main(["tablesdemo", "table", "update"]) == 0
+
+    captured = capsys.readouterr()
+    assert "Tables" in captured.out
+    assert "- summary: updated" in _strip_ansi(captured.out)
+    assert (repo / "papers" / "tablesdemo" / "tex" / "autotables.tex").read_text(encoding="utf-8")
+
+
+def test_cli_table_check_validates_selected_and_all_tables(repo: Path) -> None:
+    _write_table_paper(
+        repo,
+        publication_id="tablecheck",
+        figures_lines=[
+            "from pubify_pubs import TableResult",
+            "from pubify_pubs.decorators import table",
+            "",
+            "@table",
+            "def tabulate_summary(ctx):",
+            "    return TableResult([['Metric', 'Value'], ['Count', 3]], formats=['{}', '{}'])",
+        ],
+        main_tex_lines=[
+            r"\documentclass{article}",
+            r"\usepackage{pubify}",
+            r"\begin{document}",
+            r"\input{autotables.tex}",
+            r"\begin{tabular}{ll}",
+            r"\TableSummary",
+            r"\end{tabular}",
+            r"\end{document}",
+        ],
+    )
+
+    init_publication(load_publication_definition(repo, "tablecheck"))
+
+    assert main(["tablecheck", "table", "check"]) == 0
+    assert main(["tablecheck", "table", "summary", "check"]) == 0
+    assert main(["tablecheck", "check"]) == 0
+
+
+def test_cli_tables_alias_maps_to_table(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _write_table_paper(
+        repo,
+        publication_id="tablesalias",
+        figures_lines=[
+            "from pubify_pubs import TableResult",
+            "from pubify_pubs.decorators import table",
+            "",
+            "@table",
+            "def tabulate_summary(ctx):",
+            "    return TableResult([['Metric', 'Value']], formats=['{}', '{}'])",
+        ],
+        main_tex_lines=[
+            r"\documentclass{article}",
+            r"\usepackage{pubify}",
+            r"\begin{document}",
+            r"\input{autotables.tex}",
+            r"\begin{tabular}{ll}",
+            r"\TableSummary",
+            r"\end{tabular}",
+            r"\end{document}",
+        ],
+    )
+
+    assert main(["tablesalias", "tables", "list"]) == 0
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "summary"
+
+
 def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     repo: Path,
     fake_pubify_mpl: FakePubifyBackend,
@@ -2960,29 +3138,34 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     figures_py = (fresh_root / "figures.py").read_text(encoding="utf-8")
     assert '"""Figures entrypoint for publication figures."""' in figures_py
     assert "import matplotlib.pyplot as plt" in figures_py
-    assert "from pubify_pubs import FigureExport" in figures_py
-    assert "from pubify_pubs.decorators import data, figure, stat" in figures_py
+    assert "import numpy as np" in figures_py
+    assert "from pubify_pubs import FigureExport, TableResult" in figures_py
+    assert "from pubify_pubs.decorators import data, figure, stat, table" in figures_py
     assert "# Data" in figures_py
-    assert "# Figures & Stats" in figures_py
+    assert "# Figures, Stats & Tables" in figures_py
     assert "def load_example_data(ctx, file_path):" in figures_py
-    assert '"x": [' in figures_py
-    assert '"y": [' in figures_py
+    assert '"x": np.array([' in figures_py
+    assert '"y": np.array([' in figures_py
     assert "def plot_example(ctx, example_data):" in figures_py
     assert 'ax.scatter(example_data["x"], example_data["y"])' in figures_py
     assert 'layout="one"' in figures_py
     assert "def compute_example(ctx, example_data):" in figures_py
-    assert '"Count": str(len(example_data["x"]))' in figures_py
-    assert '"Mean": str(sum(y_values) / len(y_values))' in figures_py
+    assert '"Count": str(example_data["x"].size)' in figures_py
+    assert '"Mean": str(example_data["y"].mean())' in figures_py
+    assert "def tabulate_example(ctx, example_data):" in figures_py
+    assert 'np.column_stack((example_data["x"], example_data["y"]))' in figures_py
     assert "# pubs:" not in figures_py
     main_tex = fresh_root / "tex" / "main.tex"
     assert main_tex.exists()
     main_tex_text = main_tex.read_text(encoding="utf-8")
     assert r"\usepackage{pubify}" in main_tex_text
     assert r"\input{autostats.tex}" in main_tex_text
+    assert r"\input{autotables.tex}" in main_tex_text
     assert r"\figfloat" in main_tex_text
     assert r"\figone{autofigures/example}" in main_tex_text
     assert r"\StatExampleCount{}" in main_tex_text
     assert r"\StatExampleMean{}" in main_tex_text
+    assert r"\TableExample" in main_tex_text
     assert r"[fig:example]" in main_tex_text
     assert r"\graphicspath{{figures/}}" not in main_tex_text
     assert (fresh_root / "tex" / "autofigures").exists()
@@ -3874,6 +4057,7 @@ def test_push_excludes_build_uses_working_tree_and_updates_hash_manifest(repo: P
     (paper.paths.autofigures_root).mkdir(parents=True, exist_ok=True)
     (paper.paths.autofigures_root / "plot.pdf").write_text("figure data\n", encoding="utf-8")
     paper.paths.autostats_path.write_text(r"\newcommand{\StatTrainingSummary}{training}" + "\n", encoding="utf-8")
+    paper.paths.autotables_path.write_text(r"\newcommand{\TableSummary}{Count & 3 \\}" + "\n", encoding="utf-8")
     push_publication(paper)
     mirror_root = paper.config.mirror_root_path
     assert mirror_root is not None
@@ -3883,6 +4067,9 @@ def test_push_excludes_build_uses_working_tree_and_updates_hash_manifest(repo: P
     assert (mirror_root / "autostats.tex").read_text(encoding="utf-8") == (
         r"\newcommand{\StatTrainingSummary}{training}" + "\n"
     )
+    assert (mirror_root / "autotables.tex").read_text(encoding="utf-8") == (
+        r"\newcommand{\TableSummary}{Count & 3 \\}" + "\n"
+    )
     assert not (mirror_root / "build" / "ignored.aux").exists()
     assert not (mirror_root / "drafts" / "note.txt").exists()
     sync_text = (mirror_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
@@ -3890,6 +4077,7 @@ def test_push_excludes_build_uses_working_tree_and_updates_hash_manifest(repo: P
     assert f"sections/intro.tex: {_hash_text('intro\n')}" in sync_text
     assert "autofigures/plot.pdf" not in sync_text
     assert "autostats.tex" not in sync_text
+    assert "autotables.tex" not in sync_text
     assert (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8") == sync_text
     assert (paper.paths.sync_base_root / "main.tex").read_text(encoding="utf-8") == "working tree main\n"
     assert (paper.paths.sync_base_root / "sections" / "intro.tex").read_text(encoding="utf-8") == "intro\n"
@@ -4592,6 +4780,14 @@ def test_diff_rejects_autostats_as_outside_managed_set(repo: Path) -> None:
 
     with pytest.raises(ValueError, match="Managed tex path not found: autostats.tex"):
         diff_publication(paper, "autostats.tex")
+
+
+def test_diff_rejects_autotables_as_outside_managed_set(repo: Path) -> None:
+    paper = load_publication_definition(repo, "demo")
+    paper.paths.autotables_path.write_text(r"\newcommand{\TableSummary}{Count & 3 \\}" + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Managed tex path not found: autotables.tex"):
+        diff_publication(paper, "autotables.tex")
 
 
 def test_sync_base_is_excluded_from_managed_sync_and_diff(repo: Path) -> None:

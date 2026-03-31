@@ -18,6 +18,13 @@ def stat(func: Callable) -> Callable:
     return func
 
 
+def table(func: Callable) -> Callable:
+    """Mark a callable as a generated publication table entrypoint."""
+
+    setattr(func, "__pubs_table__", True)
+    return func
+
+
 def data(
     *args: str,
     nocache: bool = False,

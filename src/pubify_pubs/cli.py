@@ -29,6 +29,7 @@ from pubify_pubs.runtime import (
     build_publication,
     clear_autofigures,
     check_publication,
+    check_tables,
     clear_publication_build,
     generated_outputs_are_stale,
     init_publication,
@@ -37,8 +38,10 @@ from pubify_pubs.runtime import (
     resolve_loader,
     run_figures,
     run_stats,
+    run_tables,
     update_stats,
     write_computed_stats,
+    write_computed_tables,
 )
 from pubify_pubs.stats import ComputedStat
 from pubify_pubs.stubs import (
@@ -86,6 +89,11 @@ class FigureInventoryRow:
 @dataclass(frozen=True)
 class StatInventoryRow:
     stat_id: str
+
+
+@dataclass(frozen=True)
+class TableInventoryRow:
+    table_id: str
 
 
 @dataclass(frozen=True)
@@ -247,6 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  pubs <publication-id> data <loader-id> pin\n"
             "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]\n"
             "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update]\n"
+            "  pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check]\n"
             "  pubs <publication-id> ignore <relative-path>\n"
             "  pubs <publication-id> build [--update|--skipupdate] [--clear]\n"
             "  pubs <publication-id> preview\n"
@@ -306,6 +315,8 @@ def main(argv: list[str] | None = None) -> int:
             command = "figure"
         if command == "stats":
             command = "stat"
+        if command == "tables":
+            command = "table"
         if command == "init":
             parser.error("use 'pubs init <publication-id>'")
         if command not in {
@@ -316,6 +327,7 @@ def main(argv: list[str] | None = None) -> int:
             "data",
             "figure",
             "stat",
+            "table",
             "ignore",
             "build",
             "preview",
@@ -416,6 +428,8 @@ def _add_publication_stub(publication: PublicationDefinition, *, kind: str, stub
         raise ValueError(f"Figure '{stub_id}' already exists")
     if kind == "stat" and stub_id in publication.stats:
         raise ValueError(f"Stat '{stub_id}' already exists")
+    if kind == "table" and stub_id in publication.tables:
+        raise ValueError(f"Table '{stub_id}' already exists")
 
     function_name = generated_stub_function_name(kind, stub_id)
     if function_name in module_function_names(publication.paths.entrypoint):
@@ -503,7 +517,7 @@ def _run_publication_command(
         if command.force:
             error("data does not accept --force")
         if command.arg3 in {None, "list"}:
-            if command.arg4 is not None:
+            if command.arg4 is not None or command.arg5 is not None:
                 error("data list does not accept additional arguments")
             rows = _build_data_inventory_rows(publication)
             if not rows:
@@ -533,8 +547,8 @@ def _run_publication_command(
         print(f"{publication.publication_id}: pinned loader {result.loader_id}")
         for path in result.copied_paths:
             print(path)
-            print(result.decorator_summary)
-            return 0
+        print(result.decorator_summary)
+        return 0
 
     if command.command == "figure":
         _reject_build_flags_from_command(command, error)
@@ -653,6 +667,70 @@ def _run_publication_command(
         _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
         _run_stat_updates(publication, ctx, (selected_id,), use_color=use_color)
         return 0
+
+    if command.command == "table":
+        _reject_build_flags_from_command(command, error)
+        if command.force:
+            error("table does not accept --force")
+        if command.arg3 in {None, "list"}:
+            if command.arg4 is not None or command.arg5 is not None:
+                error("table list does not accept additional arguments")
+            rows = _build_table_inventory_rows(publication)
+            if not rows:
+                print(f"{publication.publication_id}: no tables")
+                return 0
+            for row in rows:
+                print(row.table_id)
+            return 0
+        if command.arg3 == "add":
+            if command.arg4 is None:
+                error("table add requires <table-id>")
+            if command.arg5 is not None:
+                error("table add accepts only <table-id>")
+            _add_publication_stub(publication, kind="table", stub_id=command.arg4)
+            _print_added_stub("Tables", command.arg4, use_color=use_color)
+            return 0
+        if command.arg3 == "update":
+            if command.arg4 is not None or command.arg5 is not None:
+                error("table update does not accept additional arguments")
+            ctx = _command_run_context(
+                publication,
+                loader_cache=loader_cache,
+                pending_data_output=pending_data_output,
+            )
+            loader_ids = _table_loader_ids(publication)
+            _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
+            _run_table_updates(publication, ctx, tuple(sorted(publication.tables)), use_color=use_color)
+            return 0
+        if command.arg3 == "check":
+            if command.arg4 is not None or command.arg5 is not None:
+                error("table check does not accept additional arguments")
+            check_tables(publication)
+            print(f"{publication.publication_id}: ok")
+            return 0
+        if command.arg4 == "update":
+            if command.arg5 is not None:
+                error("table <table-id> update does not accept additional arguments")
+            selected_id = command.arg3
+            if selected_id not in publication.tables:
+                raise KeyError(f"Unknown table '{selected_id}'")
+            ctx = _command_run_context(
+                publication,
+                loader_cache=loader_cache,
+                pending_data_output=pending_data_output,
+            )
+            loader_ids = _table_loader_ids(publication, selected_id)
+            _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
+            _run_table_updates(publication, ctx, (selected_id,), use_color=use_color)
+            return 0
+        if command.arg4 == "check" and command.arg5 is None:
+            selected_id = command.arg3
+            if selected_id not in publication.tables:
+                raise KeyError(f"Unknown table '{selected_id}'")
+            check_tables(publication, selected_id)
+            print(f"{selected_id}: ok")
+            return 0
+        error("table supports only 'list', 'add <table-id>', 'update', 'check', '<table-id> update', or '<table-id> check'")
 
     if command.command == "build":
         if command.force:
@@ -814,6 +892,8 @@ def run_publication_shell(
                     parsed_command = "figure"
                 if parsed_command == "stats":
                     parsed_command = "stat"
+                if parsed_command == "tables":
+                    parsed_command = "table"
                 publication_command = PublicationCommand(
                     command=parsed_command,
                     arg3=parsed.arg3,
@@ -1050,6 +1130,7 @@ def _shell_help_text(publication_id: str) -> str:
             "  data <loader-id> pin",
             "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]]",
             "  stat [list|add <stat-id>|update|<stat-id> update]",
+            "  table [list|add <table-id>|update|check|<table-id> update|<table-id> check]",
             "  update",
             "  ignore <relative-path>",
             "  build [--update|--skipupdate] [--clear]",
@@ -1069,7 +1150,7 @@ class _ShellArgumentParser(argparse.ArgumentParser):
 
 
 def _is_add_stub_command(command: PublicationCommand) -> bool:
-    return command.command in {"data", "figure", "stat"} and command.arg3 == "add"
+    return command.command in {"data", "figure", "stat", "table"} and command.arg3 == "add"
 
 
 def _parse_subfig_idx_value(value: str, error: Callable[[str], None]) -> int:
@@ -1092,6 +1173,10 @@ def _build_stat_inventory_rows(publication: PublicationDefinition) -> list[StatI
     return [StatInventoryRow(stat_id=stat_id) for stat_id in sorted(publication.stats)]
 
 
+def _build_table_inventory_rows(publication: PublicationDefinition) -> list[TableInventoryRow]:
+    return [TableInventoryRow(table_id=table_id) for table_id in sorted(publication.tables)]
+
+
 def _print_update_outputs(
     publication: PublicationDefinition,
     ctx: RunContext,
@@ -1102,6 +1187,8 @@ def _print_update_outputs(
         _run_figure_updates(publication, ctx, _selected_figure_ids(publication), use_color=use_color)
     if publication.stats:
         _run_stat_updates(publication, ctx, tuple(sorted(publication.stats)), use_color=use_color)
+    if publication.tables:
+        _run_table_updates(publication, ctx, tuple(sorted(publication.tables)), use_color=use_color)
 
 
 def _refresh_publication_support(publication: PublicationDefinition) -> tuple[Path, ...]:
@@ -1208,6 +1295,36 @@ def _run_stat_updates(
     finally:
         printer.close()
     write_computed_stats(publication, tuple(computed_stats))
+
+
+def _run_table_updates(
+    publication: PublicationDefinition,
+    ctx: RunContext,
+    table_ids: tuple[str, ...],
+    *,
+    use_color: bool,
+) -> None:
+    if not table_ids:
+        return
+    printer = _LiveSectionPrinter("Tables", use_color=use_color)
+    computed_tables = []
+    try:
+        for table_id in table_ids:
+            printer.start_item(table_id, "updating")
+            try:
+                computed = run_tables(publication, table_id, ctx=ctx)
+            except UserCodeExecutionError as exc:
+                printer.fail(table_id, detail_lines=list(exc.lines))
+                raise _ReportedExecutionError() from exc
+            computed_table = computed[0]
+            computed_tables.append(computed_table)
+            detail_lines = _consume_dynamic_output(ctx, "table")
+            if len(computed_table.body_texts) > 1:
+                detail_lines.append(f"{len(computed_table.body_texts)} bodies")
+            printer.succeed(table_id, detail_lines=detail_lines)
+    finally:
+        printer.close()
+    write_computed_tables(publication, tuple(computed_tables))
 
 
 def _count_figure_outputs(figure_id: str, output_paths: list[Path]) -> int:
@@ -1360,9 +1477,23 @@ def _stat_loader_ids(publication: PublicationDefinition) -> tuple[str, ...]:
     return tuple(sorted(loader_ids))
 
 
+def _table_loader_ids(publication: PublicationDefinition, table_id: str | None = None) -> tuple[str, ...]:
+    if table_id is None:
+        tables = publication.tables.values()
+    else:
+        if table_id not in publication.tables:
+            raise KeyError(f"Unknown table '{table_id}'")
+        tables = (publication.tables[table_id],)
+    loader_ids: set[str] = set()
+    for table in tables:
+        loader_ids.update(table.dependency_ids)
+    return tuple(sorted(loader_ids))
+
+
 def _build_refresh_loader_ids(publication: PublicationDefinition) -> tuple[str, ...]:
     loader_ids = set(_figure_loader_ids(publication))
     loader_ids.update(_stat_loader_ids(publication))
+    loader_ids.update(_table_loader_ids(publication))
     return tuple(sorted(loader_ids))
 
 
@@ -1472,7 +1603,7 @@ def _preview_figure_paths(
             return [paths[subfigure_index - 1]]
         return paths
     raise FileNotFoundError(
-        f"Exported figure PDF does not exist for '{figure_id}'. Run `pubs {publication.publication_id} export {figure_id}` first."
+        f"Exported figure PDF does not exist for '{figure_id}'. Run `pubs {publication.publication_id} figure {figure_id} update` first."
     )
 
 
