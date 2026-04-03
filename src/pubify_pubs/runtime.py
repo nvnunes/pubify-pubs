@@ -505,7 +505,10 @@ def _run_one_figure(
         _capture_dynamic_output(ctx, "figure", figure.func, ctx, *resolved_args),
         ctx.publication.config,
     )
-    return export_figure(
+    return _capture_dynamic_output(
+        ctx,
+        "figure",
+        export_figure,
         ctx.publication.config,
         ctx.publication.paths.tex_root,
         output_dir,

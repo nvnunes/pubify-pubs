@@ -9,8 +9,6 @@ import re
 import subprocess
 import shlex
 import sys
-import threading
-import time
 
 from pubify_pubs.export import close_figure_export_sources
 from pubify_pubs.config import add_sync_exclude, load_workspace_config
@@ -53,7 +51,17 @@ from pubify_pubs.runtime import (
     write_computed_stats,
     write_computed_tables,
 )
+from pubify_pubs.shell_incremental import (
+    ShellMethodState,
+    _current_figure_output_names,
+    collect_shell_method_state,
+    figure_output_belongs_to_id,
+    imported_module_fingerprints_changed,
+    plan_incremental_shell_build,
+    purge_modules_by_paths,
+)
 from pubify_pubs.stats import ComputedStat
+from pubify_pubs.tables import ComputedTable
 from pubify_pubs.stubs import (
     add_stub_to_figures_module,
     generated_stub_function_name,
@@ -130,9 +138,6 @@ class _ReportedExecutionError(RuntimeError):
 
 
 class _LiveSectionPrinter:
-    _ANIMATION_SUFFIXES = (".", "..", "...")
-    _ANIMATION_INTERVAL_S = 1.0
-
     def __init__(self, title: str, *, use_color: bool, live: bool | None = None) -> None:
         self.title = title
         self.use_color = use_color
@@ -141,8 +146,6 @@ class _LiveSectionPrinter:
         self.active = False
         self._active_label: str | None = None
         self._active_action: str | None = None
-        self._stop_event: threading.Event | None = None
-        self._animation_thread: threading.Thread | None = None
 
     def ensure_heading(self) -> None:
         if self.started:
@@ -154,12 +157,18 @@ class _LiveSectionPrinter:
         self.ensure_heading()
         if not self.live:
             return
-        self._stop_animation()
         self._active_label = label
         self._active_action = action
-        print(_render_execution_status_line(label, f"{action}...", use_color=self.use_color, state="pending"))
+        initial_status = f"{action}..."
+        line = _render_execution_status_line(
+            label,
+            initial_status,
+            use_color=self.use_color,
+            state="pending",
+        )
+        sys.stdout.write(line)
+        sys.stdout.flush()
         self.active = True
-        self._start_animation()
 
     def succeed(self, label: str, *, detail_lines: list[str] | None = None) -> None:
         self.ensure_heading()
@@ -181,14 +190,12 @@ class _LiveSectionPrinter:
         self._print_detail_lines(detail_lines or [])
 
     def close(self) -> None:
-        self._stop_animation()
         if self.started:
             print()
 
     def _finish(self, line: str) -> None:
-        self._stop_animation()
         if self.live and self.active:
-            sys.stdout.write("\033[1A\r\033[2K")
+            sys.stdout.write(self._erase_active_line())
             sys.stdout.write(f"{line}\n")
             sys.stdout.flush()
             self.active = False
@@ -206,40 +213,8 @@ class _LiveSectionPrinter:
     def _success_word(self) -> str:
         return "loaded" if self.title == "Data" else "updated"
 
-    def _start_animation(self) -> None:
-        if not self.live or not self.active or self._active_label is None or self._active_action is None:
-            return
-        self._stop_event = threading.Event()
-        self._animation_thread = threading.Thread(target=self._animate_active_line, daemon=True)
-        self._animation_thread.start()
-
-    def _stop_animation(self) -> None:
-        if self._stop_event is not None:
-            self._stop_event.set()
-        if self._animation_thread is not None:
-            self._animation_thread.join(timeout=0.5)
-        self._stop_event = None
-        self._animation_thread = None
-
-    def _animate_active_line(self) -> None:
-        if self._stop_event is None or self._active_label is None or self._active_action is None:
-            return
-        stop_event = self._stop_event
-        label = self._active_label
-        action = self._active_action
-        suffix_index = len(self._ANIMATION_SUFFIXES) - 1
-        while not stop_event.wait(self._ANIMATION_INTERVAL_S):
-            suffix = self._ANIMATION_SUFFIXES[suffix_index % len(self._ANIMATION_SUFFIXES)]
-            suffix_index += 1
-            line = _render_execution_status_line(
-                label,
-                f"{action}{suffix}",
-                use_color=self.use_color,
-                state="pending",
-            )
-            sys.stdout.write("\033[1A\r\033[2K")
-            sys.stdout.write(f"{line}\n")
-            sys.stdout.flush()
+    def _erase_active_line(self) -> str:
+        return "\r\033[2K"
 
 
 @dataclass
@@ -250,7 +225,11 @@ class PublicationShellSession:
     fingerprints: dict[Path, float | None]
     loader_cache: dict[str, object]
     pending_data_output: dict[str, list[str]]
-    build_seen: bool = False
+    method_state: ShellMethodState
+    last_success_method_state: ShellMethodState | None
+    cached_figure_output_names: dict[str, tuple[str, ...]]
+    cached_stats: dict[str, ComputedStat]
+    cached_tables: dict[str, ComputedTable]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -470,8 +449,8 @@ def _run_publication_command(
     use_interactive_merge: bool,
     loader_cache: dict[str, object] | None = None,
     pending_data_output: dict[str, list[str]] | None = None,
-    pending_data_loader_ids: tuple[str, ...] | None = None,
-    force_build_refresh: bool = False,
+    shell_session: PublicationShellSession | None = None,
+    imported_modules_changed: bool = False,
 ) -> int:
     if command.command == "ignore":
         _reject_build_flags_from_command(command, error)
@@ -519,18 +498,13 @@ def _run_publication_command(
             error("update does not accept --force")
         if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
             error("update does not accept additional arguments")
-        changed_paths = _refresh_publication_support(publication)
-        ctx = _command_run_context(
+        _run_full_refresh(
             publication,
+            use_color=use_color,
             loader_cache=loader_cache,
             pending_data_output=pending_data_output,
+            shell_session=shell_session,
         )
-        if pending_data_loader_ids is not None:
-            ctx.updated_loader_ids.update(pending_data_loader_ids)
-        loader_ids = _build_refresh_loader_ids(publication)
-        _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
-        _print_updated_publication_files(publication, changed_paths, use_color=use_color)
-        _print_update_outputs(publication, ctx, use_color=use_color)
         return 0
 
     if command.command == "data":
@@ -611,7 +585,7 @@ def _run_publication_command(
             figure_ids = _selected_figure_ids(publication)
             loader_ids = _figure_loader_ids(publication)
             _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
-            _run_figure_updates(publication, ctx, figure_ids, use_color=use_color)
+            _run_figure_updates(publication, ctx, figure_ids, use_color=use_color, clear_existing=True)
             return 0
         if command.arg4 == "update":
             if command.arg5 is not None:
@@ -624,7 +598,7 @@ def _run_publication_command(
             figure_ids = _selected_figure_ids(publication, command.arg3)
             loader_ids = _figure_loader_ids(publication, command.arg3)
             _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
-            _run_figure_updates(publication, ctx, figure_ids, use_color=use_color)
+            _run_figure_updates(publication, ctx, figure_ids, use_color=use_color, clear_existing=True)
             return 0
         if _is_latex_alias(command.arg4):
             selected_id = command.arg3
@@ -856,23 +830,36 @@ def _run_publication_command(
             error("build does not accept additional arguments")
         if command.clear_build:
             clear_publication_build(publication)
-        if not command.skip_update and (
+        if shell_session is not None:
+            if not command.skip_update:
+                if command.update_before_build:
+                    _run_full_refresh(
+                        publication,
+                        use_color=use_color,
+                        loader_cache=loader_cache,
+                        pending_data_output=pending_data_output,
+                        shell_session=shell_session,
+                    )
+                else:
+                    _run_incremental_shell_build(
+                        publication,
+                        use_color=use_color,
+                        loader_cache=loader_cache,
+                        pending_data_output=pending_data_output,
+                        shell_session=shell_session,
+                        imported_modules_changed=imported_modules_changed,
+                    )
+        elif not command.skip_update and (
             command.update_before_build
-            or force_build_refresh
             or generated_outputs_are_stale(publication)
         ):
-            changed_paths = _refresh_publication_support(publication)
-            ctx = _command_run_context(
+            _run_full_refresh(
                 publication,
+                use_color=use_color,
                 loader_cache=loader_cache,
                 pending_data_output=pending_data_output,
+                shell_session=None,
             )
-            if pending_data_loader_ids is not None:
-                ctx.updated_loader_ids.update(pending_data_loader_ids)
-            loader_ids = _build_refresh_loader_ids(publication)
-            _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
-            _print_updated_publication_files(publication, changed_paths, use_color=use_color)
-            _print_update_outputs(publication, ctx, use_color=use_color)
         build_publication(publication)
         _print_updated_pdf(build_pdf_path(publication), use_color=use_color)
         return 0
@@ -943,13 +930,22 @@ def run_publication_shell(
 ) -> int:
     readline_module = _configure_shell_readline()
     loader_cache, pending_data_output = _preload_shell_loader_cache(publication)
+    method_state = collect_shell_method_state(publication)
     session = PublicationShellSession(
         workspace_root=workspace_root,
         publication_id=publication_id,
         publication=publication,
-        fingerprints=_collect_reload_fingerprints(publication.paths),
+        fingerprints=_collect_reload_fingerprints(publication.paths, method_state.imported_module_paths),
         loader_cache=loader_cache,
         pending_data_output=pending_data_output,
+        method_state=method_state,
+        last_success_method_state=None,
+        cached_figure_output_names={
+            figure_id: _current_figure_output_names(publication, figure_id)
+            for figure_id in publication.figures
+        },
+        cached_stats={},
+        cached_tables={},
     )
     shell_parser = _build_shell_command_parser()
     history_path = _shell_history_path(publication.paths)
@@ -1021,10 +1017,9 @@ def run_publication_shell(
                     skip_update=parsed.skipupdate,
                     clear_build=parsed.clear_build,
                 )
-                if _is_add_stub_command(publication_command):
-                    did_reload = False
-                else:
-                    did_reload = _reload_session_publication(
+                reload_result = _ReloadResult(False, False)
+                if not _is_add_stub_command(publication_command):
+                    reload_result = _reload_session_publication(
                         session,
                         force=(
                             publication_command.command == "update"
@@ -1033,12 +1028,8 @@ def run_publication_shell(
                                 and publication_command.update_before_build
                             )
                         ),
+                        purge_all_imported_modules=publication_command.command == "update",
                     )
-                pending_data_loader_ids = (
-                    tuple(sorted(session.publication.loaders))
-                    if publication_command.command in {"update", "build"} and did_reload
-                    else None
-                )
                 if publication_command.command in {"update", "build"}:
                     print()
                 _run_publication_command(
@@ -1049,15 +1040,9 @@ def run_publication_shell(
                     use_interactive_merge=sys.stdout.isatty() and sys.stdin.isatty(),
                     loader_cache=session.loader_cache,
                     pending_data_output=session.pending_data_output,
-                    pending_data_loader_ids=pending_data_loader_ids,
-                    force_build_refresh=(
-                        publication_command.command == "build"
-                        and not publication_command.skip_update
-                        and not session.build_seen
-                    ),
-                )
-                if publication_command.command in {"build", "update"}:
-                    session.build_seen = True
+                    shell_session=session,
+                        imported_modules_changed=reload_result.imported_modules_changed,
+                    )
             except UserCodeExecutionError as exc:
                 _print_indented_lines(exc.lines, stream=sys.stderr)
             except _ReportedExecutionError:
@@ -1198,7 +1183,10 @@ def _read_shell_history_file(history_path: Path) -> list[str]:
     return history_path.read_text(encoding="utf-8").splitlines()
 
 
-def _collect_reload_fingerprints(paths: PublicationPaths) -> dict[Path, float | None]:
+def _collect_reload_fingerprints(
+    paths: PublicationPaths,
+    imported_module_paths: Sequence[Path] = (),
+) -> dict[Path, float | None]:
     fingerprints: dict[Path, float | None] = {
         paths.entrypoint: _mtime_or_none(paths.entrypoint),
         paths.config_path: _mtime_or_none(paths.config_path),
@@ -1210,7 +1198,15 @@ def _collect_reload_fingerprints(paths: PublicationPaths) -> dict[Path, float | 
     if helpers_pkg.is_dir():
         for helper_path in sorted(path for path in helpers_pkg.rglob("*") if path.is_file()):
             fingerprints[helper_path] = helper_path.stat().st_mtime
+    for module_path in imported_module_paths:
+        fingerprints[module_path] = _mtime_or_none(module_path)
     return fingerprints
+
+
+@dataclass(frozen=True)
+class _ReloadResult:
+    reloaded: bool
+    imported_modules_changed: bool = False
 
 
 def _mtime_or_none(path: Path) -> float | None:
@@ -1223,18 +1219,28 @@ def _reload_session_publication(
     session: PublicationShellSession,
     *,
     force: bool = False,
-) -> bool:
-    current = _collect_reload_fingerprints(session.publication.paths)
+    purge_all_imported_modules: bool = True,
+) -> _ReloadResult:
+    current = _collect_reload_fingerprints(session.publication.paths, session.method_state.imported_module_paths)
+    imported_changed = imported_module_fingerprints_changed(session.method_state, current)
     if not force and current == session.fingerprints:
-        return False
+        return _ReloadResult(False, False)
+    if purge_all_imported_modules:
+        purge_modules_by_paths(session.method_state.imported_module_paths)
+    else:
+        changed_import_paths = [
+            path
+            for path in session.method_state.imported_module_paths
+            if current.get(path) != session.method_state.imported_module_fingerprints.get(path)
+        ]
+        purge_modules_by_paths(changed_import_paths)
     publication = load_publication_definition(session.workspace_root, session.publication_id)
-    loader_cache, pending_data_output = _preload_shell_loader_cache(publication)
     session.publication = publication
-    session.fingerprints = _collect_reload_fingerprints(publication.paths)
-    session.loader_cache = loader_cache
-    session.pending_data_output = pending_data_output
-    session.build_seen = False
-    return True
+    session.method_state = collect_shell_method_state(publication)
+    session.fingerprints = _collect_reload_fingerprints(publication.paths, session.method_state.imported_module_paths)
+    session.loader_cache = {}
+    session.pending_data_output = {}
+    return _ReloadResult(True, imported_changed)
 
 
 def _shell_help_text(publication_id: str) -> str:
@@ -1306,11 +1312,179 @@ def _print_update_outputs(
     use_color: bool,
 ) -> None:
     if publication.figures:
-        _run_figure_updates(publication, ctx, _selected_figure_ids(publication), use_color=use_color)
+        _run_figure_updates(
+            publication,
+            ctx,
+            _selected_figure_ids(publication),
+            use_color=use_color,
+            clear_existing=True,
+        )
     if publication.stats:
         _run_stat_updates(publication, ctx, tuple(sorted(publication.stats)), use_color=use_color)
     if publication.tables:
         _run_table_updates(publication, ctx, tuple(sorted(publication.tables)), use_color=use_color)
+
+
+def _run_full_refresh(
+    publication: PublicationDefinition,
+    *,
+    use_color: bool,
+    loader_cache: dict[str, object] | None,
+    pending_data_output: dict[str, list[str]] | None,
+    shell_session: PublicationShellSession | None,
+    force_loader_reload: bool = True,
+) -> None:
+    changed_paths = _refresh_publication_support(publication)
+    ctx = _command_run_context(
+        publication,
+        loader_cache=(
+            {}
+            if shell_session is not None and force_loader_reload
+            else loader_cache
+        ),
+        pending_data_output=pending_data_output,
+    )
+    loader_ids = _build_refresh_loader_ids(publication)
+    _run_data_updates(
+        ctx,
+        loader_ids,
+        use_color=use_color,
+        include_nocache=True,
+        show_all=force_loader_reload,
+    )
+    _print_updated_publication_files(publication, changed_paths, use_color=use_color)
+    figure_output_names: dict[str, tuple[str, ...]] = {}
+    stats_cache: dict[str, ComputedStat] = {}
+    tables_cache: dict[str, ComputedTable] = {}
+    if publication.figures:
+        figure_output_names = _run_figure_updates(
+            publication,
+            ctx,
+            _selected_figure_ids(publication),
+            use_color=use_color,
+            clear_existing=True,
+        )
+    if publication.stats:
+        stats_cache = _run_stat_updates(
+            publication,
+            ctx,
+            tuple(sorted(publication.stats)),
+            use_color=use_color,
+        )
+    if publication.tables:
+        tables_cache = _run_table_updates(
+            publication,
+            ctx,
+            tuple(sorted(publication.tables)),
+            use_color=use_color,
+        )
+    if shell_session is not None:
+        shell_session.loader_cache = {
+            key: value for key, value in ctx.loader_cache.items() if key in publication.loaders
+        }
+        shell_session.pending_data_output = ctx.captured_data_output
+        shell_session.cached_figure_output_names = figure_output_names
+        shell_session.cached_stats = stats_cache
+        shell_session.cached_tables = tables_cache
+        shell_session.last_success_method_state = shell_session.method_state
+
+
+def _run_incremental_shell_build(
+    publication: PublicationDefinition,
+    *,
+    use_color: bool,
+    loader_cache: dict[str, object] | None,
+    pending_data_output: dict[str, list[str]] | None,
+    shell_session: PublicationShellSession,
+    imported_modules_changed: bool,
+) -> None:
+    if imported_modules_changed:
+        _run_full_refresh(
+            publication,
+            use_color=use_color,
+            loader_cache=loader_cache,
+            pending_data_output=pending_data_output,
+            shell_session=shell_session,
+        )
+        return
+    build_plan = plan_incremental_shell_build(
+        publication,
+        shell_session.method_state,
+        shell_session.last_success_method_state,
+        cached_figure_output_names=shell_session.cached_figure_output_names,
+        cached_stats_complete=set(shell_session.cached_stats) == set(publication.stats),
+        cached_tables_complete=set(shell_session.cached_tables) == set(publication.tables),
+    )
+    if build_plan.full_refresh:
+        _run_full_refresh(
+            publication,
+            use_color=use_color,
+            loader_cache=loader_cache,
+            pending_data_output=pending_data_output,
+            shell_session=shell_session,
+            force_loader_reload=shell_session.last_success_method_state is not None,
+        )
+        return
+    if (
+        not build_plan.changed_loader_ids
+        and not build_plan.figure_ids
+        and not build_plan.stat_ids
+        and not build_plan.table_ids
+        and not build_plan.rewrite_stats
+        and not build_plan.rewrite_tables
+    ):
+        shell_session.last_success_method_state = shell_session.method_state
+        return
+    effective_loader_cache = dict(loader_cache or {})
+    for loader_id in build_plan.changed_loader_ids:
+        effective_loader_cache.pop(loader_id, None)
+    ctx = _command_run_context(
+        publication,
+        loader_cache=effective_loader_cache,
+        pending_data_output=pending_data_output,
+    )
+    if build_plan.changed_loader_ids:
+        _run_data_updates(
+            ctx,
+            build_plan.changed_loader_ids,
+            use_color=use_color,
+            include_nocache=True,
+            show_all=True,
+        )
+    if build_plan.figure_ids:
+        figure_output_names = _run_figure_updates(
+            publication,
+            ctx,
+            build_plan.figure_ids,
+            use_color=use_color,
+            clear_existing=False,
+        )
+        shell_session.cached_figure_output_names.update(figure_output_names)
+    if build_plan.stat_ids:
+        shell_session.cached_stats = _run_stat_updates(
+            publication,
+            ctx,
+            build_plan.stat_ids,
+            use_color=use_color,
+            existing=shell_session.cached_stats,
+        )
+    elif build_plan.rewrite_stats:
+        write_computed_stats(publication, _ordered_computed_stats(publication, shell_session.cached_stats))
+    if build_plan.table_ids:
+        shell_session.cached_tables = _run_table_updates(
+            publication,
+            ctx,
+            build_plan.table_ids,
+            use_color=use_color,
+            existing=shell_session.cached_tables,
+        )
+    elif build_plan.rewrite_tables:
+        write_computed_tables(publication, _ordered_computed_tables(publication, shell_session.cached_tables))
+    shell_session.loader_cache = {
+        key: value for key, value in ctx.loader_cache.items() if key in publication.loaders
+    }
+    shell_session.pending_data_output = ctx.captured_data_output
+    shell_session.last_success_method_state = shell_session.method_state
 
 
 def _refresh_publication_support(publication: PublicationDefinition) -> tuple[Path, ...]:
@@ -1413,11 +1587,17 @@ def _run_figure_updates(
     figure_ids: tuple[str, ...],
     *,
     use_color: bool,
-) -> None:
+    clear_existing: bool,
+) -> dict[str, tuple[str, ...]]:
     if not figure_ids:
-        return
-    clear_autofigures(publication)
+        return {}
+    if clear_existing:
+        clear_autofigures(publication)
+    else:
+        for figure_id in figure_ids:
+            _clear_selected_figure_outputs(publication, figure_id)
     printer = _LiveSectionPrinter("Figures", use_color=use_color)
+    figure_output_names: dict[str, tuple[str, ...]] = {}
     try:
         for figure_id in figure_ids:
             printer.start_item(figure_id, "updating")
@@ -1429,11 +1609,13 @@ def _run_figure_updates(
             detail_lines = _consume_dynamic_output(ctx, "figure")
             label = figure_id
             count = _count_figure_outputs(figure_id, output_paths)
+            figure_output_names[figure_id] = tuple(sorted(path.name for path in output_paths))
             if count > 1:
                 label = f"{figure_id} ({count})"
             printer.succeed(label, detail_lines=detail_lines)
     finally:
         printer.close()
+    return figure_output_names
 
 
 def _run_stat_updates(
@@ -1442,11 +1624,12 @@ def _run_stat_updates(
     stat_ids: tuple[str, ...],
     *,
     use_color: bool,
-) -> None:
+    existing: dict[str, ComputedStat] | None = None,
+) -> dict[str, ComputedStat]:
     if not stat_ids:
-        return
+        return dict(existing or {})
     printer = _LiveSectionPrinter("Stats", use_color=use_color)
-    computed_stats: list[ComputedStat] = []
+    computed_stats = dict(existing or {})
     try:
         for stat_id in stat_ids:
             printer.start_item(stat_id, "updating")
@@ -1456,7 +1639,7 @@ def _run_stat_updates(
                 printer.fail(stat_id, detail_lines=list(exc.lines))
                 raise _ReportedExecutionError() from exc
             computed_stat = computed[0]
-            computed_stats.append(computed_stat)
+            computed_stats[stat_id] = computed_stat
             detail_lines = _consume_dynamic_output(ctx, "stat")
             detail_lines.extend(
                 [f"\\{value.macro_name} = {value.display}" for value in computed_stat.values]
@@ -1464,7 +1647,8 @@ def _run_stat_updates(
             printer.succeed(stat_id, detail_lines=detail_lines)
     finally:
         printer.close()
-    write_computed_stats(publication, tuple(computed_stats))
+    write_computed_stats(publication, _ordered_computed_stats(publication, computed_stats))
+    return computed_stats
 
 
 def _run_table_updates(
@@ -1473,11 +1657,12 @@ def _run_table_updates(
     table_ids: tuple[str, ...],
     *,
     use_color: bool,
-) -> None:
+    existing: dict[str, ComputedTable] | None = None,
+) -> dict[str, ComputedTable]:
     if not table_ids:
-        return
+        return dict(existing or {})
     printer = _LiveSectionPrinter("Tables", use_color=use_color)
-    computed_tables = []
+    computed_tables = dict(existing or {})
     try:
         for table_id in table_ids:
             printer.start_item(table_id, "updating")
@@ -1487,23 +1672,47 @@ def _run_table_updates(
                 printer.fail(table_id, detail_lines=list(exc.lines))
                 raise _ReportedExecutionError() from exc
             computed_table = computed[0]
-            computed_tables.append(computed_table)
+            computed_tables[table_id] = computed_table
             detail_lines = _consume_dynamic_output(ctx, "table")
             if len(computed_table.body_texts) > 1:
                 detail_lines.append(f"{len(computed_table.body_texts)} bodies")
             printer.succeed(table_id, detail_lines=detail_lines)
     finally:
         printer.close()
-    write_computed_tables(publication, tuple(computed_tables))
+    write_computed_tables(publication, _ordered_computed_tables(publication, computed_tables))
+    return computed_tables
+
+
+def _ordered_computed_stats(
+    publication: PublicationDefinition,
+    computed_stats: dict[str, ComputedStat],
+) -> tuple[ComputedStat, ...]:
+    return tuple(computed_stats[stat_id] for stat_id in sorted(publication.stats) if stat_id in computed_stats)
+
+
+def _ordered_computed_tables(
+    publication: PublicationDefinition,
+    computed_tables: dict[str, ComputedTable],
+) -> tuple[ComputedTable, ...]:
+    return tuple(computed_tables[table_id] for table_id in sorted(publication.tables) if table_id in computed_tables)
 
 
 def _count_figure_outputs(figure_id: str, output_paths: list[Path]) -> int:
     count = 0
     for path in output_paths:
-        stem = path.stem
-        if stem == figure_id or stem.startswith(f"{figure_id}_"):
+        if figure_output_belongs_to_id(path, figure_id):
             count += 1
     return count
+
+
+def _clear_selected_figure_outputs(publication: PublicationDefinition, figure_id: str) -> None:
+    if not publication.paths.autofigures_root.exists():
+        return
+    for path in publication.paths.autofigures_root.iterdir():
+        if not path.is_file():
+            continue
+        if figure_output_belongs_to_id(path, figure_id):
+            path.unlink()
 
 
 def _consume_dynamic_output(ctx: RunContext, group: str) -> list[str]:

@@ -18,6 +18,7 @@ import pubify_pubs.export as core_export
 import pubify_pubs.mirror as core_mirror
 import pubify_pubs.pinning as core_pinning
 import pubify_pubs.runtime as core_runtime
+import pubify_pubs.shell_incremental as core_shell_incremental
 import pubify_pubs.versioning as core_versioning
 from pubify_pubs.data import load_publication_data_npz, publication_data_path, save_publication_data_npz
 from pubify_pubs import TableResult
@@ -32,6 +33,7 @@ from pubify_pubs.runtime import (
     run_figures,
     run_stats,
     run_tables,
+    UserCodeExecutionError,
 )
 from pubify_pubs.config import load_workspace_config
 
@@ -1943,6 +1945,77 @@ def test_cli_shell_auto_reloads_when_pub_yaml_changes(
     assert load_count == 2
 
 
+def test_reload_session_publication_keeps_unchanged_imports_on_build_style_reload(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publication_root = repo / "papers" / "demo"
+    helper_path = publication_root / "support_plotting.py"
+    figures_path = publication_root / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs.decorators import figure",
+                "from support_plotting import add_title",
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "",
+                "@figure",
+                "def plot_single(ctx):",
+                "    fig, ax = plt.subplots()",
+                "    add_title(ax)",
+                "    return fig",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    helper_path.write_text(
+        "\n".join(
+            [
+                "def add_title(ax):",
+                "    ax.set_title('demo')",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    publication = load_publication_definition(repo, "demo")
+    loader_cache, pending_data_output = core_cli._preload_shell_loader_cache(publication)
+    method_state = core_shell_incremental.collect_shell_method_state(publication)
+    session = core_cli.PublicationShellSession(
+        workspace_root=repo,
+        publication_id="demo",
+        publication=publication,
+        fingerprints=core_cli._collect_reload_fingerprints(publication.paths, method_state.imported_module_paths),
+        loader_cache=loader_cache,
+        pending_data_output=pending_data_output,
+        method_state=method_state,
+        last_success_method_state=method_state,
+        cached_figure_output_names={},
+        cached_stats={},
+        cached_tables={},
+    )
+
+    purged: list[Path] = []
+
+    def fake_purge(paths: object) -> None:
+        purged.extend(Path(path) for path in paths)
+
+    monkeypatch.setattr(core_cli, "purge_modules_by_paths", fake_purge)
+    figures_path.write_text(figures_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    result = core_cli._reload_session_publication(session, purge_all_imported_modules=False)
+
+    assert result.reloaded is True
+    assert result.imported_modules_changed is False
+    assert purged == []
+
+
 def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2499,7 +2572,7 @@ def test_subfigure_index_is_one_based(repo: Path) -> None:
     output = run_figures(paper, "compare", 2)
     assert [path.name for path in output] == ["compare_2.pdf"]
 
-    with pytest.raises(IndexError):
+    with pytest.raises(UserCodeExecutionError):
         run_figures(paper, "compare", 3)
 
 
@@ -3109,21 +3182,41 @@ def test_cli_build_skipupdate_skips_refresh_even_when_outputs_are_missing(
     assert captured.out.strip().endswith("/tex/build/main.pdf: updated")
 
 
-def test_cli_shell_build_forces_refresh_only_on_first_run(
+def test_cli_shell_build_refreshes_once_after_shell_start_then_skips_when_unchanged(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
     commands = iter(["build", "build", "quit"])
+    publication = load_publication_definition(repo, "demo")
+    init_publication(publication)
+    publication.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+    (publication.paths.autofigures_root / "compare_1.pdf").write_text("compare-1", encoding="utf-8")
+    (publication.paths.autofigures_root / "compare_2.pdf").write_text("compare-2", encoding="utf-8")
+    (publication.paths.autofigures_root / "single.pdf").write_text("single", encoding="utf-8")
+    publication.paths.autostats_path.write_text("% stats\n", encoding="utf-8")
+    publication.paths.autotables_path.write_text("% tables\n", encoding="utf-8")
 
     def fake_run_figures(*args: object, **kwargs: object) -> list[Path]:
+        figure_id = args[1]
         calls.append("export")
-        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
+        autofigures_root = repo / "papers" / "demo" / "tex" / "autofigures"
+        autofigures_root.mkdir(parents=True, exist_ok=True)
+        if figure_id == "compare":
+            first = autofigures_root / "compare_1.pdf"
+            second = autofigures_root / "compare_2.pdf"
+            first.write_text("compare-1", encoding="utf-8")
+            second.write_text("compare-2", encoding="utf-8")
+            return [first, second]
+        output = autofigures_root / "single.pdf"
+        output.write_text("single", encoding="utf-8")
+        return [output]
 
-    def fake_run_stat_updates(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
+    def fake_run_stat_updates(*args: object, **kwargs: object) -> dict[str, object]:
         calls.append("stats")
-        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
+        publication.paths.autostats_path.write_text("% stats\n", encoding="utf-8")
+        return {}
 
     def fake_build(paper_definition: object) -> object:
         calls.append("build")
@@ -3139,18 +3232,11 @@ def test_cli_shell_build_forces_refresh_only_on_first_run(
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
     assert calls == ["export", "export", "stats", "build", "build"]
-    lines = [line for line in captured.out.strip().splitlines() if line]
-    first_autofigures = lines.index("Figures")
-    assert "Data" in lines[:first_autofigures]
-    assert "- bundle: loaded" in lines[:first_autofigures]
-    assert "- training: loaded" in lines[:first_autofigures]
-    assert lines.count("Data") == 1
-    assert lines[first_autofigures + 1] == "- compare: updated"
-    assert lines[first_autofigures + 2] == "- single: updated"
-    assert "PDF" in lines[first_autofigures + 3 :]
+    assert "Figures" in captured.out
+    assert "Tables" not in captured.out
 
 
-def test_cli_shell_build_after_update_uses_stale_behavior(
+def test_cli_shell_build_after_update_skips_refresh_when_code_is_unchanged(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -3159,12 +3245,29 @@ def test_cli_shell_build_after_update_uses_stale_behavior(
     commands = iter(["update", "build", "quit"])
 
     def fake_run_figures(*args: object, **kwargs: object) -> list[Path]:
+        figure_id = args[1]
         calls.append("export")
-        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
+        autofigures_root = repo / "papers" / "demo" / "tex" / "autofigures"
+        autofigures_root.mkdir(parents=True, exist_ok=True)
+        if figure_id == "compare":
+            first = autofigures_root / "compare_1.pdf"
+            second = autofigures_root / "compare_2.pdf"
+            first.write_text("compare-1", encoding="utf-8")
+            second.write_text("compare-2", encoding="utf-8")
+            return [first, second]
+        output = autofigures_root / "single.pdf"
+        output.write_text("single", encoding="utf-8")
+        return [output]
 
-    def fake_run_stat_updates(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
+    def fake_run_stat_updates(*args: object, **kwargs: object) -> dict[str, object]:
         calls.append("stats")
-        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
+        (repo / "papers" / "demo" / "tex" / "autostats.tex").write_text("% stats\n", encoding="utf-8")
+        return {}
+
+    def fake_run_table_updates(*args: object, **kwargs: object) -> dict[str, object]:
+        calls.append("tables")
+        (repo / "papers" / "demo" / "tex" / "autotables.tex").write_text("% tables\n", encoding="utf-8")
+        return {}
 
     def fake_build(paper_definition: object) -> object:
         calls.append("build")
@@ -3174,6 +3277,7 @@ def test_cli_shell_build_after_update_uses_stale_behavior(
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
     monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
     monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
+    monkeypatch.setattr(core_cli, "_run_table_updates", fake_run_table_updates)
     monkeypatch.setattr(core_cli, "build_publication", fake_build)
     monkeypatch.setattr(core_cli, "generated_outputs_are_stale", lambda publication: False)
 
@@ -3197,6 +3301,340 @@ def test_cli_shell_build_update_forces_data_refresh_output(
     assert "Data" in captured.out
     assert "- bundle: loaded" in captured.out
     assert "- training: loaded" in captured.out
+
+
+def test_cli_shell_build_falls_back_to_full_refresh_when_imported_module_changes(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    publication_root = repo / "papers" / "demo"
+    figures_path = publication_root / "figures.py"
+    helper_path = publication_root / "support_plotting.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs.decorators import figure",
+                "from support_plotting import add_title",
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "",
+                "@figure",
+                "def plot_single(ctx):",
+                "    fig, ax = plt.subplots()",
+                "    add_title(ax)",
+                "    return fig",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    helper_path.write_text(
+        "\n".join(
+            [
+                "def add_title(ax):",
+                "    ax.set_title('v1')",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    load_publication_definition(repo, "demo")
+    calls: list[str] = []
+    commands = iter(["build", "build", "quit"])
+    step = 0
+
+    def fake_input(prompt: str) -> str:
+        nonlocal step
+        step += 1
+        if step == 2:
+            helper_path.write_text(
+                "\n".join(
+                    [
+                        "def add_title(ax):",
+                        "    ax.set_title('v2')",
+                        "",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        return next(commands)
+
+    def fake_incremental(*args: object, **kwargs: object) -> None:
+        calls.append("full" if kwargs["imported_modules_changed"] else "incremental")
+
+    def fake_full(*args: object, **kwargs: object) -> None:
+        calls.append("full")
+
+    monkeypatch.setattr("builtins.input", fake_input)
+    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
+    monkeypatch.setattr(core_cli, "_run_incremental_shell_build", fake_incremental)
+    monkeypatch.setattr(core_cli, "_run_full_refresh", fake_full)
+    monkeypatch.setattr(core_cli, "build_publication", lambda publication: None)
+
+    assert main(["demo", "shell"]) == 0
+    capsys.readouterr()
+    assert calls == ["incremental", "incremental"]
+
+
+def test_collect_shell_method_state_tracks_figures_py_helpers_only_for_dependent_nodes(
+    repo: Path,
+) -> None:
+    publication_root = repo / "papers" / "demo"
+    figures_path = publication_root / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs.decorators import figure",
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "",
+                "def helper_used():",
+                "    return 'a'",
+                "",
+                "def helper_unused():",
+                "    return 'b'",
+                "",
+                "@figure",
+                "def plot_compare(ctx):",
+                "    fig, ax = plt.subplots()",
+                "    ax.set_title(helper_used())",
+                "    return fig",
+                "",
+                "@figure",
+                "def plot_single(ctx):",
+                "    fig, _ax = plt.subplots()",
+                "    return fig",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    publication = load_publication_definition(repo, "demo")
+    publication.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+    (publication.paths.autofigures_root / "compare.pdf").write_text("compare", encoding="utf-8")
+    (publication.paths.autofigures_root / "single.pdf").write_text("single", encoding="utf-8")
+    original_state = core_shell_incremental.collect_shell_method_state(publication)
+
+    figures_path.write_text(
+        figures_path.read_text(encoding="utf-8").replace("return 'a'", "return 'changed'"),
+        encoding="utf-8",
+    )
+    updated_publication = load_publication_definition(repo, "demo")
+    updated_state = core_shell_incremental.collect_shell_method_state(updated_publication)
+    plan = core_shell_incremental.plan_incremental_shell_build(
+        updated_publication,
+        updated_state,
+        original_state,
+        cached_figure_output_names={"compare": ("compare.pdf",), "single": ("single.pdf",)},
+        cached_stats_complete=True,
+        cached_tables_complete=True,
+    )
+
+    assert plan.full_refresh is False
+    assert plan.figure_ids == ("compare",)
+    assert plan.changed_loader_ids == ()
+    assert plan.stat_ids == ()
+    assert plan.table_ids == ()
+
+
+def test_collect_shell_method_state_tracks_figures_py_constants_only_for_dependent_nodes(
+    repo: Path,
+) -> None:
+    publication_root = repo / "papers" / "demo"
+    figures_path = publication_root / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs.decorators import figure",
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "",
+                "PLOT_TITLE = 'a'",
+                "OTHER_TITLE = 'b'",
+                "",
+                "@figure",
+                "def plot_compare(ctx):",
+                "    fig, ax = plt.subplots()",
+                "    ax.set_title(PLOT_TITLE)",
+                "    return fig",
+                "",
+                "@figure",
+                "def plot_single(ctx):",
+                "    fig, _ax = plt.subplots()",
+                "    return fig",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    publication = load_publication_definition(repo, "demo")
+    publication.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+    (publication.paths.autofigures_root / "compare.pdf").write_text("compare", encoding="utf-8")
+    (publication.paths.autofigures_root / "single.pdf").write_text("single", encoding="utf-8")
+    original_state = core_shell_incremental.collect_shell_method_state(publication)
+
+    figures_path.write_text(
+        figures_path.read_text(encoding="utf-8").replace("PLOT_TITLE = 'a'", "PLOT_TITLE = 'changed'"),
+        encoding="utf-8",
+    )
+    updated_publication = load_publication_definition(repo, "demo")
+    updated_state = core_shell_incremental.collect_shell_method_state(updated_publication)
+    plan = core_shell_incremental.plan_incremental_shell_build(
+        updated_publication,
+        updated_state,
+        original_state,
+        cached_figure_output_names={"compare": ("compare.pdf",), "single": ("single.pdf",)},
+        cached_stats_complete=True,
+        cached_tables_complete=True,
+    )
+
+    assert plan.full_refresh is False
+    assert plan.figure_ids == ("compare",)
+    assert plan.changed_loader_ids == ()
+    assert plan.stat_ids == ()
+    assert plan.table_ids == ()
+
+
+def test_collect_shell_method_state_tracks_external_editable_submodules(
+    repo: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    external_root = repo.parent / "external_tools_repo"
+    package_root = external_root / "external_tools"
+    package_root.mkdir(parents=True)
+    (package_root / "__init__.py").write_text("", encoding="utf-8")
+    helper_path = package_root / "helper.py"
+    helper_path.write_text(
+        "\n".join(
+            [
+                "def value():",
+                "    return 1",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(external_root))
+
+    publication_root = repo / "papers" / "demo"
+    figures_path = publication_root / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from external_tools import helper",
+                "from pubify_pubs.decorators import figure",
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "",
+                "@figure",
+                "def plot_single(ctx):",
+                "    fig, ax = plt.subplots()",
+                "    ax.set_title(str(helper.value()))",
+                "    return fig",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    publication = load_publication_definition(repo, "demo")
+    state = core_shell_incremental.collect_shell_method_state(publication)
+
+    assert helper_path.resolve() in state.imported_module_paths
+
+
+def test_plan_incremental_shell_build_marks_figure_stale_when_output_names_change_with_same_count(
+    repo: Path,
+) -> None:
+    publication = load_publication_definition(repo, "demo")
+    publication.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+    (publication.paths.autofigures_root / "compare_1.pdf").write_text("compare-1", encoding="utf-8")
+    (publication.paths.autofigures_root / "compare_2.pdf").write_text("compare-2", encoding="utf-8")
+    (publication.paths.autofigures_root / "single.pdf").write_text("single", encoding="utf-8")
+    state = core_shell_incremental.collect_shell_method_state(publication)
+
+    plan = core_shell_incremental.plan_incremental_shell_build(
+        publication,
+        state,
+        state,
+        cached_figure_output_names={"compare": ("compare.pdf", "compare_2.pdf"), "single": ("single.pdf",)},
+        cached_stats_complete=True,
+        cached_tables_complete=True,
+    )
+
+    assert plan.full_refresh is False
+    assert plan.figure_ids == ("compare",)
+    assert plan.changed_loader_ids == ()
+    assert plan.stat_ids == ()
+    assert plan.table_ids == ()
+
+
+def test_figure_output_matching_does_not_cross_match_shared_suffix_names(
+    repo: Path,
+) -> None:
+    publication_root = repo / "papers" / "demo"
+    figures_path = publication_root / "figures.py"
+    figures_path.write_text(
+        "\n".join(
+            [
+                "from pubify_pubs import FigureExport",
+                "from pubify_pubs.decorators import figure",
+                "import matplotlib",
+                "matplotlib.use('Agg')",
+                "import matplotlib.pyplot as plt",
+                "",
+                "@figure",
+                "def plot_field_ee_maps(ctx):",
+                "    fig1, _ax1 = plt.subplots()",
+                "    fig2, _ax2 = plt.subplots()",
+                "    return FigureExport([fig1, fig2], layout='twowide')",
+                "",
+                "@figure",
+                "def plot_field_ee_maps_shared(ctx):",
+                "    fig, _ax = plt.subplots()",
+                "    return FigureExport(fig, layout='onewide')",
+                "",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    publication = load_publication_definition(repo, "demo")
+    root = publication.paths.autofigures_root
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "field_ee_maps_1.pdf").write_text("1", encoding="utf-8")
+    (root / "field_ee_maps_2.pdf").write_text("2", encoding="utf-8")
+    (root / "field_ee_maps_shared.pdf").write_text("shared", encoding="utf-8")
+
+    assert core_shell_incremental._current_figure_output_names(publication, "field_ee_maps") == (
+        "field_ee_maps_1.pdf",
+        "field_ee_maps_2.pdf",
+    )
+    assert core_shell_incremental._current_figure_output_names(publication, "field_ee_maps_shared") == (
+        "field_ee_maps_shared.pdf",
+    )
+
+
+def test_collect_shell_method_state_skips_pubify_package_modules(
+    repo: Path,
+) -> None:
+    publication = load_publication_definition(repo, "demo")
+    state = core_shell_incremental.collect_shell_method_state(publication)
+
+    assert all("pubify_pubs" not in str(path) for path in state.imported_module_paths)
+    assert all("pubify-mpl" not in str(path) for path in state.imported_module_paths)
 
 
 def test_cli_build_rejects_update_and_skipupdate(repo: Path) -> None:
