@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-import hashlib
 import os
 from pathlib import Path
 import shutil
@@ -12,6 +11,7 @@ import matplotlib as mpl
 import numpy as np
 import pytest
 
+from conftest import FakePubifyBackend, FakeReadline, _hash_text, _strip_ansi, _write_external_paper, _write_table_paper
 from pubify_pubs.cli import build_parser, main
 import pubify_pubs.cli as core_cli
 import pubify_pubs.commands.core as commands_core
@@ -28,279 +28,15 @@ from pubify_pubs.decorators import data, external_data, figure, stat, table
 from pubify_pubs.discovery import find_workspace_root, list_publication_ids, load_publication_definition
 from pubify_pubs.mirror import diff_publication, pull_publication, push_publication
 from pubify_pubs.runtime import (
+    UserCodeExecutionError,
     build_publication,
     check_publication,
     init_publication,
     run_figures,
     run_stats,
     run_tables,
-    UserCodeExecutionError,
 )
 from pubify_pubs.config import load_workspace_config
-
-
-class FakePubifyBackend:
-    def __init__(self) -> None:
-        self.prepare_calls: list[tuple[Path, dict[str, object]]] = []
-        self.save_calls: list[tuple[object, str, Path, dict[str, object], dict[str, object]]] = []
-
-    def prepare(self, destination: Path, template: dict[str, object]) -> tuple[Path, Path]:
-        destination = Path(destination)
-        destination.mkdir(parents=True, exist_ok=True)
-        style_path = destination / "pubify.sty"
-        template_path = destination / "pubify-template.tex"
-        style_path.write_text("% pubify\n", encoding="utf-8")
-        template_path.write_text(str(dict(template)), encoding="utf-8")
-        self.prepare_calls.append((destination, dict(template)))
-        return style_path, template_path
-
-    def save_fig(
-        self,
-        fig_or_ax: object,
-        layout: str,
-        filename: Path,
-        *,
-        template: dict[str, object] | None = None,
-        **kwargs: object,
-    ) -> None:
-        path = Path(filename)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        label = getattr(fig_or_ax, "_pubs_name", None)
-        if label is None and hasattr(fig_or_ax, "figure"):
-            label = getattr(fig_or_ax.figure, "_pubs_name", None)
-        path.write_text(label or "panel", encoding="utf-8")
-        self.save_calls.append((fig_or_ax, layout, path, dict(template or {}), dict(kwargs)))
-
-
-class FakeReadline:
-    def __init__(self) -> None:
-        self.bindings: list[str] = []
-        self.history: list[str] = []
-        self.read_paths: list[str] = []
-        self.write_paths: list[str] = []
-        self.auto_history_values: list[bool] = []
-        self.__doc__ = ""
-
-    def parse_and_bind(self, binding: str) -> None:
-        self.bindings.append(binding)
-
-    def read_history_file(self, path: str) -> None:
-        self.read_paths.append(path)
-        history_path = Path(path)
-        if history_path.exists():
-            self.history = history_path.read_text(encoding="utf-8").splitlines()
-
-    def write_history_file(self, path: str) -> None:
-        self.write_paths.append(path)
-        Path(path).write_text("\n".join(self.history) + ("\n" if self.history else ""), encoding="utf-8")
-
-    def get_current_history_length(self) -> int:
-        return len(self.history)
-
-    def get_history_item(self, index: int) -> str | None:
-        if 1 <= index <= len(self.history):
-            return self.history[index - 1]
-        return None
-
-    def add_history(self, line: str) -> None:
-        self.history.append(line)
-
-    def set_auto_history(self, enabled: bool) -> None:
-        self.auto_history_values.append(enabled)
-
-
-@pytest.fixture(autouse=True)
-def fake_pubify(monkeypatch: pytest.MonkeyPatch) -> FakePubifyBackend:
-    backend = FakePubifyBackend()
-    monkeypatch.setattr(core_export, "pubify_mpl", backend)
-    monkeypatch.setattr(core_runtime, "pubify_mpl", backend)
-    return backend
-
-
-@pytest.fixture()
-def fake_pubify_mpl(fake_pubify: FakePubifyBackend) -> FakePubifyBackend:
-    return fake_pubify
-
-
-@pytest.fixture()
-def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir(parents=True, exist_ok=True)
-    (repo_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
-    (repo_root / "pubify.conf").write_text(
-        "publications_root: papers\ndata_root: output/papers\n",
-        encoding="utf-8",
-    )
-    (repo_root / "mirror" / "demo").mkdir(parents=True)
-    (repo_root / "papers" / "demo" / "tex" / "sections").mkdir(parents=True)
-    (repo_root / "output" / "papers" / "demo" / "bundle").mkdir(parents=True)
-    (repo_root / "papers" / "demo" / "pub.yaml").write_text(
-        "\n".join(
-            [
-                "publication_id: demo",
-                "main_tex: main.tex",
-                f"mirror_root: {repo_root / 'mirror' / 'demo'}",
-                "pubify-mpl-template:",
-                "  textwidth_in: 6.75",
-                "  textheight_in: 9.7",
-                "  base_fontsize_pt: 10",
-                "pubify-mpl-defaults:",
-                "  layout: twowide",
-                "  dpi: 144",
-                "  hide_labels: true",
-                "sync_excludes:",
-                "  - drafts/*",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (repo_root / "papers" / "demo" / "figures.py").write_text(
-        "\n".join(
-            [
-                "import matplotlib",
-                "matplotlib.use('Agg')",
-                "import matplotlib.pyplot as plt",
-                "from pubify_pubs.decorators import data, figure, stat",
-                "",
-                "CALLS = {'training': 0, 'bundle': 0}",
-                "",
-                "@data('training.npy')",
-                "def load_training(ctx, path):",
-                "    CALLS['training'] += 1",
-                "    return path.read_text(encoding='utf-8')",
-                "",
-                "@data(model='bundle/model.txt', meta='bundle/meta.txt')",
-                "def load_bundle(ctx, model, meta):",
-                "    CALLS['bundle'] += 1",
-                "    return '|'.join(path.read_text(encoding='utf-8') for path in (meta, model))",
-                "",
-                "@figure",
-                "def plot_single(ctx, training):",
-                "    fig, ax = plt.subplots()",
-                "    fig._pubs_name = f'single:{training}'",
-                "    ax.plot([0, 1], [0, 1])",
-                "    return fig",
-                "",
-                "@figure",
-                "def plot_compare(ctx, training, bundle):",
-                "    fig1, ax1 = plt.subplots()",
-                "    fig1._pubs_name = f'compare:{training}'",
-                "    ax1.plot([0, 1], [0, 1])",
-                "    fig2, ax2 = plt.subplots()",
-                "    fig2._pubs_name = f'bundle:{bundle}'",
-                "    ax2.plot([0, 1], [1, 0])",
-                "    return [fig1, fig2]",
-                "",
-                "@stat",
-                "def compute_training_summary(ctx, training, bundle):",
-                "    return {'Value': training, 'Bundle': rf'\\texttt{{{bundle}}}'}",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (repo_root / "papers" / "demo" / "tex" / "main.tex").write_text(
-        "\\documentclass{article}\n\\begin{document}\nDemo\n\\end{document}\n",
-        encoding="utf-8",
-    )
-    (repo_root / "papers" / "demo" / "tex" / "sections" / "intro.tex").write_text(
-        "intro\n",
-        encoding="utf-8",
-    )
-    (repo_root / "papers" / "demo" / "tex" / "build").mkdir(parents=True)
-    (repo_root / "papers" / "demo" / "tex" / "build" / "ignored.aux").write_text(
-        "ignore\n",
-        encoding="utf-8",
-    )
-    (repo_root / "papers" / "demo" / "tex" / "drafts").mkdir(parents=True)
-    (repo_root / "papers" / "demo" / "tex" / "drafts" / "note.txt").write_text(
-        "skip\n",
-        encoding="utf-8",
-    )
-    (repo_root / "output" / "papers" / "demo" / "training.npy").write_text("training", encoding="utf-8")
-    (repo_root / "output" / "papers" / "demo" / "bundle" / "model.txt").write_text(
-        "model",
-        encoding="utf-8",
-    )
-    (repo_root / "output" / "papers" / "demo" / "bundle" / "meta.txt").write_text(
-        "meta",
-        encoding="utf-8",
-    )
-    monkeypatch.chdir(repo_root)
-    return repo_root
-
-def _hash_text(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def _strip_ansi(value: str) -> str:
-    for code in ("\033[31m", "\033[33m", "\033[36m", "\033[32m", "\033[2m", "\033[0m"):
-        value = value.replace(code, "")
-    return value
-
-
-def _write_external_paper(
-    repo: Path,
-    *,
-    publication_id: str,
-    external_root_lines: list[str],
-    figure_lines: list[str],
-) -> Path:
-    publication_root = repo / "papers" / publication_id
-    (publication_root / "tex").mkdir(parents=True, exist_ok=True)
-    (repo / "output" / "papers" / publication_id).mkdir(parents=True, exist_ok=True)
-    lines = [
-        'mirror_root: ""',
-        "main_tex: main.tex",
-        "external_data_roots:",
-        *external_root_lines,
-        "pubify-mpl-template:",
-        "  textwidth_in: 6.75",
-        "  textheight_in: 9.7",
-        "  base_fontsize_pt: 10",
-        "pubify-mpl-defaults:",
-        "  layout: one",
-    ]
-    (publication_root / "pub.yaml").write_text("\n".join(lines) + "\n", encoding="utf-8")
-    (publication_root / "figures.py").write_text("\n".join(figure_lines) + "\n", encoding="utf-8")
-    (publication_root / "tex" / "main.tex").write_text(
-        "\\documentclass{article}\n\\usepackage{pubify}\n\\begin{document}\nX\n\\end{document}\n",
-        encoding="utf-8",
-    )
-    return publication_root
-
-
-def _write_table_paper(
-    repo: Path,
-    *,
-    publication_id: str,
-    figures_lines: list[str],
-    main_tex_lines: list[str],
-) -> Path:
-    publication_root = repo / "papers" / publication_id
-    (publication_root / "tex").mkdir(parents=True, exist_ok=True)
-    (repo / "output" / "papers" / publication_id).mkdir(parents=True, exist_ok=True)
-    (publication_root / "pub.yaml").write_text(
-        "\n".join(
-            [
-                'mirror_root: ""',
-                "main_tex: main.tex",
-                "pubify-mpl-template:",
-                "  textwidth_in: 6.75",
-                "  textheight_in: 9.7",
-                "  base_fontsize_pt: 10",
-                "pubify-mpl-defaults:",
-                "  layout: one",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (publication_root / "figures.py").write_text("\n".join(figures_lines) + "\n", encoding="utf-8")
-    (publication_root / "tex" / "main.tex").write_text("\n".join(main_tex_lines) + "\n", encoding="utf-8")
-    return publication_root
-
 
 def test_data_decorator_supports_single_path_form() -> None:
     @data("training.npy")
@@ -314,7 +50,6 @@ def test_data_decorator_supports_single_path_form() -> None:
         "nocache": False,
     }
 
-
 def test_data_decorator_supports_named_multi_path_form() -> None:
     @data(model="bundle.pt", meta="bundle.json", nocache=True)
     def load_bundle(ctx, model, meta):
@@ -327,14 +62,12 @@ def test_data_decorator_supports_named_multi_path_form() -> None:
         "nocache": True,
     }
 
-
 def test_data_decorator_rejects_empty_form() -> None:
     with pytest.raises(
         ValueError,
         match="@data requires exactly one positional path or one-or-more named paths",
     ):
         data()
-
 
 def test_data_decorator_rejects_mixed_positional_and_named_paths() -> None:
     with pytest.raises(
@@ -343,16 +76,13 @@ def test_data_decorator_rejects_mixed_positional_and_named_paths() -> None:
     ):
         data("training.npy", model="bundle.pt")
 
-
 def test_data_decorator_rejects_absolute_paths() -> None:
     with pytest.raises(ValueError, match="@data paths must be relative, not absolute"):
         data("/abs/training.npy")
 
-
 def test_data_decorator_rejects_parent_traversal() -> None:
     with pytest.raises(ValueError, match="@data paths must stay under their configured root"):
         data("../training.npy")
-
 
 def test_save_publication_data_npz_saves_new_file_under_paper_output(repo: Path) -> None:
     saved_path = save_publication_data_npz("demo", "generated/sample.npz", values=np.array([1.0, 2.0]))
@@ -362,28 +92,23 @@ def test_save_publication_data_npz_saves_new_file_under_paper_output(repo: Path)
     with np.load(saved_path) as saved:
         assert np.array_equal(saved["values"], np.array([1.0, 2.0]))
 
-
 def test_publication_data_path_resolves_under_paper_output(repo: Path) -> None:
     path = publication_data_path("demo", "generated/sample.pkl")
 
     assert path == repo / "output" / "papers" / "demo" / "generated" / "sample.pkl"
-
 
 def test_publication_data_path_creates_parent_directories(repo: Path) -> None:
     path = publication_data_path("demo", "nested/deeper/sample.pkl")
 
     assert path.parent.exists()
 
-
 def test_publication_data_path_rejects_absolute_paths(repo: Path) -> None:
     with pytest.raises(ValueError, match="must be relative, not absolute"):
         publication_data_path("demo", "/tmp/sample.pkl")
 
-
 def test_publication_data_path_rejects_parent_traversal(repo: Path) -> None:
     with pytest.raises(ValueError, match="must stay under the publication data root"):
         publication_data_path("demo", "../sample.pkl")
-
 
 def test_publication_data_path_supports_workspace_root_override(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
@@ -403,7 +128,6 @@ def test_publication_data_path_supports_workspace_root_override(tmp_path: Path) 
     assert path == workspace_root / "output" / "papers" / "demo" / "generated" / "sample.pkl"
     assert path.parent.exists()
 
-
 def test_save_publication_data_npz_creates_parent_directories(repo: Path) -> None:
     saved_path = save_publication_data_npz(
         "demo",
@@ -413,21 +137,17 @@ def test_save_publication_data_npz_creates_parent_directories(repo: Path) -> Non
 
     assert saved_path.parent.exists()
 
-
 def test_save_publication_data_npz_rejects_non_npz_paths(repo: Path) -> None:
     with pytest.raises(ValueError, match="must end with \\.npz"):
         save_publication_data_npz("demo", "generated/sample.npy", values=np.array([1.0]))
-
 
 def test_save_publication_data_npz_rejects_absolute_paths(repo: Path) -> None:
     with pytest.raises(ValueError, match="must be relative, not absolute"):
         save_publication_data_npz("demo", "/tmp/sample.npz", values=np.array([1.0]))
 
-
 def test_save_publication_data_npz_rejects_parent_traversal(repo: Path) -> None:
     with pytest.raises(ValueError, match="must stay under the publication data root"):
         save_publication_data_npz("demo", "../sample.npz", values=np.array([1.0]))
-
 
 def test_save_publication_data_npz_rejects_existing_file_without_overwrite(repo: Path) -> None:
     target = repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
@@ -436,7 +156,6 @@ def test_save_publication_data_npz_rejects_existing_file_without_overwrite(repo:
 
     with pytest.raises(FileExistsError, match="already exists"):
         save_publication_data_npz("demo", "generated/sample.npz", values=np.array([2.0]))
-
 
 def test_save_publication_data_npz_overwrites_existing_file_when_requested(repo: Path) -> None:
     target = repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
@@ -452,7 +171,6 @@ def test_save_publication_data_npz_overwrites_existing_file_when_requested(repo:
 
     with np.load(target) as saved:
         assert np.array_equal(saved["values"], np.array([2.0]))
-
 
 def test_save_publication_data_npz_supports_workspace_root_override(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
@@ -474,13 +192,11 @@ def test_save_publication_data_npz_supports_workspace_root_override(tmp_path: Pa
     with np.load(saved_path) as saved:
         assert np.array_equal(saved["values"], np.array([4.0]))
 
-
 def test_workspace_config_defaults_preview_backends(repo: Path) -> None:
     workspace = load_workspace_config(repo)
 
     assert workspace.preview.publication == "preview"
     assert workspace.preview.figure == "preview"
-
 
 def test_workspace_config_parses_nested_preview_backends(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
@@ -505,7 +221,6 @@ def test_workspace_config_parses_nested_preview_backends(tmp_path: Path) -> None
     assert workspace.preview.publication == "vscode"
     assert workspace.preview.figure == "preview"
 
-
 def test_workspace_config_rejects_invalid_preview_backend(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
@@ -526,7 +241,6 @@ def test_workspace_config_rejects_invalid_preview_backend(tmp_path: Path) -> Non
     with pytest.raises(ValueError, match="preview.publication must be one of: preview, vscode"):
         load_workspace_config(workspace_root)
 
-
 def test_load_publication_data_npz_returns_plain_dict_of_arrays(repo: Path) -> None:
     source = repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
     source.parent.mkdir(parents=True, exist_ok=True)
@@ -539,13 +253,11 @@ def test_load_publication_data_npz_returns_plain_dict_of_arrays(repo: Path) -> N
     assert np.array_equal(loaded["alpha"], np.array([1.0, 2.0]))
     assert np.array_equal(loaded["beta"], np.array([3.0]))
 
-
 def test_load_publication_data_npz_missing_path_fails_clearly(repo: Path) -> None:
     missing = repo / "output" / "papers" / "demo" / "generated" / "missing.npz"
 
     with pytest.raises(FileNotFoundError, match="does not exist"):
         load_publication_data_npz(missing)
-
 
 def test_load_publication_data_npz_non_file_path_fails_clearly(repo: Path) -> None:
     directory = repo / "output" / "papers" / "demo" / "generated"
@@ -556,7 +268,6 @@ def test_load_publication_data_npz_non_file_path_fails_clearly(repo: Path) -> No
     with pytest.raises(ValueError, match="must be a file"):
         load_publication_data_npz(path)
 
-
 def test_load_publication_data_npz_non_npz_path_fails_clearly(repo: Path) -> None:
     path = repo / "output" / "papers" / "demo" / "generated" / "sample.npy"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -564,7 +275,6 @@ def test_load_publication_data_npz_non_npz_path_fails_clearly(repo: Path) -> Non
 
     with pytest.raises(ValueError, match="must end with \\.npz"):
         load_publication_data_npz(path)
-
 
 def test_load_publication_data_npz_materializes_arrays_before_returning(repo: Path) -> None:
     source = repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
@@ -576,14 +286,11 @@ def test_load_publication_data_npz_materializes_arrays_before_returning(repo: Pa
 
     assert np.array_equal(loaded["alpha"], np.array([1.0, 2.0]))
 
-
 def test_pubs_helpers_exports_load_paper_data_npz() -> None:
     assert callable(load_publication_data_npz)
 
-
 def test_pubs_helpers_exports_paper_data_path() -> None:
     assert callable(publication_data_path)
-
 
 def test_external_data_decorator_supports_single_path_form() -> None:
     @external_data("scratch", "training.npy")
@@ -598,7 +305,6 @@ def test_external_data_decorator_supports_single_path_form() -> None:
         "nocache": False,
     }
 
-
 def test_external_data_decorator_supports_named_multi_path_form() -> None:
     @external_data("shared", model="bundle.pt", meta="bundle.json", nocache=True)
     def load_bundle(ctx, model, meta):
@@ -612,11 +318,9 @@ def test_external_data_decorator_supports_named_multi_path_form() -> None:
         "nocache": True,
     }
 
-
 def test_external_data_decorator_rejects_absolute_paths() -> None:
     with pytest.raises(ValueError, match="@external_data paths must be relative, not absolute"):
         external_data("scratch", "/abs/training.npy")
-
 
 def test_external_data_decorator_rejects_parent_traversal() -> None:
     with pytest.raises(
@@ -625,14 +329,12 @@ def test_external_data_decorator_rejects_parent_traversal() -> None:
     ):
         external_data("scratch", "../training.npy")
 
-
 def test_stat_decorator_marks_callable() -> None:
     @stat
     def compute_sample_count(ctx):
         return "42"
 
     assert getattr(compute_sample_count, "__pubs_stat__", False) is True
-
 
 def test_parser_supports_documented_surface() -> None:
     parser = build_parser()
@@ -649,10 +351,6 @@ def test_parser_supports_documented_surface() -> None:
     assert args.arg2 == "figure"
     assert args.arg3 == "compare"
     assert args.arg4 == "update"
-    ignore_args = parser.parse_args(["demo", "ignore", "sections/intro.tex"])
-    assert ignore_args.subject == "demo"
-    assert ignore_args.arg2 == "ignore"
-    assert ignore_args.arg3 == "sections/intro.tex"
     data_args = parser.parse_args(["demo", "data", "list"])
     assert data_args.subject == "demo"
     assert data_args.arg2 == "data"
@@ -703,37 +401,19 @@ def test_parser_supports_documented_surface() -> None:
     table_latex_args = parser.parse_args(["demo", "table", "summary", "latex"])
     assert table_latex_args.arg3 == "summary"
     assert table_latex_args.arg4 == "latex"
-    version_create_args = parser.parse_args(["demo", "version", "create", "draft note"])
-    assert version_create_args.arg2 == "version"
-    assert version_create_args.arg3 == "create"
-    assert version_create_args.arg4 == "draft note"
-    version_diff_args = parser.parse_args(["demo", "version", "diff", "v2", "v1"])
-    assert version_diff_args.arg2 == "version"
-    assert version_diff_args.arg3 == "diff"
-    assert version_diff_args.arg4 == "v2"
-    assert version_diff_args.arg5 == "v1"
-    pin_args = parser.parse_args(["demo", "data", "training", "pin"])
-    assert pin_args.subject == "demo"
-    assert pin_args.arg2 == "data"
-    assert pin_args.arg3 == "training"
-    assert pin_args.arg4 == "pin"
-
 
 def test_find_workspace_root_and_list_publications(repo: Path) -> None:
     assert find_workspace_root(repo) == repo
     assert list_publication_ids(repo) == ["demo"]
 
-
 def test_find_workspace_root_works_from_nested_directory(repo: Path) -> None:
     nested = repo / "papers" / "demo" / "tex" / "sections"
     assert find_workspace_root(nested) == repo
-
 
 def test_missing_figures_entrypoint_fails_clearly(repo: Path) -> None:
     (repo / "papers" / "demo" / "figures.py").unlink()
     with pytest.raises(FileNotFoundError, match="Missing figures entrypoint:"):
         load_publication_definition(repo, "demo")
-
 
 def test_named_path_loader_requires_named_parameters_after_ctx(repo: Path) -> None:
     (repo / "papers" / "demo" / "figures.py").write_text(
@@ -753,7 +433,6 @@ def test_named_path_loader_requires_named_parameters_after_ctx(repo: Path) -> No
     with pytest.raises(ValueError, match="must accept named path parameters"):
         load_publication_definition(repo, "demo")
 
-
 def test_check_validates_discovery_and_data_paths(repo: Path, fake_pubify_mpl: FakePubifyBackend) -> None:
     paper = load_publication_definition(repo, "demo")
     init_publication(paper)
@@ -762,7 +441,6 @@ def test_check_validates_discovery_and_data_paths(repo: Path, fake_pubify_mpl: F
     assert sorted(paper.loaders) == ["bundle", "training"]
     assert paper.config.pubify_mpl.template["textwidth_in"] == 6.75
     assert paper.config.pubify_mpl.default_layout == "twowide"
-
 
 def test_export_uses_documented_output_names_and_cache(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
@@ -777,7 +455,6 @@ def test_export_uses_documented_output_names_and_cache(repo: Path) -> None:
     assert export_path.read_text(encoding="utf-8") == "single:training"
     assert paper.module.CALLS["training"] == 2
     assert paper.module.CALLS["bundle"] == 1
-
 
 def test_check_fails_when_stat_depends_on_unknown_loader(repo: Path) -> None:
     _write_external_paper(
@@ -797,7 +474,6 @@ def test_check_fails_when_stat_depends_on_unknown_loader(repo: Path) -> None:
 
     with pytest.raises(ValueError, match="Stat 'missing_dep' depends on unknown loader 'missing_loader'"):
         check_publication(publication)
-
 
 def test_load_publication_definition_rejects_duplicate_stat_ids(repo: Path) -> None:
     _write_external_paper(
@@ -819,7 +495,6 @@ def test_load_publication_definition_rejects_duplicate_stat_ids(repo: Path) -> N
 
     with pytest.raises(ValueError, match="Duplicate stat id 'same'"):
         load_publication_definition(repo, "dupes")
-
 
 def test_run_figures_exposes_publication_rc_context(
     repo: Path,
@@ -859,7 +534,6 @@ def test_run_figures_exposes_publication_rc_context(
     assert observed["font.family"] == ["serif"]
     assert observed["font.size"] == 10
 
-
 def test_run_stats_resolves_loader_dependencies(repo: Path) -> None:
     publication = load_publication_definition(repo, "demo")
 
@@ -873,7 +547,6 @@ def test_run_stats_resolves_loader_dependencies(repo: Path) -> None:
     assert [value.display for value in computed[0].values] == ["training", "meta|model"]
     assert [value.tex for value in computed[0].values] == ["training", r"\texttt{meta|model}"]
 
-
 def test_full_export_clears_stale_outputs_before_writing(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
     paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
@@ -884,7 +557,6 @@ def test_full_export_clears_stale_outputs_before_writing(repo: Path) -> None:
     assert not (paper.paths.autofigures_root / "stale.pdf").exists()
     assert sorted(path.name for path in export_paths) == ["compare_1.pdf", "compare_2.pdf", "single.pdf"]
 
-
 def test_targeted_export_does_not_remove_unrelated_outputs(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
     paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
@@ -894,7 +566,6 @@ def test_targeted_export_does_not_remove_unrelated_outputs(repo: Path) -> None:
 
     assert (paper.paths.autofigures_root / "keep.pdf").read_text(encoding="utf-8") == "keep"
     assert (paper.paths.autofigures_root / "single.pdf").exists()
-
 
 def test_cli_figure_update_prints_paper_relative_paths(
     repo: Path,
@@ -908,7 +579,6 @@ def test_cli_figure_update_prints_paper_relative_paths(
         "- single: updated",
     ]
 
-
 def test_cli_data_without_subcommand_aliases_to_data_list(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -917,7 +587,6 @@ def test_cli_data_without_subcommand_aliases_to_data_list(
     output = capsys.readouterr().out
     assert "pinned   training" in output
     assert "training.npy" in output
-
 
 def test_cli_figure_and_figure_list_print_figure_inventory(
     repo: Path,
@@ -929,7 +598,6 @@ def test_cli_figure_and_figure_list_print_figure_inventory(
         "figure   compare   training, bundle",
         "figure   single    training",
     ]
-
 
 def test_cli_figures_alias_prints_figure_inventory_without_help_exposure(
     repo: Path,
@@ -948,7 +616,6 @@ def test_cli_figures_alias_prints_figure_inventory_without_help_exposure(
         "figure   compare   training, bundle",
         "figure   single    training",
     ]
-
 
 def test_cli_preview_opens_built_pdf(
     repo: Path,
@@ -970,7 +637,6 @@ def test_cli_preview_opens_built_pdf(
     assert opened == [([pdf_path], "preview")]
     assert captured.out.strip() == str(pdf_path)
 
-
 def test_cli_preview_requires_existing_built_pdf(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -978,7 +644,6 @@ def test_cli_preview_requires_existing_built_pdf(
     assert main(["demo", "preview"]) == 1
     captured = capsys.readouterr()
     assert "Built publication PDF does not exist:" in captured.err
-
 
 def test_cli_figure_preview_opens_exported_single_pdf(
     repo: Path,
@@ -1000,7 +665,6 @@ def test_cli_figure_preview_opens_exported_single_pdf(
     captured = capsys.readouterr()
     assert opened == [([figure_path], "preview")]
     assert captured.out.strip() == "tex/autofigures/single.pdf"
-
 
 def test_cli_figure_preview_opens_all_exported_multipanel_pdfs(
     repo: Path,
@@ -1029,7 +693,6 @@ def test_cli_figure_preview_opens_all_exported_multipanel_pdfs(
         "tex/autofigures/compare_2.pdf",
     ]
 
-
 def test_cli_figure_preview_opens_requested_subfigure_pdf(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1054,7 +717,6 @@ def test_cli_figure_preview_opens_requested_subfigure_pdf(
     assert opened == [([right], "preview")]
     assert captured.out.strip() == "tex/autofigures/compare_2.pdf"
 
-
 def test_cli_figure_preview_rejects_out_of_range_subfigure_index(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1068,7 +730,6 @@ def test_cli_figure_preview_rejects_out_of_range_subfigure_index(
     captured = capsys.readouterr()
     assert "requested subfigure 3" in captured.err
 
-
 def test_cli_figure_preview_requires_exported_pdf(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1076,7 +737,6 @@ def test_cli_figure_preview_requires_exported_pdf(
     assert main(["demo", "figure", "single", "preview"]) == 1
     captured = capsys.readouterr()
     assert "Exported figure PDF does not exist for 'single'." in captured.err
-
 
 def test_cli_figure_latex_emits_padded_figfloat_block(
     repo: Path,
@@ -1093,7 +753,6 @@ def test_cli_figure_latex_emits_padded_figfloat_block(
     assert "[Example caption.]" in captured.out
     assert "[fig:single]" in captured.out
 
-
 def test_cli_figure_latex_subcaption_emits_wrapped_panels(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1108,7 +767,6 @@ def test_cli_figure_latex_subcaption_emits_wrapped_panels(
     assert r"\fig{autofigures/compare_2}[Example subcaption][fig:compare:b]" in captured.out
     assert "[fig:compare]" in captured.out
 
-
 def test_cli_figure_latex_subcaption_rejects_single_panel(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1117,7 +775,6 @@ def test_cli_figure_latex_subcaption_rejects_single_panel(
 
     captured = capsys.readouterr()
     assert "latex subcaption mode is only supported for multi-panel figures" in captured.err
-
 
 def test_cli_figure_latex_skips_existing_pubify_package_with_options(
     repo: Path,
@@ -1141,7 +798,6 @@ def test_cli_figure_latex_skips_existing_pubify_package_with_options(
 
     captured = capsys.readouterr()
     assert not captured.out.startswith("\n\\usepackage{pubify}")
-
 
 def test_cli_preview_uses_vscode_backend_when_configured(
     repo: Path,
@@ -1172,7 +828,6 @@ def test_cli_preview_uses_vscode_backend_when_configured(
 
     assert main(["demo", "preview"]) == 0
     assert opened == [([pdf_path], "vscode")]
-
 
 def test_cli_figure_preview_uses_vscode_backend_when_configured(
     repo: Path,
@@ -1205,7 +860,6 @@ def test_cli_figure_preview_uses_vscode_backend_when_configured(
     assert main(["demo", "figure", "single", "preview"]) == 0
     assert opened == [([figure_path], "vscode")]
 
-
 def test_open_publication_previews_uses_preview_backend_on_macos(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1226,7 +880,6 @@ def test_open_publication_previews_uses_preview_backend_on_macos(
 
     assert commands == [["open", "-a", "Preview", str(pdf_path.resolve())]]
 
-
 def test_open_publication_previews_uses_vscode_backend(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1245,7 +898,6 @@ def test_open_publication_previews_uses_vscode_backend(
 
     assert commands == [["code", "-n", str(pdf_path.resolve())]]
 
-
 def test_open_publication_previews_rejects_preview_backend_off_macos(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1256,7 +908,6 @@ def test_open_publication_previews_rejects_preview_backend_off_macos(
 
     with pytest.raises(RuntimeError, match="supported only on macOS"):
         core_cli._open_publication_previews([pdf_path], backend="preview")
-
 
 def test_open_publication_previews_reports_missing_vscode_command(
     tmp_path: Path,
@@ -1272,7 +923,6 @@ def test_open_publication_previews_reports_missing_vscode_command(
 
     with pytest.raises(RuntimeError, match="Could not find the VS Code `code` command on PATH"):
         core_cli._open_publication_previews([pdf_path], backend="vscode")
-
 
 def test_cli_shell_runs_paper_scoped_commands(
     repo: Path,
@@ -1318,7 +968,6 @@ def test_cli_shell_runs_paper_scoped_commands(
         ([repo / "papers" / "demo" / "tex" / "build" / "main.pdf"], "preview"),
     ]
 
-
 def test_cli_shell_help_and_rejects_top_level_commands(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1336,12 +985,10 @@ def test_cli_shell_help_and_rejects_top_level_commands(
     assert "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]" in captured.out
     assert "  stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]" in captured.out
     assert "  table [list|add <table-id>|update|<table-id> update|<table-id> latex]" in captured.out
-    assert "  version [list|create [note]|diff <version-id> [<version-id>]]" in captured.out
     assert "  update" in captured.out
     assert "  preview" in captured.out
     assert "Error: unsupported shell command 'list'" in captured.err
     assert "Error: unsupported shell command 'init'" in captured.err
-
 
 def test_cli_shell_stat_commands(
     repo: Path,
@@ -1360,7 +1007,6 @@ def test_cli_shell_stat_commands(
     assert r"  \StatTrainingSummaryValue = training" in captured.out
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
 
-
 def test_cli_shell_figure_latex_command_emits_padded_snippet(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1375,260 +1021,6 @@ def test_cli_shell_figure_latex_command_emits_padded_snippet(
     captured = capsys.readouterr()
     assert "\n\\figfloat\n" in captured.out
     assert r"\fig{autofigures/compare_1}[Example subcaption][fig:compare:a]" in captured.out
-
-
-def test_cli_version_create_and_list_snapshot_non_build_tex_tree(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    init_publication(paper)
-    paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
-    (paper.paths.autofigures_root / "plot.pdf").write_text("figure\n", encoding="utf-8")
-    paper.paths.autostats_path.write_text(r"\newcommand{\StatDemo}{1}" + "\n", encoding="utf-8")
-    paper.paths.autotables_path.write_text(r"\newcommand{\TableDemo}{A & B \\}" + "\n", encoding="utf-8")
-    (paper.paths.tex_root / "refs.bib").write_text("@article{demo}\n", encoding="utf-8")
-    (paper.paths.build_root / "main.pdf").parent.mkdir(parents=True, exist_ok=True)
-    (paper.paths.build_root / "main.pdf").write_text("pdf\n", encoding="utf-8")
-    (paper.paths.tex_root / "main.aux").write_text("aux\n", encoding="utf-8")
-
-    assert main(["demo", "version", "create", "first draft"]) == 0
-
-    captured = capsys.readouterr()
-    created_line = captured.out.strip()
-    assert created_line.startswith("v1  ")
-    assert "T" not in created_line
-    assert "first draft" in created_line
-
-    snapshot_root = paper.paths.versions_root / "v1"
-    assert snapshot_root.exists()
-    assert (snapshot_root / "main.tex").exists()
-    assert (snapshot_root / "pubify.sty").exists()
-    assert (snapshot_root / "refs.bib").exists()
-    assert (snapshot_root / "autofigures" / "plot.pdf").exists()
-    assert (snapshot_root / "autostats.tex").exists()
-    assert (snapshot_root / "autotables.tex").exists()
-    assert not (snapshot_root / "build").exists()
-    assert not (snapshot_root / "main.aux").exists()
-
-    versions = core_versioning.list_publication_versions(paper)
-    assert [(version.version_id, version.note, version.main_tex.as_posix()) for version in versions] == [
-        ("v1", "first draft", "main.tex")
-    ]
-
-    assert main(["demo", "version", "list"]) == 0
-    listed_line = capsys.readouterr().out.strip()
-    assert listed_line.startswith("v1  ")
-    assert "T" not in listed_line
-    assert "first draft" in listed_line
-
-
-def test_cli_version_create_undo_removes_newest_identical_snapshot(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    init_publication(paper)
-
-    assert main(["demo", "version", "create", "baseline"]) == 0
-    capsys.readouterr()
-
-    assert main(["demo", "version", "create", "undo"]) == 0
-    captured = capsys.readouterr()
-    assert captured.out.strip() == "v1: removed"
-    assert not paper.paths.versions_root.exists()
-
-
-def test_cli_version_create_undo_rejects_changed_current_tex_state(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    init_publication(paper)
-
-    assert main(["demo", "version", "create", "baseline"]) == 0
-    capsys.readouterr()
-    (paper.paths.tex_root / "main.tex").write_text(
-        "\\documentclass{article}\n\\begin{document}\nchanged\n\\end{document}\n",
-        encoding="utf-8",
-    )
-
-    assert main(["demo", "version", "create", "undo"]) == 1
-    captured = capsys.readouterr()
-    assert "newest version 'v1' differs from current tex/ state" in captured.err
-    assert (paper.paths.versions_root / "v1").exists()
-
-
-def test_version_diff_compares_snapshot_to_current_and_copies_pdf(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    init_publication(paper)
-    (paper.paths.tex_root / "sections" / "intro.tex").write_text("old intro\n", encoding="utf-8")
-    (paper.paths.tex_root / "main.tex").write_text(
-        "\n".join(
-            [
-                r"\documentclass{article}",
-                r"\begin{document}",
-                r"\input{sections/intro.tex}",
-                r"\end{document}",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    core_versioning.create_publication_version(paper, note="baseline")
-    (paper.paths.tex_root / "sections" / "intro.tex").write_text("new intro\n", encoding="utf-8")
-
-    calls: list[tuple[list[str], Path]] = []
-
-    def runner(command: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-        calls.append((list(command), cwd))
-        if command[0] == "latexdiff":
-            assert command[1].endswith("/versions/v1/main.tex")
-            assert command[2].endswith("/tex/main.tex")
-            return subprocess.CompletedProcess(list(command), 0, stdout="DIFF TEX\n", stderr="")
-        if command[0] == "latexmk":
-            assert (cwd / "sections" / "intro.tex").read_text(encoding="utf-8") == "new intro\n"
-            outdir = Path(next(arg.split("=", 1)[1] for arg in command if arg.startswith("-outdir=")))
-            outdir.mkdir(parents=True, exist_ok=True)
-            (outdir / "main.pdf").write_text("diff pdf\n", encoding="utf-8")
-            return subprocess.CompletedProcess(list(command), 0, stdout="", stderr="")
-        raise AssertionError(f"Unexpected command: {command}")
-
-    pdf_path = core_versioning.build_publication_version_diff(paper, "v1", runner=runner)
-
-    assert pdf_path == paper.paths.build_root / "main-diff-v1-current.pdf"
-    assert pdf_path.read_text(encoding="utf-8") == "diff pdf\n"
-    assert [command[0] for command, _ in calls] == ["latexdiff", "latexmk"]
-
-
-def test_version_diff_normalizes_order_between_two_versions(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    init_publication(paper)
-    (paper.paths.tex_root / "sections" / "intro.tex").write_text("first\n", encoding="utf-8")
-    core_versioning.create_publication_version(paper, note="first")
-    (paper.paths.tex_root / "sections" / "intro.tex").write_text("second\n", encoding="utf-8")
-    core_versioning.create_publication_version(paper, note="second")
-
-    latexdiff_commands: list[list[str]] = []
-
-    def runner(command: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-        if command[0] == "latexdiff":
-            latexdiff_commands.append(list(command))
-            return subprocess.CompletedProcess(list(command), 0, stdout="DIFF TEX\n", stderr="")
-        if command[0] == "latexmk":
-            outdir = Path(next(arg.split("=", 1)[1] for arg in command if arg.startswith("-outdir=")))
-            outdir.mkdir(parents=True, exist_ok=True)
-            (outdir / "main.pdf").write_text("diff pdf\n", encoding="utf-8")
-            return subprocess.CompletedProcess(list(command), 0, stdout="", stderr="")
-        raise AssertionError(f"Unexpected command: {command}")
-
-    pdf_path = core_versioning.build_publication_version_diff(paper, "v2", "v1", runner=runner)
-
-    assert pdf_path == paper.paths.build_root / "main-diff-v1-v2.pdf"
-    assert latexdiff_commands[0][1].endswith("/versions/v1/main.tex")
-    assert latexdiff_commands[0][2].endswith("/versions/v2/main.tex")
-
-
-def test_version_diff_sanitizes_latexdiff_wrappers_in_optional_args(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    init_publication(paper)
-    core_versioning.create_publication_version(paper, note="baseline")
-
-    def runner(command: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-        if command[0] == "latexdiff":
-            return subprocess.CompletedProcess(
-                list(command),
-                0,
-                stdout="\\figfloat\n    {\\figone{autofigures/example}}\n    [\\DIFadd{Example caption.}]\n    [\\DIFadd{fig:example}]\n",
-                stderr="",
-            )
-        if command[0] == "latexmk":
-            diff_text = (cwd / "main.tex").read_text(encoding="utf-8")
-            assert "[\\DIFadd{Example caption.}]" not in diff_text
-            assert "[\\DIFadd{fig:example}]" not in diff_text
-            assert "[Example caption.]" in diff_text
-            assert "[fig:example]" in diff_text
-            outdir = Path(next(arg.split("=", 1)[1] for arg in command if arg.startswith("-outdir=")))
-            outdir.mkdir(parents=True, exist_ok=True)
-            (outdir / "main.pdf").write_text("diff pdf\n", encoding="utf-8")
-            return subprocess.CompletedProcess(list(command), 0, stdout="", stderr="")
-        raise AssertionError(f"Unexpected command: {command}")
-
-    pdf_path = core_versioning.build_publication_version_diff(paper, "v1", runner=runner)
-    assert pdf_path == paper.paths.build_root / "main-diff-v1-current.pdf"
-
-
-def test_restore_figfloat_blocks_prefers_newer_exact_block_text() -> None:
-    diff_text = (
-        "before\n"
-        "\\figfloat[h!]\n"
-        "    {\n"
-        "        \\figfour\n"
-        "        {\\DIFadd{autofigures/aoff_star_maps_1}}\n"
-        "        {\\DIFadd{autofigures/aoff_star_maps_2}}\n"
-        "    }\n"
-        "    [Example caption.]\n"
-        "    [fig:aoff_star_maps]\n"
-        "after\n"
-    )
-    newer_text = (
-        "before\n"
-        "\\figfloat[h!]\n"
-        "    {\n"
-        "        \\figfour\n"
-        "        {autofigures/aoff_asterism_maps_1}\n"
-        "        {autofigures/aoff_asterism_maps_2}\n"
-        "    }\n"
-        "    [Example caption.]\n"
-        "    [fig:aoff_asterism_maps]\n"
-        "after\n"
-    )
-
-    restored = core_versioning._restore_figfloat_blocks(diff_text, newer_text)
-
-    assert "aoff_star_maps" not in restored
-    assert "autofigures/aoff_asterism_maps_1" in restored
-    assert "[fig:aoff_asterism_maps]" in restored
-
-
-def test_version_diff_copies_failure_log_to_stable_build_path(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    init_publication(paper)
-    core_versioning.create_publication_version(paper, note="baseline")
-
-    def runner(command: Sequence[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-        if command[0] == "latexdiff":
-            return subprocess.CompletedProcess(list(command), 0, stdout="DIFF TEX\n", stderr="")
-        if command[0] == "latexmk":
-            outdir = Path(next(arg.split("=", 1)[1] for arg in command if arg.startswith("-outdir=")))
-            outdir.mkdir(parents=True, exist_ok=True)
-            (outdir / "main.log").write_text("! Missing endcsname inserted.\n", encoding="utf-8")
-            raise subprocess.CalledProcessError(12, list(command), output="", stderr="")
-        raise AssertionError(f"Unexpected command: {command}")
-
-    with pytest.raises(ValueError) as exc_info:
-        core_versioning.build_publication_version_diff(paper, "v1", runner=runner)
-
-    message = str(exc_info.value)
-    stable_log_path = paper.paths.build_root / "main-diff-v1-current.log"
-    assert f"Log file: {stable_log_path}" in message
-    assert stable_log_path.read_text(encoding="utf-8") == "! Missing endcsname inserted.\n"
-
 
 def test_cli_data_add_inserts_stub_after_last_loader(
     repo: Path,
@@ -1648,7 +1040,6 @@ def test_cli_data_add_inserts_stub_after_last_loader(
     assert '"y": np.array([1, 2, 3]),' in figures_text
     assert figures_text.index("def load_bundle") < figures_text.index("def load_sample_data")
     assert figures_text.index("def load_sample_data") < figures_text.index("def plot_single")
-
 
 def test_cli_figure_add_appends_stub_and_adds_missing_imports(
     repo: Path,
@@ -1693,7 +1084,6 @@ def test_cli_figure_add_appends_stub_and_adds_missing_imports(
         )
     )
 
-
 def test_cli_stat_add_appends_stub_and_adds_missing_imports(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1733,7 +1123,6 @@ def test_cli_stat_add_appends_stub_and_adds_missing_imports(
             ]
         )
     )
-
 
 def test_cli_table_add_appends_stub_and_adds_missing_imports(
     repo: Path,
@@ -1793,6 +1182,7 @@ def test_cli_table_add_appends_stub_and_adds_missing_imports(
         ),
     ],
 )
+
 def test_cli_add_rejects_duplicate_or_invalid_ids(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1802,7 +1192,6 @@ def test_cli_add_rejects_duplicate_or_invalid_ids(
     assert main(argv) == 1
     captured = capsys.readouterr()
     assert message in captured.err
-
 
 def test_cli_add_rejects_function_name_collision(
     repo: Path,
@@ -1819,7 +1208,6 @@ def test_cli_add_rejects_function_name_collision(
 
     captured = capsys.readouterr()
     assert f"Function 'plot_extra' already exists in {figures_path}" in captured.err
-
 
 def test_cli_shell_add_commands_mutate_figures_module(
     repo: Path,
@@ -1849,7 +1237,6 @@ def test_cli_shell_add_commands_mutate_figures_module(
     assert "def compute_sample_stat(ctx, example_data):" in figures_text
     assert "def tabulate_sample_table(ctx, example_data):" in figures_text
 
-
 def test_cli_shell_update_forces_publication_refresh(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1871,7 +1258,6 @@ def test_cli_shell_update_forces_publication_refresh(
     assert main(["demo", "shell"]) == 0
     capsys.readouterr()
     assert load_count == 2
-
 
 def test_cli_shell_auto_reloads_when_figures_py_changes(
     repo: Path,
@@ -1908,7 +1294,6 @@ def test_cli_shell_auto_reloads_when_figures_py_changes(
     assert captured.out.count("pinned   training   training.npy") == 2
     assert load_count == 2
 
-
 def test_cli_shell_auto_reloads_when_pub_yaml_changes(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -1943,7 +1328,6 @@ def test_cli_shell_auto_reloads_when_pub_yaml_changes(
     captured = capsys.readouterr()
     assert captured.out.count("pinned   training   training.npy") == 2
     assert load_count == 2
-
 
 def test_reload_session_publication_keeps_unchanged_imports_on_build_style_reload(
     repo: Path,
@@ -2014,7 +1398,6 @@ def test_reload_session_publication_keeps_unchanged_imports_on_build_style_reloa
     assert result.reloaded is True
     assert result.imported_modules_changed is False
     assert purged == []
-
 
 def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
     repo: Path,
@@ -2125,7 +1508,6 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
     assert "Figures" in captured.out
     assert "depends on unknown loader" not in captured.err
 
-
 def test_cli_shell_reload_failure_keeps_session_alive(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2156,7 +1538,6 @@ def test_cli_shell_reload_failure_keeps_session_alive(
     captured = capsys.readouterr()
     assert captured.out.count("pinned   training   training.npy") == 2
     assert "Error:" in captured.err
-
 
 def test_cli_shell_user_code_exception_keeps_session_alive(
     repo: Path,
@@ -2192,7 +1573,6 @@ def test_cli_shell_user_code_exception_keeps_session_alive(
     assert "  ZeroDivisionError: bad math" in captured.out
     assert "demo: no declared data" in captured.out
 
-
 def test_cli_figure_update_fails_cleanly_for_tuple_returning_loader(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2227,7 +1607,6 @@ def test_cli_figure_update_fails_cleanly_for_tuple_returning_loader(
     assert "Loader 'training' returned a tuple." in captured.out
     assert "wrap multiple values in a dict, dataclass, or other single container." in captured.out
 
-
 def test_cli_figure_update_fails_cleanly_for_none_returning_loader(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2260,7 +1639,6 @@ def test_cli_figure_update_fails_cleanly_for_none_returning_loader(
 
     captured = capsys.readouterr()
     assert "Loader 'training' returned None. Loaders must return one object." in captured.out
-
 
 def test_cli_shell_loader_tuple_return_keeps_session_alive(
     repo: Path,
@@ -2302,7 +1680,6 @@ def test_cli_shell_loader_tuple_return_keeps_session_alive(
     assert "wrap multiple values in a dict, dataclass, or other single container." in captured.out
     assert "pinned   training   training.npy" in captured.out
 
-
 def test_cli_shell_loader_none_return_keeps_session_alive(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2341,7 +1718,6 @@ def test_cli_shell_loader_none_return_keeps_session_alive(
     captured = capsys.readouterr()
     assert "Loader 'training' returned None. Loaders must return one object." in captured.out
     assert "pinned" in captured.out
-
 
 def test_cli_shell_update_recomputes_loader_data(
     repo: Path,
@@ -2388,7 +1764,6 @@ def test_cli_shell_update_recomputes_loader_data(
     assert r"  \StatTrainingValue = first" in captured.out
     assert r"  \StatTrainingValue = second" in captured.out
 
-
 def test_cli_shell_preloads_normal_loaders_once_and_reuses_them_across_commands(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2430,7 +1805,6 @@ def test_cli_shell_preloads_normal_loaders_once_and_reuses_them_across_commands(
     assert captured.out.count("loading training alpha") == 1
     assert captured.out.index("loading training alpha") < captured.out.index("training_value")
     assert captured.out.count(r"  \StatTrainingValue = alpha") == 2
-
 
 def test_cli_shell_nocache_loader_runs_once_per_command(
     repo: Path,
@@ -2478,7 +1852,6 @@ def test_cli_shell_nocache_loader_runs_once_per_command(
     assert captured.out.count(r"  \StatTrainingValue = beta") == 2
     assert captured.out.count(r"  \StatTrainingAgain = beta") == 2
 
-
 def test_cli_shell_persists_history_in_publication_root(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2495,7 +1868,6 @@ def test_cli_shell_persists_history_in_publication_root(
     assert main(["demo", "shell"]) == 0
     assert fake_readline.read_paths == [str(history_path)]
     assert history_path.read_text(encoding="utf-8").splitlines() == ["data list", "figure single update", "quit"]
-
 
 def test_cli_shell_history_is_trimmed_to_recent_entries(
     repo: Path,
@@ -2520,7 +1892,6 @@ def test_cli_shell_history_is_trimmed_to_recent_entries(
     assert lines[-2] == f"cmd-{core_cli.SHELL_HISTORY_LIMIT + 24}"
     assert lines[-1] == "quit"
 
-
 def test_cli_shell_persists_history_when_readline_already_contains_latest_entry(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2541,7 +1912,6 @@ def test_cli_shell_persists_history_when_readline_already_contains_latest_entry(
 
     assert main(["demo", "shell"]) == 0
     assert history_path.read_text(encoding="utf-8").splitlines() == ["data list", "figure single update", "quit"]
-
 
 def test_configure_shell_readline_binds_arrow_keys_for_gnu_and_libedit(
     monkeypatch: pytest.MonkeyPatch,
@@ -2566,7 +1936,6 @@ def test_configure_shell_readline_binds_arrow_keys_for_gnu_and_libedit(
     assert "bind ^[OD ed-prev-char" in libedit_readline.bindings
     assert libedit_readline.auto_history_values == [False]
 
-
 def test_subfigure_index_is_one_based(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
 
@@ -2575,7 +1944,6 @@ def test_subfigure_index_is_one_based(repo: Path) -> None:
 
     with pytest.raises(UserCodeExecutionError):
         run_figures(paper, "compare", 3)
-
 
 def test_build_runs_from_tex_into_tex_build(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
@@ -2600,7 +1968,6 @@ def test_build_runs_from_tex_into_tex_build(repo: Path) -> None:
             paper.paths.tex_root,
         )
     ]
-
 
 def test_build_retries_stale_latexmk_failure_with_force(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
@@ -2648,7 +2015,6 @@ def test_build_retries_stale_latexmk_failure_with_force(repo: Path) -> None:
         ),
     ]
 
-
 def test_build_failure_reports_latex_diagnostic_from_log(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
     init_publication(paper)
@@ -2682,7 +2048,6 @@ def test_build_failure_reports_latex_diagnostic_from_log(repo: Path) -> None:
     assert "Source: demo.tex:12: Undefined control sequence" in text
     assert r"Context: l.12 \usepackage{missing}" in text
 
-
 def test_build_failure_reports_partial_signal_when_available(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
     init_publication(paper)
@@ -2703,35 +2068,6 @@ def test_build_failure_reports_partial_signal_when_available(repo: Path) -> None
     assert "latexmk exit 1" in text
     assert f"Log file: {log_path}" in text
     assert "LaTeX error: Runaway argument?" in text
-
-
-def test_build_failure_ignores_package_info_and_reports_real_error(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    init_publication(paper)
-    log_path = paper.paths.build_root / "main.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(
-        "\n".join(
-            [
-                "Package microtype Info: Loading configuration file microtype.cfg.",
-                "! LaTeX Error: File `missing.sty' not found.",
-                "! Emergency stop.",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    def runner(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
-        raise subprocess.CalledProcessError(1, command, "", "")
-
-    with pytest.raises(ValueError) as exc_info:
-        build_publication(paper, runner=runner)
-
-    text = str(exc_info.value)
-    assert "LaTeX error: LaTeX Error: File `missing.sty' not found." in text
-    assert "microtype Info" not in text
-
 
 def test_build_failure_reports_cant_find_file_over_fatal_error(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
@@ -2761,7 +2097,6 @@ def test_build_failure_reports_cant_find_file_over_fatal_error(repo: Path) -> No
     assert "LaTeX error: I can't find file `pst-tools.tex'." in text
     assert "Fatal error occurred" not in text
 
-
 def test_build_failure_reports_missing_log_fallback(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
     init_publication(paper)
@@ -2776,7 +2111,6 @@ def test_build_failure_reports_missing_log_fallback(repo: Path) -> None:
     assert "latexmk exit 2" in text
     assert f"Log file: {paper.paths.build_root / 'main.log'}" in text
     assert "no LaTeX diagnostic could be extracted" in text
-
 
 def test_cli_build_reports_expected_error_without_traceback(
     repo: Path,
@@ -2807,7 +2141,6 @@ def test_cli_build_reports_expected_error_without_traceback(
     assert "Error: LaTeX build failed for 'demo' (latexmk exit 1)." in captured.err
     assert "Traceback" not in captured.err
 
-
 def test_cli_build_prints_pdf_output_path(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2823,7 +2156,6 @@ def test_cli_build_prints_pdf_output_path(
     lines = [line for line in captured.out.strip().splitlines() if line]
     assert lines[-2] == "PDF"
     assert lines[-1] == f"- {repo / 'papers' / 'demo' / 'tex' / 'build' / 'main.pdf'}: updated"
-
 
 def test_cli_build_does_not_refresh_generated_inputs(
     repo: Path,
@@ -2888,7 +2220,6 @@ def test_cli_build_does_not_refresh_when_outputs_are_stale_or_missing(
     assert calls == ["build"]
     assert captured.out.strip().endswith("/tex/build/main.pdf: updated")
 
-
 def test_cli_shell_build_does_not_refresh_generated_outputs(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2938,7 +2269,6 @@ def test_cli_shell_build_does_not_refresh_generated_outputs(
     assert calls == ["build", "build"]
     assert "Figures" not in captured.out
 
-
 def test_cli_shell_build_after_update_still_only_builds(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2983,7 +2313,6 @@ def test_cli_shell_build_after_update_still_only_builds(
     assert main(["demo", "shell"]) == 0
     capsys.readouterr()
     assert calls == ["build"]
-
 
 def test_cli_shell_build_reloads_publication_when_imported_module_changes(
     repo: Path,
@@ -3053,7 +2382,6 @@ def test_cli_shell_build_reloads_publication_when_imported_module_changes(
     captured = capsys.readouterr()
     assert captured.err == ""
 
-
 def test_collect_shell_method_state_tracks_figures_py_helpers_only_for_dependent_nodes(
     repo: Path,
 ) -> None:
@@ -3116,7 +2444,6 @@ def test_collect_shell_method_state_tracks_figures_py_helpers_only_for_dependent
     assert plan.stat_ids == ()
     assert plan.table_ids == ()
 
-
 def test_collect_shell_method_state_tracks_figures_py_constants_only_for_dependent_nodes(
     repo: Path,
 ) -> None:
@@ -3176,7 +2503,6 @@ def test_collect_shell_method_state_tracks_figures_py_constants_only_for_depende
     assert plan.stat_ids == ()
     assert plan.table_ids == ()
 
-
 def test_collect_shell_method_state_tracks_external_editable_submodules(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3227,7 +2553,6 @@ def test_collect_shell_method_state_tracks_external_editable_submodules(
 
     assert helper_path.resolve() in state.imported_module_paths
 
-
 def test_plan_incremental_shell_build_marks_figure_stale_when_output_names_change_with_same_count(
     repo: Path,
 ) -> None:
@@ -3252,7 +2577,6 @@ def test_plan_incremental_shell_build_marks_figure_stale_when_output_names_chang
     assert plan.changed_loader_ids == ()
     assert plan.stat_ids == ()
     assert plan.table_ids == ()
-
 
 def test_figure_output_matching_does_not_cross_match_shared_suffix_names(
     repo: Path,
@@ -3299,7 +2623,6 @@ def test_figure_output_matching_does_not_cross_match_shared_suffix_names(
         "field_ee_maps_shared.pdf",
     )
 
-
 def test_collect_shell_method_state_skips_pubify_package_modules(
     repo: Path,
 ) -> None:
@@ -3309,11 +2632,9 @@ def test_collect_shell_method_state_skips_pubify_package_modules(
     assert all("pubify_pubs" not in str(path) for path in state.imported_module_paths)
     assert all("pubify-mpl" not in str(path) for path in state.imported_module_paths)
 
-
 def test_cli_build_rejects_update_flag(repo: Path) -> None:
     with pytest.raises(SystemExit):
         main(["demo", "build", "--update"])
-
 
 def test_cli_update_runs_figure_and_stat_refresh(
     repo: Path,
@@ -3352,7 +2673,6 @@ def test_cli_update_runs_figure_and_stat_refresh(
     paper = load_publication_definition(repo, "demo")
     assert fake_pubify_mpl.prepare_calls == [(paper.paths.tex_root, paper.config.pubify_mpl.template)]
 
-
 def test_cli_build_clear_removes_existing_build_outputs(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -3386,16 +2706,13 @@ def test_cli_build_clear_removes_existing_build_outputs(
     assert not stale_aux.exists()
     assert not nested_dir.exists()
 
-
 def test_cli_build_still_rejects_force(repo: Path) -> None:
     with pytest.raises(SystemExit):
         main(["demo", "build", "--force"])
 
-
 def test_cli_list_rejects_clear_flag(repo: Path) -> None:
     with pytest.raises(SystemExit):
         main(["list", "--clear"])
-
 
 def test_init_creates_tex_tree_and_runs_prepare(repo: Path, fake_pubify_mpl: FakePubifyBackend) -> None:
     paper = load_publication_definition(repo, "demo")
@@ -3418,7 +2735,6 @@ def test_init_creates_tex_tree_and_runs_prepare(repo: Path, fake_pubify_mpl: Fak
     assert (paper.paths.tex_root / "pubify.sty").exists()
     assert (paper.paths.tex_root / "pubify-template.tex").exists()
 
-
 def test_cli_stat_list_outputs_discovered_stats(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -3426,14 +2742,12 @@ def test_cli_stat_list_outputs_discovered_stats(
     assert main(["demo", "stat", "list"]) == 0
     assert capsys.readouterr().out.strip() == "training_summary"
 
-
 def test_cli_stats_alias_works_for_list(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     assert main(["demo", "stats", "list"]) == 0
     assert capsys.readouterr().out.strip() == "training_summary"
-
 
 def test_cli_stat_update_writes_autostats_and_prints_all_stats(
     repo: Path,
@@ -3459,7 +2773,6 @@ def test_cli_stat_update_writes_autostats_and_prints_all_stats(
         ]
     )
 
-
 def test_cli_stat_update_selected_stat_prints_only_selected_block(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -3471,7 +2784,6 @@ def test_cli_stat_update_selected_stat_prints_only_selected_block(
     assert "- training_summary" in captured.out
     assert r"  \StatTrainingSummaryValue = training" in captured.out
     assert r"  \StatTrainingSummaryBundle = meta|model" in captured.out
-
 
 def test_cli_stat_latex_emits_macro_lines_with_padding(
     repo: Path,
@@ -3485,7 +2797,6 @@ def test_cli_stat_latex_emits_macro_lines_with_padding(
     assert captured.out.endswith("\n\n")
     assert r"\StatTrainingSummaryValue{}" in captured.out
     assert r"\StatTrainingSummaryBundle{}" in captured.out
-
 
 def test_cli_stat_latex_skips_existing_autostats_input(
     repo: Path,
@@ -3509,7 +2820,6 @@ def test_cli_stat_latex_skips_existing_autostats_input(
 
     captured = capsys.readouterr()
     assert not captured.out.startswith("\n\\input{autostats.tex}")
-
 
 def test_cli_table_update_writes_autotables_and_prints_table_block(
     repo: Path,
@@ -3544,7 +2854,6 @@ def test_cli_table_update_writes_autotables_and_prints_table_block(
     assert "Tables" in captured.out
     assert "- summary: updated" in _strip_ansi(captured.out)
     assert (repo / "papers" / "tablesdemo" / "tex" / "autotables.tex").read_text(encoding="utf-8")
-
 
 def test_cli_table_latex_emits_single_body_scaffold(
     repo: Path,
@@ -3582,7 +2891,6 @@ def test_cli_table_latex_emits_single_body_scaffold(
     assert r"\label{tab:summary}" in captured.out
     assert r"\input{autotables.tex}" not in captured.out
 
-
 def test_cli_table_latex_emits_grouped_multi_body_scaffold(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -3616,7 +2924,6 @@ def test_cli_table_latex_emits_grouped_multi_body_scaffold(
     assert r"\multicolumn{2}{l}{Body 2} \\" in captured.out
     assert r"\TableSummary{2}" in captured.out
 
-
 def test_cli_table_latex_emits_missing_autotables_input_when_needed(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -3644,7 +2951,6 @@ def test_cli_table_latex_emits_missing_autotables_input_when_needed(
     captured = capsys.readouterr()
     assert captured.err == ""
     assert captured.out.startswith("\n\\input{autotables.tex}\n\\begin{table}[t]\n")
-
 
 def test_cli_update_validates_tables(repo: Path) -> None:
     _write_table_paper(
@@ -3674,7 +2980,6 @@ def test_cli_update_validates_tables(repo: Path) -> None:
 
     assert main(["tablecheck", "update"]) == 0
 
-
 def test_cli_tables_alias_maps_to_table(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _write_table_paper(
         repo,
@@ -3702,7 +3007,6 @@ def test_cli_tables_alias_maps_to_table(repo: Path, capsys: pytest.CaptureFixtur
     assert main(["tablesalias", "tables", "list"]) == 0
     captured = capsys.readouterr()
     assert captured.out.strip() == "summary"
-
 
 def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     repo: Path,
@@ -3775,7 +3079,6 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     assert fake_pubify_mpl.prepare_calls[0][1]["base_fontsize_pt"] == 12.0
     assert fake_pubify_mpl.prepare_calls[0][1]["caption_lineheight_pt"] == 13.6
 
-
 def test_check_after_init_passes_when_mirror_root_is_blank(
     repo: Path,
     fake_pubify_mpl: FakePubifyBackend,
@@ -3783,7 +3086,6 @@ def test_check_after_init_passes_when_mirror_root_is_blank(
     main(["init", "fresh"])
     fresh = load_publication_definition(repo, "fresh")
     check_publication(fresh)
-
 
 def test_init_is_idempotent_and_recreates_missing_bootstrap_files(
     repo: Path,
@@ -3804,7 +3106,6 @@ def test_init_is_idempotent_and_recreates_missing_bootstrap_files(
     assert len(fake_pubify_mpl.prepare_calls) == 2
     assert fake_pubify_mpl.prepare_calls[0][0] == fresh_root / "tex"
     assert fake_pubify_mpl.prepare_calls[1][0] == fresh_root / "tex"
-
 
 def test_init_respects_existing_configured_main_tex_path(
     repo: Path,
@@ -3845,18 +3146,15 @@ def test_init_respects_existing_configured_main_tex_path(
     assert not (publication_root / "tex" / "main.tex").exists()
     assert r"\usepackage{pubify}" in (publication_root / "tex" / "paper.tex").read_text(encoding="utf-8")
 
-
 def test_export_does_not_call_prepare(repo: Path, fake_pubify_mpl: FakePubifyBackend) -> None:
     paper = load_publication_definition(repo, "demo")
     run_figures(paper, "single")
     assert fake_pubify_mpl.prepare_calls == []
 
-
 def test_check_fails_when_pubify_support_files_are_missing(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
     with pytest.raises(ValueError, match="Missing pubify support file:"):
         check_publication(paper)
-
 
 def test_check_fails_when_mirror_root_is_missing(repo: Path, fake_pubify_mpl: FakePubifyBackend) -> None:
     paper = load_publication_definition(repo, "demo")
@@ -3867,14 +3165,12 @@ def test_check_fails_when_mirror_root_is_missing(repo: Path, fake_pubify_mpl: Fa
     with pytest.raises(ValueError, match="Mirror does not exist:"):
         check_publication(paper)
 
-
 def test_check_fails_when_declared_data_path_is_missing(repo: Path) -> None:
     (repo / "output" / "papers" / "demo" / "training.npy").unlink()
     paper = load_publication_definition(repo, "demo")
 
     with pytest.raises(ValueError, match="Missing data path for loader 'training'"):
         check_publication(paper)
-
 
 def test_data_list_shows_one_row_per_declared_pinned_path(
     repo: Path,
@@ -3891,7 +3187,6 @@ def test_data_list_shows_one_row_per_declared_pinned_path(
         "pinned   bundle     bundle/model.txt",
         "pinned   bundle     bundle/meta.txt",
     ]
-
 
 def test_data_list_shows_external_rows_and_does_not_validate_paths(
     repo: Path,
@@ -3941,7 +3236,6 @@ def test_data_list_shows_external_rows_and_does_not_validate_paths(
         "external   external_bundle     scratch:bundle/meta.txt",
     ]
 
-
 def test_data_list_repeats_loader_id_for_multi_path_rows_and_keeps_per_loader_rows(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -3985,7 +3279,6 @@ def test_data_list_repeats_loader_id_for_multi_path_rows_and_keeps_per_loader_ro
         "external   three   scratch:tiptop",
     ]
 
-
 def test_data_list_colors_status_only_on_tty(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -4026,7 +3319,6 @@ def test_data_list_colors_status_only_on_tty(
         "external   external_training   scratch:training.npy",
     ]
 
-
 def test_data_list_empty_state_is_clear(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
@@ -4048,293 +3340,6 @@ def test_data_list_empty_state_is_clear(
 
     assert main(["nodata", "data", "list"]) == 0
     assert capsys.readouterr().out.strip() == "nodata: no declared data"
-
-
-def test_data_pin_single_path_rewrites_loader_and_copies_file(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    scratch_root = repo / "pin-src-single"
-    scratch_root.mkdir(parents=True, exist_ok=True)
-    (scratch_root / "training.npy").write_text("external-data", encoding="utf-8")
-    _write_external_paper(
-        repo,
-        publication_id="pinsingle",
-        external_root_lines=[f"  scratch: {scratch_root}"],
-        figure_lines=[
-            "from pubify_pubs.decorators import external_data, figure",
-            "",
-            "@external_data('scratch', 'training.npy')",
-            "def load_training(ctx, path):",
-            "    return path",
-            "",
-            "@figure",
-            "def plot_unused(ctx, training):",
-            "    return None",
-        ],
-    )
-    paper = load_publication_definition(repo, "pinsingle")
-    init_publication(paper)
-
-    assert main(["pinsingle", "data", "training", "pin"]) == 0
-    output = capsys.readouterr().out.strip().splitlines()
-
-    assert output[0] == "pinsingle: pinned loader training"
-    assert "output/papers/pinsingle/training.npy" in output
-    assert output[-1] == "@data('training.npy')"
-    assert (repo / "output" / "papers" / "pinsingle" / "training.npy").read_text(
-        encoding="utf-8"
-    ) == "external-data"
-    figures_text = (repo / "papers" / "pinsingle" / "figures.py").read_text(
-        encoding="utf-8"
-    )
-    assert "@data('training.npy')" in figures_text
-    assert "@external_data('scratch', 'training.npy')" not in figures_text
-    assert "from pubify_pubs.decorators import data, external_data, figure" in figures_text
-    reloaded = load_publication_definition(repo, "pinsingle")
-    assert reloaded.loaders["training"].kind == "data"
-    check_publication(reloaded)
-
-
-def test_data_pin_named_paths_preserves_nocache_and_copies_directories(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    scratch_root = repo / "pin-src-named"
-    (scratch_root / "models").mkdir(parents=True, exist_ok=True)
-    (scratch_root / "models" / "weights.bin").write_text("weights", encoding="utf-8")
-    (scratch_root / "meta").mkdir(parents=True, exist_ok=True)
-    (scratch_root / "meta" / "bundle.json").write_text("{}", encoding="utf-8")
-    _write_external_paper(
-        repo,
-        publication_id="pinnamed",
-        external_root_lines=[f"  scratch: {scratch_root}"],
-        figure_lines=[
-            "from pubify_pubs.decorators import external_data, figure",
-            "",
-            "@external_data('scratch', model_dir='models', meta_dir='meta', nocache=True)",
-            "def load_bundle(ctx, model_dir, meta_dir):",
-            "    return model_dir, meta_dir",
-            "",
-            "@external_data('scratch', 'other.txt')",
-            "def load_other(ctx, path):",
-            "    return path",
-            "",
-            "@figure",
-            "def plot_unused(ctx, bundle):",
-            "    return None",
-        ],
-    )
-    (scratch_root / "other.txt").write_text("other", encoding="utf-8")
-
-    assert main(["pinnamed", "data", "bundle", "pin"]) == 0
-    output = capsys.readouterr().out.strip().splitlines()
-
-    assert output[-1] == "@data(model_dir='models', meta_dir='meta', nocache=True)"
-    figures_text = (repo / "papers" / "pinnamed" / "figures.py").read_text(
-        encoding="utf-8"
-    )
-    assert "@data(model_dir='models', meta_dir='meta', nocache=True)" in figures_text
-    assert "@external_data('scratch', 'other.txt')" in figures_text
-    assert (repo / "output" / "papers" / "pinnamed" / "models" / "weights.bin").exists()
-    assert (repo / "output" / "papers" / "pinnamed" / "meta" / "bundle.json").exists()
-    reloaded = load_publication_definition(repo, "pinnamed")
-    assert reloaded.loaders["bundle"].kind == "data"
-    assert reloaded.loaders["bundle"].nocache is True
-
-
-def test_data_pin_fails_cleanly_for_unknown_loader(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    assert main(["demo", "data", "missing", "pin"]) == 1
-    assert "Unknown loader 'missing'" in capsys.readouterr().err
-
-
-def test_data_pin_fails_cleanly_for_non_external_loader(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    assert main(["demo", "data", "training", "pin"]) == 1
-    assert "Loader 'training' is not declared with @external_data" in capsys.readouterr().err
-
-
-def test_data_pin_large_copy_aborts_before_mutation(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    scratch_root = repo / "pin-src-large"
-    scratch_root.mkdir(parents=True, exist_ok=True)
-    (scratch_root / "training.npy").write_text("0123456789", encoding="utf-8")
-    _write_external_paper(
-        repo,
-        publication_id="pinlarge",
-        external_root_lines=[f"  scratch: {scratch_root}"],
-        figure_lines=[
-            "from pubify_pubs.decorators import external_data, figure",
-            "",
-            "@external_data('scratch', 'training.npy')",
-            "def load_training(ctx, path):",
-            "    return path",
-            "",
-            "@figure",
-            "def plot_unused(ctx, training):",
-            "    return None",
-        ],
-    )
-    monkeypatch.setattr(core_pinning, "PIN_SIZE_WARNING_BYTES", 5)
-    original_text = (repo / "papers" / "pinlarge" / "figures.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert main(["pinlarge", "data", "training", "pin"]) == 1
-    captured = capsys.readouterr()
-    assert "exceeds the safe copy limit" in captured.err
-    assert "training.npy" in captured.err
-    assert (
-        repo / "papers" / "pinlarge" / "figures.py"
-    ).read_text(encoding="utf-8") == original_text
-    assert not (repo / "output" / "papers" / "pinlarge" / "training.npy").exists()
-
-
-def test_data_pin_fails_on_ambiguous_existing_target_path(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    scratch_root = repo / "pin-src-ambiguous"
-    (scratch_root / "models").mkdir(parents=True, exist_ok=True)
-    (scratch_root / "models" / "weights.bin").write_text("weights", encoding="utf-8")
-    _write_external_paper(
-        repo,
-        publication_id="pinambiguous",
-        external_root_lines=[f"  scratch: {scratch_root}"],
-        figure_lines=[
-            "from pubify_pubs.decorators import external_data, figure",
-            "",
-            "@external_data('scratch', 'models')",
-            "def load_bundle(ctx, path):",
-            "    return path",
-            "",
-            "@figure",
-            "def plot_unused(ctx, bundle):",
-            "    return None",
-        ],
-    )
-    target = repo / "output" / "papers" / "pinambiguous" / "models"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("existing file", encoding="utf-8")
-
-    assert main(["pinambiguous", "data", "bundle", "pin"]) == 1
-    assert "would replace an existing pinned path ambiguously" in capsys.readouterr().err
-
-
-def test_data_pin_refuses_overwriting_existing_pinned_file_with_different_contents(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    scratch_root = repo / "pin-src-existing-file"
-    scratch_root.mkdir(parents=True, exist_ok=True)
-    (scratch_root / "training.npy").write_text("external-data", encoding="utf-8")
-    _write_external_paper(
-        repo,
-        publication_id="pinexistingfile",
-        external_root_lines=[f"  scratch: {scratch_root}"],
-        figure_lines=[
-            "from pubify_pubs.decorators import external_data, figure",
-            "",
-            "@external_data('scratch', 'training.npy')",
-            "def load_training(ctx, path):",
-            "    return path",
-            "",
-            "@figure",
-            "def plot_unused(ctx, training):",
-            "    return None",
-        ],
-    )
-    target = repo / "output" / "papers" / "pinexistingfile" / "training.npy"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("old-pinned-data", encoding="utf-8")
-    original_text = (repo / "papers" / "pinexistingfile" / "figures.py").read_text(
-        encoding="utf-8"
-    )
-
-    assert main(["pinexistingfile", "data", "training", "pin"]) == 1
-    captured = capsys.readouterr()
-    assert "would overwrite an existing pinned file with different contents" in captured.err
-    assert target.read_text(encoding="utf-8") == "old-pinned-data"
-    assert (
-        repo / "papers" / "pinexistingfile" / "figures.py"
-    ).read_text(encoding="utf-8") == original_text
-
-
-def test_data_pin_creates_output_parent_when_missing(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    scratch_root = repo / "pin-src-first"
-    scratch_root.mkdir(parents=True, exist_ok=True)
-    (scratch_root / "training.npy").write_text("external-data", encoding="utf-8")
-    _write_external_paper(
-        repo,
-        publication_id="pinfirst",
-        external_root_lines=[f"  scratch: {scratch_root}"],
-        figure_lines=[
-            "from pubify_pubs.decorators import external_data, figure",
-            "",
-            "@external_data('scratch', 'training.npy')",
-            "def load_training(ctx, path):",
-            "    return path",
-            "",
-            "@figure",
-            "def plot_unused(ctx, training):",
-            "    return None",
-        ],
-    )
-    shutil.rmtree(repo / "output" / "papers")
-
-    assert main(["pinfirst", "data", "training", "pin"]) == 0
-    capsys.readouterr()
-    assert (repo / "output" / "papers" / "pinfirst" / "training.npy").exists()
-
-
-def test_data_pin_preserves_unrelated_loaders(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    scratch_root = repo / "pin-src-unrelated"
-    scratch_root.mkdir(parents=True, exist_ok=True)
-    (scratch_root / "a.txt").write_text("a", encoding="utf-8")
-    (scratch_root / "b.txt").write_text("b", encoding="utf-8")
-    _write_external_paper(
-        repo,
-        publication_id="pinunrelated",
-        external_root_lines=[f"  scratch: {scratch_root}"],
-        figure_lines=[
-            "from pubify_pubs.decorators import external_data, figure",
-            "",
-            "@external_data('scratch', 'a.txt')",
-            "def load_alpha(ctx, path):",
-            "    return path",
-            "",
-            "@external_data('scratch', 'b.txt')",
-            "def load_beta(ctx, path):",
-            "    return path",
-            "",
-            "@figure",
-            "def plot_unused(ctx, alpha):",
-            "    return None",
-        ],
-    )
-
-    assert main(["pinunrelated", "data", "alpha", "pin"]) == 0
-    figures_text = (repo / "papers" / "pinunrelated" / "figures.py").read_text(
-        encoding="utf-8"
-    )
-    assert "@data('a.txt')" in figures_text
-    assert "@external_data('scratch', 'b.txt')" in figures_text
-
 
 def test_external_data_single_path_resolves_from_configured_root(repo: Path) -> None:
     scratch_root = repo / "scratch-data"
@@ -4369,7 +3374,6 @@ def test_external_data_single_path_resolves_from_configured_root(repo: Path) -> 
 
     assert outputs[0].read_text(encoding="utf-8") == "external-training"
 
-
 def test_external_data_multi_path_resolves_named_paths_from_configured_root(repo: Path) -> None:
     shared_root = repo / "shared-data" / "bundle"
     shared_root.mkdir(parents=True, exist_ok=True)
@@ -4403,7 +3407,6 @@ def test_external_data_multi_path_resolves_named_paths_from_configured_root(repo
 
     assert outputs[0].read_text(encoding="utf-8") == "meta|model"
 
-
 def test_check_fails_when_external_root_config_is_missing(repo: Path) -> None:
     _write_external_paper(
         repo,
@@ -4425,7 +3428,6 @@ def test_check_fails_when_external_root_config_is_missing(repo: Path) -> None:
         match="Missing external data root config for loader 'training': scratch",
     ):
         check_publication(paper)
-
 
 def test_check_fails_when_external_root_path_is_missing(repo: Path) -> None:
     missing_root = repo / "missing-scratch"
@@ -4450,7 +3452,6 @@ def test_check_fails_when_external_root_path_is_missing(repo: Path) -> None:
     ):
         check_publication(paper)
 
-
 def test_check_fails_when_external_data_path_is_missing(repo: Path) -> None:
     scratch_root = repo / "scratch-data-missing-file"
     scratch_root.mkdir(parents=True, exist_ok=True)
@@ -4474,7 +3475,6 @@ def test_check_fails_when_external_data_path_is_missing(repo: Path) -> None:
         match=f"Missing external data path for loader 'training': {scratch_root / 'training.npy'}",
     ):
         check_publication(paper)
-
 
 def test_external_data_relative_root_is_resolved_from_workspace_root(
     repo: Path,
@@ -4513,7 +3513,6 @@ def test_external_data_relative_root_is_resolved_from_workspace_root(
     outputs = run_figures(paper, "single")
     assert outputs[0].read_text(encoding="utf-8") == "stable-relative-root"
 
-
 def test_external_data_absolute_root_is_kept_unchanged(repo: Path) -> None:
     shared_root = (repo / "absolute-shared").resolve()
     shared_root.mkdir(parents=True, exist_ok=True)
@@ -4547,489 +3546,101 @@ def test_external_data_absolute_root_is_kept_unchanged(repo: Path) -> None:
     outputs = run_figures(paper, "single")
     assert outputs[0].read_text(encoding="utf-8") == "absolute-root"
 
-
-def test_push_requires_configured_mirror_root(repo: Path) -> None:
-    publication_root = repo / "papers" / "nomirror"
-    (publication_root / "tex").mkdir(parents=True, exist_ok=True)
-    (repo / "output" / "papers" / "nomirror").mkdir(parents=True, exist_ok=True)
-    (publication_root / "pub.yaml").write_text(
-        "\n".join(
-            [
-                'mirror_root: ""',
-                "main_tex: main.tex",
-                "pubify-mpl-template:",
-                "  textwidth_in: 5.39643",
-                "  textheight_in: 7.5896",
-                "  base_fontsize_pt: 12.0",
-                "  caption_lineheight_pt: 13.6",
-                "  subcaption_lineheight_pt: 13.6",
-                "  row_skip_in: 0.11",
-                "  caption_skip_in: 0.11",
-                "  subcaption_skip_in: 0.08",
-                "  subcaption_allowance_in: 0.08",
-                "  caption_allowance_in: 0.08",
-                "pubify-mpl-defaults:",
-                "  layout: one",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (publication_root / "figures.py").write_text("from pubify_pubs.decorators import figure\n", encoding="utf-8")
-    (publication_root / "tex" / "main.tex").write_text("\\documentclass{article}\n", encoding="utf-8")
-
-    paper = load_publication_definition(repo, "nomirror")
-
-    with pytest.raises(ValueError, match="does not define mirror_root"):
-        push_publication(paper)
-
-
 def test_build_fails_with_init_message_when_pubify_support_files_are_missing(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
     with pytest.raises(ValueError, match=r"Run `pubs init demo`"):
         build_publication(paper)
 
-
-def test_ignore_adds_new_exact_relative_path(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    rc = main(["demo", "ignore", "sections/intro.tex"])
-
-    assert rc == 0
-    assert capsys.readouterr().out.strip() == "demo: added sync ignore sections/intro.tex"
-    config_text = (repo / "papers" / "demo" / "pub.yaml").read_text(encoding="utf-8")
-    assert "  - drafts/*" in config_text
-    assert '  - "sections/intro.tex"' in config_text
-
-
-def test_ignore_is_noop_when_path_is_already_present(
+def test_cli_normalizes_documented_short_form(
     repo: Path,
+    fake_pubify_mpl: FakePubifyBackend,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    assert main(["demo", "ignore", "sections/intro.tex"]) == 0
-    capsys.readouterr()
-
-    rc = main(["demo", "ignore", "sections/intro.tex"])
-
+    assert main(["init", "demo"]) == 0
+    init_output = capsys.readouterr().out.strip()
+    assert init_output.endswith("/papers/demo")
+    rc = main(["demo", "data", "list"])
     assert rc == 0
-    assert capsys.readouterr().out.strip() == "demo: sync ignore already present sections/intro.tex"
-    config_text = (repo / "papers" / "demo" / "pub.yaml").read_text(encoding="utf-8")
-    assert config_text.count("sections/intro.tex") == 1
+    assert "training.npy" in capsys.readouterr().out
 
+def test_old_init_syntax_is_rejected() -> None:
+    parser = build_parser()
+    with pytest.raises(SystemExit):
+        main(["demo", "init"])
 
-def test_ignore_rejects_absolute_paths(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    rc = main(["demo", "ignore", "/abs/path.tex"])
+def test_prepare_is_unsupported(repo: Path) -> None:
+    with pytest.raises(SystemExit):
+        main(["demo", "prepare"])
+
+def test_no_arg_invocation_prints_multiline_help_block(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        main([])
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "usage: pubs [--force] [--clear] <command>" in captured.err
+    assert "Commands:" in captured.err
+    assert "  pubs list" in captured.err
+    assert "  pubs init <publication-id>" in captured.err
+    assert "  pubs <publication-id> shell" in captured.err
+    assert "  pubs <publication-id> data [list|add <data-id>]" in captured.err
+    assert "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]" in captured.err
+    assert "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]" in captured.err
+    assert "  pubs <publication-id> table [list|add <table-id>|update|<table-id> update|<table-id> latex]" in captured.err
+    assert "  pubs <publication-id> update" in captured.err
+    assert "  pubs <publication-id> build [--clear]" in captured.err
+    assert "  pubs <publication-id> preview" in captured.err
+    assert "positional arguments:" not in captured.err
+    assert "subject" not in captured.err
+    assert "arg2" not in captured.err
+    assert (
+        "expected 'list', 'init <publication-id>', or '<publication-id> <command>'" in captured.err
+    )
+
+def test_build_reports_validation_failure_without_traceback(
+    repo: Path,
+    fake_pubify_mpl: FakePubifyBackend,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    mirror_root = repo / "mirror" / "demo"
+    mirror_root.rmdir()
+
+    rc = main(["demo", "build"])
 
     assert rc == 1
-    assert "ignore path must be relative to tex/" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Error: Publication 'demo' failed validation:" in captured.err
+    assert "Mirror does not exist:" in captured.err
 
-
-def test_ignore_rejects_path_traversal(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    rc = main(["demo", "ignore", "../outside.tex"])
-
-    assert rc == 1
-    assert "ignore path must stay under tex/" in capsys.readouterr().err
-
-
-def test_ignore_rejects_glob_syntax(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    rc = main(["demo", "ignore", "drafts/*.tex"])
-
-    assert rc == 1
-    assert "exact relative path, not a glob pattern" in capsys.readouterr().err
-
-
-def test_ignore_quotes_yaml_scalar_entries(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    path = 'notes/figure:1 # draft.tex'
-
-    rc = main(["demo", "ignore", path])
-
-    assert rc == 0
-    capsys.readouterr()
-    config_text = (repo / "papers" / "demo" / "pub.yaml").read_text(encoding="utf-8")
-    assert '  - "notes/figure:1 # draft.tex"' in config_text
-
-
-def test_push_excludes_build_uses_working_tree_and_updates_hash_manifest(repo: Path) -> None:
+def test_build_failure_ignores_package_info_and_reports_real_error(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
-    (paper.paths.tex_root / "main.tex").write_text("working tree main\n", encoding="utf-8")
-    (paper.paths.autofigures_root).mkdir(parents=True, exist_ok=True)
-    (paper.paths.autofigures_root / "plot.pdf").write_text("figure data\n", encoding="utf-8")
-    paper.paths.autostats_path.write_text(r"\newcommand{\StatTrainingSummary}{training}" + "\n", encoding="utf-8")
-    paper.paths.autotables_path.write_text(r"\newcommand{\TableSummary}{Count & 3 \\}" + "\n", encoding="utf-8")
-    push_publication(paper)
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    assert (mirror_root / "main.tex").read_text(encoding="utf-8") == "working tree main\n"
-    assert (mirror_root / "sections" / "intro.tex").read_text(encoding="utf-8") == "intro\n"
-    assert (mirror_root / "autofigures" / "plot.pdf").read_text(encoding="utf-8") == "figure data\n"
-    assert (mirror_root / "autostats.tex").read_text(encoding="utf-8") == (
-        r"\newcommand{\StatTrainingSummary}{training}" + "\n"
-    )
-    assert (mirror_root / "autotables.tex").read_text(encoding="utf-8") == (
-        r"\newcommand{\TableSummary}{Count & 3 \\}" + "\n"
-    )
-    assert not (mirror_root / "build" / "ignored.aux").exists()
-    assert not (mirror_root / "drafts" / "note.txt").exists()
-    sync_text = (mirror_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    assert f"main.tex: {_hash_text('working tree main\n')}" in sync_text
-    assert f"sections/intro.tex: {_hash_text('intro\n')}" in sync_text
-    assert "autofigures/plot.pdf" not in sync_text
-    assert "autostats.tex" not in sync_text
-    assert "autotables.tex" not in sync_text
-    assert (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8") == sync_text
-    assert (paper.paths.sync_base_root / "main.tex").read_text(encoding="utf-8") == "working tree main\n"
-    assert (paper.paths.sync_base_root / "sections" / "intro.tex").read_text(encoding="utf-8") == "intro\n"
-
-
-def test_push_does_not_delete_mirror_only_files(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (mirror_root / "mirror-only.tex").write_text("remote only\n", encoding="utf-8")
-    (mirror_root / "autofigures").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "autofigures" / "remote-only.pdf").write_text("remote figure\n", encoding="utf-8")
-    push_publication(paper)
-    assert (mirror_root / "mirror-only.tex").read_text(encoding="utf-8") == "remote only\n"
-    assert (mirror_root / "autofigures" / "remote-only.pdf").read_text(encoding="utf-8") == "remote figure\n"
-    assert (mirror_root / "main.tex").read_text(encoding="utf-8") == (
-        paper.paths.tex_root / "main.tex"
-    ).read_text(encoding="utf-8")
-    assert (mirror_root / "sections" / "intro.tex").read_text(encoding="utf-8") == "intro\n"
-
-
-def test_initial_push_adopts_full_non_conflicting_union_into_manifest(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "local-only.tex").write_text("local only\n", encoding="utf-8")
-    (mirror_root / "mirror-only.tex").write_text("mirror only\n", encoding="utf-8")
-    shared = (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8")
-    (mirror_root / "main.tex").write_text(shared, encoding="utf-8")
-
-    push_publication(paper)
-
-    sync_text = (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    assert f"local-only.tex: {_hash_text('local only\n')}" in sync_text
-    assert f"mirror-only.tex: {_hash_text('mirror only\n')}" in sync_text
-    assert f"main.tex: {_hash_text(shared)}" in sync_text
-    assert "autofigures/" not in sync_text
-    assert (mirror_root / ".pubs-sync.yaml").read_text(encoding="utf-8") == sync_text
-
-
-def test_initial_push_aborts_before_changes_on_overlaps(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    original_local = (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-
-    with pytest.raises(RuntimeError, match="block push"):
-        push_publication(paper)
-
-    assert (mirror_root / "main.tex").read_text(encoding="utf-8") == "mirror changed\n"
-    assert not (paper.paths.tex_root / ".pubs-sync.yaml").exists()
-    assert not (mirror_root / ".pubs-sync.yaml").exists()
-    assert (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8") == original_local
-
-
-def test_push_aborts_before_changes_when_conflicting_exists(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (paper.paths.tex_root / "local-only.tex").write_text("local only\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    with pytest.raises(RuntimeError, match="Conflicting local and mirror changes block push"):
-        push_publication(paper)
-
-    assert (mirror_root / "main.tex").read_text(encoding="utf-8") == "mirror changed\n"
-
-
-def test_push_force_overwrites_conflicting_mirror_file(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    (mirror_root / "mirror-only.tex").write_text("keep mirror\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    result = push_publication(paper, force=True)
-
-    assert result.forced_paths == ("main.tex",)
-    assert (mirror_root / "main.tex").read_text(encoding="utf-8") == "local changed\n"
-    assert (mirror_root / "mirror-only.tex").read_text(encoding="utf-8") == "keep mirror\n"
-    sync_text = (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    assert f"main.tex: {_hash_text('local changed\n')}" in sync_text
-
-
-def test_push_copies_local_changed_files_and_preserves_mirror_changed_files(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("baseline main\n", encoding="utf-8")
-    (paper.paths.tex_root / "sections" / "intro.tex").write_text("intro\n", encoding="utf-8")
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text("mirror changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline main\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    push_publication(paper)
-
-    assert (mirror_root / "main.tex").read_text(encoding="utf-8") == "local changed\n"
-    assert (mirror_root / "sections" / "intro.tex").read_text(encoding="utf-8") == "mirror changed\n"
-    sync_text = (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    assert f"main.tex: {_hash_text('local changed\n')}" in sync_text
-    assert f"sections/intro.tex: {_hash_text('intro\n')}" in sync_text
-
-
-def test_pull_copies_mirror_only_files(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    local_main = (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8")
-    local_intro = (paper.paths.tex_root / "sections" / "intro.tex").read_text(encoding="utf-8")
-    (mirror_root / "main.tex").write_text(local_main, encoding="utf-8")
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text(local_intro, encoding="utf-8")
-    (paper.paths.tex_root / "mirror-copy.tex").unlink(missing_ok=True)
-    (mirror_root / "mirror-copy.tex").write_text("from mirror\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text(local_main)}",
-            f"  sections/intro.tex: {_hash_text(local_intro)}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    result = pull_publication(paper)
-
-    assert result.warnings == ()
-    assert (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8") == local_main
-    assert (paper.paths.tex_root / "mirror-copy.tex").read_text(encoding="utf-8") == "from mirror\n"
-    sync_text = (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    assert f"mirror-copy.tex: {_hash_text('from mirror\n')}" in sync_text
-    assert (paper.paths.sync_base_root / "mirror-copy.tex").read_text(encoding="utf-8") == "from mirror\n"
-
-
-def test_initial_pull_adopts_full_non_conflicting_union_into_manifest(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "local-only.tex").write_text("local only\n", encoding="utf-8")
-    (mirror_root / "mirror-only.tex").write_text("mirror only\n", encoding="utf-8")
-    shared = (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8")
-    (mirror_root / "main.tex").write_text(shared, encoding="utf-8")
-
-    result = pull_publication(paper)
-
-    assert result.warnings == (
-        "Local-only file kept during pull: local-only.tex",
-        "Local-only file kept during pull: sections/intro.tex",
-    )
-    sync_text = (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    assert f"local-only.tex: {_hash_text('local only\n')}" in sync_text
-    assert f"mirror-only.tex: {_hash_text('mirror only\n')}" in sync_text
-    assert f"main.tex: {_hash_text(shared)}" in sync_text
-    assert f"sections/intro.tex: {_hash_text('intro\n')}" in sync_text
-    assert "autofigures/" not in sync_text
-    assert (mirror_root / ".pubs-sync.yaml").read_text(encoding="utf-8") == sync_text
-
-
-def test_initial_pull_aborts_before_changes_on_overlaps(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    original_local = (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-
-    with pytest.raises(RuntimeError, match="block pull"):
-        pull_publication(paper)
-
-    assert (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8") == original_local
-    assert not (paper.paths.tex_root / ".pubs-sync.yaml").exists()
-    assert not (mirror_root / ".pubs-sync.yaml").exists()
-
-
-def test_pull_warns_and_does_not_delete_local_only_files(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (mirror_root / "main.tex").write_text(
-        (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8"),
+    init_publication(paper)
+    log_path = paper.paths.build_root / "main.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "\n".join(
+            [
+                "Package microtype Info: Loading configuration file microtype.cfg.",
+                "! LaTeX Error: File `missing.sty' not found.",
+                "! Emergency stop.",
+            ]
+        )
+        + "\n",
         encoding="utf-8",
     )
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text("intro\n", encoding="utf-8")
-    (paper.paths.tex_root / "local-only.tex").write_text("keep local\n", encoding="utf-8")
 
-    result = pull_publication(paper)
+    def runner(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        raise subprocess.CalledProcessError(1, command, "", "")
 
-    assert result.warnings == ("Local-only file kept during pull: local-only.tex",)
-    assert (paper.paths.tex_root / "local-only.tex").read_text(encoding="utf-8") == "keep local\n"
-    assert not (mirror_root / "local-only.tex").exists()
+    with pytest.raises(ValueError) as exc_info:
+        build_publication(paper, runner=runner)
 
-
-def test_pull_force_overwrites_conflicting_local_file(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    (paper.paths.tex_root / "local-only.tex").write_text("keep local\n", encoding="utf-8")
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text("intro\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    result = pull_publication(paper, force=True)
-
-    assert result.forced_paths == ("main.tex",)
-    assert result.warnings == ("Local-only file kept during pull: local-only.tex",)
-    assert (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8") == "mirror changed\n"
-    assert (paper.paths.tex_root / "local-only.tex").read_text(encoding="utf-8") == "keep local\n"
-    sync_text = (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    assert f"main.tex: {_hash_text('mirror changed\n')}" in sync_text
-
-
-def test_pull_copies_mirror_changed_files(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("baseline\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text("intro\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    result = pull_publication(paper)
-
-    assert result.warnings == ()
-    assert (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8") == "mirror changed\n"
-    sync_text = (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    assert f"main.tex: {_hash_text('mirror changed\n')}" in sync_text
-
-
-def test_pull_does_not_import_mirror_figure_files(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (mirror_root / "autofigures").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "autofigures" / "remote.pdf").write_text("mirror figure\n", encoding="utf-8")
-
-    result = pull_publication(paper)
-
-    assert not (paper.paths.autofigures_root / "remote.pdf").exists()
-
-
-def test_force_does_not_apply_to_ignored_or_figure_files(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.autofigures_root).mkdir(parents=True, exist_ok=True)
-    (paper.paths.autofigures_root / "plot.pdf").write_text("local figure\n", encoding="utf-8")
-    (mirror_root / "autofigures").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "autofigures" / "plot.pdf").write_text("mirror figure\n", encoding="utf-8")
-    (paper.paths.tex_root / "drafts" / "note.txt").write_text("local ignored\n", encoding="utf-8")
-    (mirror_root / "drafts").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "drafts" / "note.txt").write_text("mirror ignored\n", encoding="utf-8")
-
-    push_publication(paper, force=True)
-    pull_publication(paper, force=True)
-
-    assert (mirror_root / "autofigures" / "plot.pdf").read_text(encoding="utf-8") == "local figure\n"
-    assert (paper.paths.autofigures_root / "plot.pdf").read_text(encoding="utf-8") == "local figure\n"
-    assert (mirror_root / "drafts" / "note.txt").read_text(encoding="utf-8") == "mirror ignored\n"
-    assert (paper.paths.tex_root / "drafts" / "note.txt").read_text(encoding="utf-8") == "local ignored\n"
-
-
-def test_pull_warns_when_local_only_file_exists_on_both_sides(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    baseline_main = (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8")
-    (mirror_root / "main.tex").write_text(baseline_main, encoding="utf-8")
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text("intro\n", encoding="utf-8")
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text(baseline_main)}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    result = pull_publication(paper)
-
-    assert result.warnings == ("Local-changed file kept during pull: main.tex",)
-    assert (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8") == "local changed\n"
-
-
-def test_pull_aborts_before_changes_when_conflicting_exists(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    with pytest.raises(RuntimeError, match="Conflicting local and mirror changes block pull"):
-        pull_publication(paper)
-
-    assert (paper.paths.tex_root / "main.tex").read_text(encoding="utf-8") == "local changed\n"
-
+    text = str(exc_info.value)
+    assert "LaTeX error: LaTeX Error: File `missing.sty' not found." in text
+    assert "microtype Info" not in text
 
 def test_ignored_files_are_untouched_by_sync(repo: Path) -> None:
     paper = load_publication_definition(repo, "demo")
@@ -5041,250 +3652,6 @@ def test_ignored_files_are_untouched_by_sync(repo: Path) -> None:
     assert (mirror_root / "drafts" / "note.txt").read_text(encoding="utf-8") == "mirror ignored\n"
     pull_publication(paper)
     assert (paper.paths.tex_root / "drafts" / "note.txt").read_text(encoding="utf-8") == "skip\n"
-
-
-def test_diff_reports_hash_based_statuses(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (mirror_root / "main.tex").write_text("mirror main\n", encoding="utf-8")
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text("shared new\n", encoding="utf-8")
-    (mirror_root / "mirror-only.tex").write_text("mirror only\n", encoding="utf-8")
-    (mirror_root / "synced.tex").write_text("same changed\n", encoding="utf-8")
-
-    (paper.paths.tex_root / "main.tex").write_text("local main\n", encoding="utf-8")
-    (paper.paths.tex_root / "sections" / "intro.tex").write_text("shared new\n", encoding="utf-8")
-    (paper.paths.tex_root / "local-only.tex").write_text("local only\n", encoding="utf-8")
-    (paper.paths.tex_root / "synced.tex").write_text("same changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline main\n')}",
-            f"  sections/intro.tex: {_hash_text('baseline intro\n')}",
-            f"  synced.tex: {_hash_text('baseline synced\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    entries = {entry.path: entry for entry in diff_publication(paper)}
-    assert entries["local-only.tex"].status == "local-only"
-    assert entries["mirror-only.tex"].status == "mirror-only"
-    assert entries["main.tex"].status == "conflicting"
-    assert entries["sections/intro.tex"].status == "in-sync"
-    assert entries["synced.tex"].status == "in-sync"
-    assert entries["local-only.tex"].diff is None
-    assert entries["mirror-only.tex"].diff is None
-    assert "local/main.tex" in entries["main.tex"].diff
-    assert all(not path.startswith("autofigures/") for path in entries)
-
-
-def test_diff_distinguishes_existence_only_and_unilateral_change_statuses(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "local-only.tex").write_text("local only\n", encoding="utf-8")
-    (mirror_root / "mirror-only.tex").write_text("mirror only\n", encoding="utf-8")
-    (paper.paths.tex_root / "local-changed.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "local-changed.tex").write_text("baseline local\n", encoding="utf-8")
-    (paper.paths.tex_root / "mirror-changed.tex").write_text("baseline mirror\n", encoding="utf-8")
-    (mirror_root / "mirror-changed.tex").write_text("mirror changed\n", encoding="utf-8")
-    (paper.paths.tex_root / "in-sync.tex").write_text("same changed\n", encoding="utf-8")
-    (mirror_root / "in-sync.tex").write_text("same changed\n", encoding="utf-8")
-    (paper.paths.tex_root / "conflicting.tex").write_text("local conflict\n", encoding="utf-8")
-    (mirror_root / "conflicting.tex").write_text("mirror conflict\n", encoding="utf-8")
-    (paper.paths.tex_root / "unchanged.tex").write_text("baseline unchanged\n", encoding="utf-8")
-    (mirror_root / "unchanged.tex").write_text("baseline unchanged\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  local-changed.tex: {_hash_text('baseline local\n')}",
-            f"  mirror-changed.tex: {_hash_text('baseline mirror\n')}",
-            f"  in-sync.tex: {_hash_text('baseline sync\n')}",
-            f"  conflicting.tex: {_hash_text('baseline conflict\n')}",
-            f"  unchanged.tex: {_hash_text('baseline unchanged\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    entries = {entry.path: entry for entry in diff_publication(paper)}
-
-    assert entries["local-only.tex"].status == "local-only"
-    assert entries["mirror-only.tex"].status == "mirror-only"
-    assert entries["local-changed.tex"].status == "local-changed"
-    assert entries["mirror-changed.tex"].status == "mirror-changed"
-    assert entries["in-sync.tex"].status == "in-sync"
-    assert entries["conflicting.tex"].status == "conflicting"
-    assert entries["unchanged.tex"].status == "unchanged"
-
-
-def test_cli_diff_list_and_single_path(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (paper.paths.tex_root / "local-only.tex").write_text("local only\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (paper.paths.sync_base_root / "main.tex").parent.mkdir(parents=True, exist_ok=True)
-    (paper.paths.sync_base_root / "main.tex").write_text("baseline\n", encoding="utf-8")
-    launched: list[str] = []
-    monkeypatch.setattr(commands_sync, "merge_conflicting_file", lambda paper, path: launched.append(path))
-    monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(core_cli.sys.stdin, "isatty", lambda: True)
-
-    assert main(["demo", "diff", "list"]) == 0
-    list_output = capsys.readouterr().out
-    assert "conflicting    main.tex" in _strip_ansi(list_output)
-    assert "local/main.tex" not in list_output
-
-    assert main(["demo", "diff", "main.tex"]) == 0
-    one_output = capsys.readouterr().out
-    assert _strip_ansi(one_output).startswith("conflicting    main.tex")
-    assert "local/main.tex" not in one_output
-    assert launched == ["main.tex"]
-
-    assert main(["demo", "diff", "local-only.tex"]) == 0
-    local_only_output = capsys.readouterr().out
-    assert _strip_ansi(local_only_output).strip() == "local-only     local-only.tex"
-
-
-def test_cli_diff_displays_internal_in_sync_as_unchanged(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "sections" / "intro.tex").write_text("shared new\n", encoding="utf-8")
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text("shared new\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: False)
-    monkeypatch.setattr(core_cli.sys.stdin, "isatty", lambda: False)
-
-    assert main(["demo", "diff", "sections/intro.tex"]) == 0
-    output = capsys.readouterr().out
-    assert output.strip() == "unchanged      sections/intro.tex"
-
-
-def test_cli_diff_colors_status_only_on_tty(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (paper.paths.sync_base_root / "main.tex").parent.mkdir(parents=True, exist_ok=True)
-    (paper.paths.sync_base_root / "main.tex").write_text("baseline\n", encoding="utf-8")
-    monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(core_cli.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(commands_sync, "merge_conflicting_file", lambda paper, path: None)
-
-    assert main(["demo", "diff", "main.tex"]) == 0
-    output = capsys.readouterr().out
-
-    assert "\033[31m" in output
-    assert "main.tex" in output
-    assert "\033[31mconflicting   \033[0m main.tex" in output
-    assert "mirror/main.tex" not in output
-    assert "local/main.tex" not in output
-    assert _strip_ansi(output).startswith("conflicting    main.tex")
-
-
-def test_cli_diff_emits_no_color_when_not_tty(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (paper.paths.sync_base_root / "main.tex").parent.mkdir(parents=True, exist_ok=True)
-    (paper.paths.sync_base_root / "main.tex").write_text("baseline\n", encoding="utf-8")
-    monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: False)
-    monkeypatch.setattr(commands_sync, "merge_conflicting_file", lambda paper, path: None)
-
-    assert main(["demo", "diff", "main.tex"]) == 0
-    output = capsys.readouterr().out
-
-    assert "\033[" not in output
-    assert output.startswith("conflicting    main.tex")
-
-
-def test_cli_diff_colors_internal_in_sync_using_unchanged_style(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "sections" / "intro.tex").write_text("shared new\n", encoding="utf-8")
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text("shared new\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(core_cli.sys.stdin, "isatty", lambda: False)
-
-    assert main(["demo", "diff", "sections/intro.tex"]) == 0
-    output = capsys.readouterr().out
-    assert "\033[2munchanged" in output
-    assert "\033[32m" not in output
-    assert _strip_ansi(output).strip() == "unchanged      sections/intro.tex"
-
 
 def test_cli_conflicting_diff_path_does_not_launch_kdiff3_when_not_tty(
     repo: Path,
@@ -5322,334 +3689,3 @@ def test_cli_conflicting_diff_path_does_not_launch_kdiff3_when_not_tty(
     assert called is False
     assert output.startswith("conflicting    main.tex")
     assert "local/main.tex" in output
-
-
-def test_cli_pull_reports_simple_success_without_branch_language(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    mirror_root = repo / "mirror" / "demo"
-    (mirror_root / "mirror-copy.tex").write_text("from mirror\n", encoding="utf-8")
-
-    assert main(["demo", "pull"]) == 0
-    captured = capsys.readouterr()
-    assert captured.out.strip() == "demo: pulled"
-    assert "overleaf-sync" not in captured.out
-
-
-def test_cli_force_reports_forced_overwrite_paths(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    mirror_root = repo / "mirror" / "demo"
-    publication_root = repo / "papers" / "demo" / "tex"
-    (publication_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (publication_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-
-    assert main(["demo", "push", "--force"]) == 0
-    captured = capsys.readouterr()
-    assert captured.out.strip() == "demo: pushed"
-    assert "Forced overwrite: main.tex" in captured.err
-
-
-def test_diff_rejects_figure_paths_as_outside_managed_set(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
-    (paper.paths.autofigures_root / "foo.pdf").write_text("figure\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="Managed tex path not found: autofigures/foo.pdf"):
-        diff_publication(paper, "autofigures/foo.pdf")
-
-
-def test_diff_rejects_autostats_as_outside_managed_set(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    paper.paths.autostats_path.write_text(r"\newcommand{\StatTrainingSummary}{training}" + "\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="Managed tex path not found: autostats.tex"):
-        diff_publication(paper, "autostats.tex")
-
-
-def test_diff_rejects_autotables_as_outside_managed_set(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    paper.paths.autotables_path.write_text(r"\newcommand{\TableSummary}{Count & 3 \\}" + "\n", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="Managed tex path not found: autotables.tex"):
-        diff_publication(paper, "autotables.tex")
-
-
-def test_sync_base_is_excluded_from_managed_sync_and_diff(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    paper.paths.sync_base_root.mkdir(parents=True, exist_ok=True)
-    (paper.paths.sync_base_root / "stale.tex").write_text("stale\n", encoding="utf-8")
-
-    entries = {entry.path: entry for entry in diff_publication(paper)}
-
-    assert ".pubs-sync-base/stale.tex" not in entries
-
-
-def test_vscode_directory_is_excluded_from_managed_sync_and_diff(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-
-    (paper.paths.tex_root / ".vscode").mkdir(parents=True, exist_ok=True)
-    (paper.paths.tex_root / ".vscode" / "settings.json").write_text(
-        '{"latex-workshop.latex.autoBuild.run":"onSave"}\n',
-        encoding="utf-8",
-    )
-    (mirror_root / ".vscode").mkdir(parents=True, exist_ok=True)
-    (mirror_root / ".vscode" / "settings.json").write_text(
-        '{"latex-workshop.latex.autoBuild.run":"never"}\n',
-        encoding="utf-8",
-    )
-
-    entries = {entry.path: entry for entry in diff_publication(paper)}
-    assert ".vscode/settings.json" not in entries
-
-    push_publication(paper)
-    assert (mirror_root / ".vscode" / "settings.json").read_text(encoding="utf-8") == (
-        '{"latex-workshop.latex.autoBuild.run":"never"}\n'
-    )
-    sync_text = (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    assert ".vscode/" not in sync_text
-
-    (paper.paths.tex_root / ".vscode" / "settings.json").write_text(
-        '{"latex-workshop.latex.autoBuild.run":"onSave"}\n',
-        encoding="utf-8",
-    )
-    (mirror_root / ".vscode" / "settings.json").write_text(
-        '{"latex-workshop.latex.autoBuild.run":"onFocusChange"}\n',
-        encoding="utf-8",
-    )
-
-    pull_publication(paper)
-    assert (paper.paths.tex_root / ".vscode" / "settings.json").read_text(encoding="utf-8") == (
-        '{"latex-workshop.latex.autoBuild.run":"onSave"}\n'
-    )
-
-
-def test_merge_conflicting_file_launches_kdiff3_with_expected_paths(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    (paper.paths.sync_base_root / "main.tex").parent.mkdir(parents=True, exist_ok=True)
-    (paper.paths.sync_base_root / "main.tex").write_text("baseline\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    calls: list[list[str]] = []
-
-    core_mirror.merge_conflicting_file(paper, "main.tex", runner=lambda command: calls.append(command))
-
-    expected = [
-        "kdiff3",
-        (paper.paths.sync_base_root / "main.tex").as_posix(),
-        (paper.paths.tex_root / "main.tex").as_posix(),
-        (mirror_root / "main.tex").as_posix(),
-        "-o",
-        (paper.paths.tex_root / "main.tex").as_posix(),
-    ]
-    assert calls == [expected]
-
-
-def test_non_conflicting_diff_path_does_not_launch_kdiff3(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    mirror_root = repo / "mirror" / "demo"
-    (mirror_root / "sections").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "sections" / "intro.tex").write_text("intro\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  sections/intro.tex: {_hash_text('intro\n')}",
-        ]
-    ) + "\n"
-    (repo / "papers" / "demo" / "tex" / ".pubs-sync.yaml").write_text(
-        manifest,
-        encoding="utf-8",
-    )
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    called = False
-
-    def fail_merge(paper: object, path: str) -> None:
-        nonlocal called
-        called = True
-
-    monkeypatch.setattr(commands_sync, "merge_conflicting_file", fail_merge)
-
-    assert main(["demo", "diff", "sections/intro.tex"]) == 0
-    output = capsys.readouterr().out
-    assert output.strip() == "unchanged      sections/intro.tex"
-    assert called is False
-
-
-def test_missing_sync_base_file_blocks_only_conflicting_merge(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    mirror_root = repo / "mirror" / "demo"
-    publication_root = repo / "papers" / "demo" / "tex"
-    (publication_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-        ]
-    ) + "\n"
-    (publication_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: True)
-    monkeypatch.setattr(core_cli.sys.stdin, "isatty", lambda: True)
-
-    assert main(["demo", "diff", "main.tex"]) == 1
-    assert "Missing sync-base snapshot for conflicting file:" in capsys.readouterr().err
-
-
-def test_merge_does_not_update_sync_metadata_or_sync_base(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    (paper.paths.sync_base_root / "main.tex").parent.mkdir(parents=True, exist_ok=True)
-    (paper.paths.sync_base_root / "main.tex").write_text("baseline\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    before_manifest = (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8")
-    before_base = (paper.paths.sync_base_root / "main.tex").read_text(encoding="utf-8")
-
-    core_mirror.merge_conflicting_file(paper, "main.tex", runner=lambda command: None)
-
-    assert (paper.paths.tex_root / ".pubs-sync.yaml").read_text(encoding="utf-8") == before_manifest
-    assert (paper.paths.sync_base_root / "main.tex").read_text(encoding="utf-8") == before_base
-
-
-def test_diff_remains_available_when_sync_manifests_differ(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(
-        "\n".join(
-            [
-                "files:",
-                f"  main.tex: {_hash_text('local baseline\n')}",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (mirror_root / ".pubs-sync.yaml").write_text(
-        "\n".join(
-            [
-                "files:",
-                f"  main.tex: {_hash_text('mirror baseline\n')}",
-            ]
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    entries = {entry.path: entry for entry in diff_publication(paper)}
-
-    assert entries["main.tex"].status in {"local-only", "conflicting"}
-    assert "local/main.tex" in entries["main.tex"].diff
-
-
-def test_cli_normalizes_documented_short_form(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    assert main(["init", "demo"]) == 0
-    init_output = capsys.readouterr().out.strip()
-    assert init_output.endswith("/papers/demo")
-    rc = main(["demo", "data", "list"])
-    assert rc == 0
-    assert "training.npy" in capsys.readouterr().out
-
-
-def test_old_init_syntax_is_rejected() -> None:
-    parser = build_parser()
-    with pytest.raises(SystemExit):
-        main(["demo", "init"])
-
-
-def test_prepare_is_unsupported(repo: Path) -> None:
-    with pytest.raises(SystemExit):
-        main(["demo", "prepare"])
-
-
-def test_no_arg_invocation_prints_multiline_help_block(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit):
-        main([])
-
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "usage: pubs [--force] [--clear] <command>" in captured.err
-    assert "Commands:" in captured.err
-    assert "  pubs list" in captured.err
-    assert "  pubs init <publication-id>" in captured.err
-    assert "  pubs <publication-id> shell" in captured.err
-    assert "  pubs <publication-id> data [list|add <data-id>]" in captured.err
-    assert "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]" in captured.err
-    assert "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]" in captured.err
-    assert "  pubs <publication-id> table [list|add <table-id>|update|<table-id> update|<table-id> latex]" in captured.err
-    assert "  pubs <publication-id> update" in captured.err
-    assert "  pubs <publication-id> build [--clear]" in captured.err
-    assert "  pubs <publication-id> preview" in captured.err
-    assert "  pubs <publication-id> data <loader-id> pin" in captured.err
-    assert "  pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]" in captured.err
-    assert "  pubs <publication-id> diff [list|<relative-path>]" in captured.err
-    assert "positional arguments:" not in captured.err
-    assert "subject" not in captured.err
-    assert "arg2" not in captured.err
-    assert (
-        "expected 'list', 'init <publication-id>', or '<publication-id> <command>'" in captured.err
-    )
-
-
-def test_build_reports_validation_failure_without_traceback(
-    repo: Path,
-    fake_pubify_mpl: FakePubifyBackend,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    mirror_root = repo / "mirror" / "demo"
-    mirror_root.rmdir()
-
-    rc = main(["demo", "build"])
-
-    assert rc == 1
-    captured = capsys.readouterr()
-    assert captured.out == ""
-    assert "Error: Publication 'demo' failed validation:" in captured.err
-    assert "Mirror does not exist:" in captured.err
