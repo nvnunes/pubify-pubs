@@ -8,4 +8,16 @@
          <loc>https://nvnunes.github.io/pubify-pubs/api/</loc>
          <lastmod>2026-04-04</lastmod>
     </url>
+    <url>
+         <loc>https://nvnunes.github.io/pubify-pubs/pinning/</loc>
+         <lastmod>2026-04-04</lastmod>
+    </url>
+    <url>
+         <loc>https://nvnunes.github.io/pubify-pubs/sync/</loc>
+         <lastmod>2026-04-04</lastmod>
+    </url>
+    <url>
+         <loc>https://nvnunes.github.io/pubify-pubs/versions/</loc>
+         <lastmod>2026-04-04</lastmod>
+    </url>
 </urlset>

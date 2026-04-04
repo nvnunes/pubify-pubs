@@ -39,6 +39,15 @@
                                 <a href="." class="nav-link active" aria-current="page">Home</a>
                             </li>
                             <li class="nav-item">
+                                <a href="versions/" class="nav-link">Versions</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="sync/" class="nav-link">Sync</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="pinning/" class="nav-link">Pinning</a>
+                            </li>
+                            <li class="nav-item">
                                 <a href="api/" class="nav-link">API Reference</a>
                             </li>
                         </ul>
@@ -55,7 +64,7 @@
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a rel="next" href="api/" class="nav-link">
+                                <a rel="next" href="versions/" class="nav-link">
                                     Next <i class="fa fa-arrow-right"></i>
                                 </a>
                             </li>
@@ -111,19 +120,11 @@
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#mirror-sync-model" class="nav-link">Mirror Sync Model</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
             <li class="nav-item" data-bs-level="2"><a href="#cli" class="nav-link">CLI</a>
               <ul class="nav flex-column">
               </ul>
             </li>
             <li class="nav-item" data-bs-level="2"><a href="#python-api" class="nav-link">Python API</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            <li class="nav-item" data-bs-level="2"><a href="#generated-stats" class="nav-link">Generated Stats</a>
               <ul class="nav flex-column">
               </ul>
             </li>
@@ -144,8 +145,6 @@
 <li>generated stats into publication-local <code>tex/autostats.tex</code></li>
 <li>generated tables into publication-local <code>tex/autotables.tex</code></li>
 <li>LaTeX builds against the publication-local <code>tex/</code> tree</li>
-<li>conservative mirror sync</li>
-<li>data pinning</li>
 <li>publication bootstrapping through the <code>pubs</code> CLI</li>
 </ul>
 <p>This package does not own your publications. A host workspace does.</p>
@@ -172,7 +171,6 @@
 <li><code>data_root</code> points at pinned publication-local data owned by the host workspace</li>
 <li>package code lives independently from both</li>
 </ul>
-<p>Keeping publication content and pinned data separate is intentional. It lets host workspaces keep publication source trees readable while still giving the workflow a stable place to store pinned inputs.</p>
 <p>The optional <code>preview</code> section configures how PDFs are opened:</p>
 <div class="highlight"><pre><span></span><code><span class="nt">preview</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">publication</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">vscode</span>
@@ -229,8 +227,11 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <li>Define loaders, figure functions, stats, and tables in <code>figures.py</code>.</li>
 <li>Run <code>pubs &lt;publication-id&gt; update</code> to refresh package-owned TeX support files, validate the publication definition, and regenerate figures, stats, and tables.</li>
 <li>Run <code>pubs &lt;publication-id&gt; build</code> to validate and compile the publication.</li>
-<li>If a synced mirror is configured, use <code>diff</code>, <code>push</code>, or <code>pull</code> as needed.</li>
-<li>When an external loader input should become publication-local and reproducible, pin it with <code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code>.</li>
+<li>Use <code>pubs &lt;publication-id&gt; preview</code> or <code>pubs &lt;publication-id&gt; figure &lt;figure-id&gt; preview</code> while iterating.</li>
+<li>Use the advanced workflows only when needed:</li>
+<li>versions and redline diffs: <a href="versions/">Versions</a></li>
+<li>conservative mirror sync: <a href="sync/">Sync</a></li>
+<li>data pinning: <a href="pinning/">Pinning</a></li>
 </ol>
 <p>To scaffold starter entrypoints directly into <code>figures.py</code>:</p>
 <ul>
@@ -249,7 +250,7 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
     <span class="n">save_publication_data_npz</span><span class="p">,</span>
 <span class="p">)</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pubify_pubs</span><span class="w"> </span><span class="kn">import</span> <span class="n">TableResult</span>
-<span class="kn">from</span><span class="w"> </span><span class="nn">pubify_pubs.decorators</span><span class="w"> </span><span class="kn">import</span> <span class="n">data</span><span class="p">,</span> <span class="n">external_data</span><span class="p">,</span> <span class="n">figure</span><span class="p">,</span> <span class="n">table</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">pubify_pubs.decorators</span><span class="w"> </span><span class="kn">import</span> <span class="n">data</span><span class="p">,</span> <span class="n">external_data</span><span class="p">,</span> <span class="n">figure</span><span class="p">,</span> <span class="n">stat</span><span class="p">,</span> <span class="n">table</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">pubify_pubs.export</span><span class="w"> </span><span class="kn">import</span> <span class="n">FigureExport</span><span class="p">,</span> <span class="n">panel</span>
 </code></pre></div>
 <p><code>@figure</code> marks a callable as a logical publication figure. Exported figure functions may return:</p>
@@ -259,27 +260,7 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <li>a sequence of figures or axes</li>
 <li>a <code>FigureExport</code> value for explicit multi-panel control</li>
 </ul>
-<p><code>FigureExport</code> accepts a single Matplotlib <code>Figure</code> or <code>Axes</code>, a list/tuple of them, one <code>panel(...)</code>, or a list/tuple of <code>panel(...)</code> values. Prefer passing raw figures or axes directly:</p>
-<div class="highlight"><pre><span></span><code><span class="k">return</span> <span class="n">FigureExport</span><span class="p">(</span><span class="n">fig</span><span class="p">,</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;one&quot;</span><span class="p">)</span>
-<span class="k">return</span> <span class="n">FigureExport</span><span class="p">([</span><span class="n">fig1</span><span class="p">,</span> <span class="n">fig2</span><span class="p">],</span> <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;two&quot;</span><span class="p">)</span>
-</code></pre></div>
-<p>Use <code>panel(...)</code> only when one panel needs extra pubify export metadata beyond the figure or axes itself, such as <code>subcaption_lines</code> or per-panel export overrides:</p>
-<div class="highlight"><pre><span></span><code><span class="k">return</span> <span class="n">FigureExport</span><span class="p">(</span>
-    <span class="p">[</span><span class="n">panel</span><span class="p">(</span><span class="n">fig1</span><span class="p">),</span> <span class="n">panel</span><span class="p">(</span><span class="n">fig2</span><span class="p">,</span> <span class="n">subcaption_lines</span><span class="o">=</span><span class="mi">2</span><span class="p">,</span> <span class="n">hide_cbar</span><span class="o">=</span><span class="kc">True</span><span class="p">)],</span>
-    <span class="n">layout</span><span class="o">=</span><span class="s2">&quot;two&quot;</span><span class="p">,</span>
-<span class="p">)</span>
-</code></pre></div>
-<p><code>FigureExport</code> also carries first-class caption sizing metadata for <code>pubify-mpl</code>:</p>
-<ul>
-<li><code>layout</code></li>
-<li>optional explicit layout override</li>
-<li>when omitted, <code>pubify-pubs</code> uses the publication default layout from <code>pub.yaml</code></li>
-<li><code>caption_lines</code></li>
-<li>estimated main-caption line count</li>
-<li><code>subcaption_lines</code></li>
-<li>default estimated subcaption line count for panels</li>
-</ul>
-<p>If one panel needs a different subcaption estimate, <code>panel(..., subcaption_lines=...)</code> overrides the figure-level default for that panel only.</p>
+<p><code>FigureExport</code> accepts a single Matplotlib <code>Figure</code> or <code>Axes</code>, a list/tuple of them, one <code>panel(...)</code>, or a list/tuple of <code>panel(...)</code> values.</p>
 <p>When a plotting library creates text artists during figure construction, use <code>ctx.rc</code> so those artists are born under the publication construction-time font defaults:</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@figure</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">custom_map</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
@@ -287,22 +268,6 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
         <span class="n">fig</span> <span class="o">=</span> <span class="n">build_custom_map</span><span class="p">()</span>
     <span class="k">return</span> <span class="n">fig</span>
 </code></pre></div>
-<p>The intended styling flow is:</p>
-<ul>
-<li>build under <code>ctx.rc</code> when a plotting library reads Matplotlib defaults during construction</li>
-<li>let pubify run its full export-time setup plus generic post-construction normalization during export</li>
-<li>use <code>prepare_export(...)</code> only for figure-specific text or artists that still need special handling</li>
-</ul>
-<p>For those remaining custom text cases, pass a <code>prepare_export</code> callback through <code>FigureExport(..., kwargs={...})</code> and use the resolved style payload:</p>
-<div class="highlight"><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">prepare_export</span><span class="p">(</span><span class="n">fig_export</span><span class="p">,</span> <span class="n">style</span><span class="p">):</span>
-    <span class="n">sky_ax</span> <span class="o">=</span> <span class="n">fig_export</span><span class="o">.</span><span class="n">axes</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-    <span class="k">for</span> <span class="n">text</span> <span class="ow">in</span> <span class="n">iter_custom_tick_labels</span><span class="p">(</span><span class="n">sky_ax</span><span class="p">):</span>
-        <span class="n">text</span><span class="o">.</span><span class="n">set_fontfamily</span><span class="p">(</span><span class="n">style</span><span class="o">.</span><span class="n">font_family</span><span class="p">)</span>
-        <span class="n">text</span><span class="o">.</span><span class="n">set_fontsize</span><span class="p">(</span><span class="n">style</span><span class="o">.</span><span class="n">tick_labelsize_pt</span><span class="p">)</span>
-
-<span class="k">return</span> <span class="n">FigureExport</span><span class="p">(</span><span class="n">fig</span><span class="p">,</span> <span class="n">kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;prepare_export&quot;</span><span class="p">:</span> <span class="n">prepare_export</span><span class="p">})</span>
-</code></pre></div>
-<p>One-argument callbacks still work, but the two-argument form is preferred for figure-specific styling adjustments after the generic pubify passes have already run.</p>
 <p><code>@table</code> marks a callable as a logical publication table. Table functions return <code>TableResult(...)</code>, which owns logical table data and simple rendering while LaTeX keeps ownership of headers, captions, labels, rules, and layout.</p>
 <div class="highlight"><pre><span></span><code><span class="nd">@table</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">tabulate_summary</span><span class="p">(</span><span class="n">ctx</span><span class="p">):</span>
@@ -316,34 +281,6 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
     <span class="p">)</span>
 </code></pre></div>
 <p><code>TableResult</code> accepts one 2D body or a sequence of 2D bodies. Nested lists, tuples, and NumPy arrays are supported when they are unambiguously 2D or 3D.</p>
-<p>Column rendering is intentionally small:</p>
-<ul>
-<li><code>formats[col]</code></li>
-<li><code>None</code>, <code>""</code>, or <code>"{}"</code> means <code>str(value)</code> then LaTeX-escape</li>
-<li>ordinary format strings like <code>"{:.2f}"</code> format then escape</li>
-<li><code>"tex"</code> means the value itself is already TeX and is inserted raw</li>
-<li><code>tex_wrappers[col]</code></li>
-<li>wrap the formatted value into raw TeX using one <code>@</code> placeholder</li>
-</ul>
-<div class="highlight"><pre><span></span><code><span class="k">return</span> <span class="n">TableResult</span><span class="p">(</span>
-    <span class="p">[[</span><span class="s2">&quot;Offset&quot;</span><span class="p">,</span> <span class="mf">1.372</span><span class="p">]],</span>
-    <span class="n">formats</span><span class="o">=</span><span class="p">[</span><span class="s2">&quot;</span><span class="si">{}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="s2">&quot;</span><span class="si">{:.2f}</span><span class="s2">&quot;</span><span class="p">],</span>
-    <span class="n">tex_wrappers</span><span class="o">=</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="sa">r</span><span class="s2">&quot;@\,\mathrm</span><span class="si">{mas}</span><span class="s2">&quot;</span><span class="p">],</span>
-<span class="p">)</span>
-</code></pre></div>
-<p><code>multicolumns</code> enables compact horizontal merging without changing logical width:</p>
-<div class="highlight"><pre><span></span><code><span class="k">return</span> <span class="n">TableResult</span><span class="p">(</span>
-    <span class="p">[</span>
-        <span class="p">[</span><span class="s2">&quot;Primary&quot;</span><span class="p">,</span> <span class="s2">&quot;Primary&quot;</span><span class="p">,</span> <span class="s2">&quot;Primary&quot;</span><span class="p">],</span>
-        <span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">],</span>
-        <span class="p">[</span><span class="s2">&quot;Mean&quot;</span><span class="p">,</span> <span class="mf">1.2</span><span class="p">,</span> <span class="mf">0.4</span><span class="p">],</span>
-    <span class="p">],</span>
-    <span class="n">multicolumns</span><span class="o">=</span><span class="p">[</span>
-        <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">],</span>
-        <span class="p">[</span><span class="mi">0</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="s2">&quot;n/a&quot;</span><span class="p">],</span>
-    <span class="p">],</span>
-<span class="p">)</span>
-</code></pre></div>
 <h2 id="pinned-publication-data">Pinned Publication Data</h2>
 <p><code>pubify-pubs</code> includes helpers for publication-owned binary data:</p>
 <ul>
@@ -366,10 +303,8 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <ul>
 <li><code>stat update</code> rewrites it as one authoritative snapshot</li>
 <li>TeX should include it explicitly, for example with <code>\input{autostats.tex}</code></li>
-<li>stats return either:</li>
-<li>one value, which is coerced with <code>str(...)</code> and emits <code>\Stat&lt;StatId&gt;</code></li>
-<li>or a <code>dict[str, object]</code>, whose values are coerced with <code>str(...)</code> and emit <code>\Stat&lt;StatId&gt;&lt;Key&gt;</code></li>
-<li>console display is derived from the TeX-facing value with light cleanup for common TeX markup such as <code>$...$</code>, <code>\,</code>, and <code>\mathrm{...}</code></li>
+<li>stats return either one value or a <code>dict[str, object]</code></li>
+<li>generated stat macros are named <code>\Stat&lt;StatId&gt;</code> and <code>\Stat&lt;StatId&gt;&lt;Key&gt;</code></li>
 </ul>
 <p><code>tex/autotables.tex</code> is the framework-owned generated tables file.</p>
 <ul>
@@ -378,25 +313,9 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <li>TeX should include it explicitly, for example with <code>\input{autotables.tex}</code></li>
 <li>single-body tables emit <code>\Table&lt;Id&gt;</code></li>
 <li>multi-body tables emit <code>\Table&lt;Id&gt;{1}</code>, <code>\Table&lt;Id&gt;{2}</code>, ...</li>
-<li>the publication validation performed by <code>update</code> and <code>build</code> validates logical table width against direct manuscript uses inside supported environments such as <code>tabular</code>, <code>tabularx</code>, and <code>longtable</code></li>
-<li>unsupported wrappers or unrecognized column-spec syntax fail explicitly rather than falling back to heuristics</li>
+<li><code>update</code> and <code>build</code> validate logical table width against direct manuscript uses inside supported environments such as <code>tabular</code>, <code>tabularx</code>, and <code>longtable</code></li>
 </ul>
 <p>Manual and static publication assets remain ordinary publication-local TeX files. They do not belong in <code>tex/autofigures/</code>.</p>
-<h2 id="mirror-sync-model">Mirror Sync Model</h2>
-<p>The local publication TeX tree is canonical.</p>
-<p>Managed source files are publication-local TeX sources under <code>tex/</code>, excluding:</p>
-<ul>
-<li>generated figures in <code>tex/autofigures/</code></li>
-<li>build artifacts in <code>tex/build/</code></li>
-<li>publication-local sync exclusions from <code>pub.yaml</code></li>
-</ul>
-<p>Generated figures are delivered one-way from local <code>tex/autofigures/</code> to mirror <code>autofigures/</code>. <code>autostats.tex</code> and <code>autotables.tex</code> are also delivered one-way to the mirror. None of those generated outputs are part of the hash-managed source sync model.</p>
-<p>The mirror commands are conservative by design:</p>
-<ul>
-<li><code>diff</code> compares local, mirror, and last-synced state</li>
-<li><code>push</code> updates managed mirror files from local state</li>
-<li><code>pull</code> updates managed local files from mirror state without deletions</li>
-</ul>
 <h2 id="cli">CLI</h2>
 <p>The installed command is <code>pubs</code>.</p>
 <p>Top-level commands:</p>
@@ -408,15 +327,17 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <ul>
 <li><code>pubs &lt;publication-id&gt; shell</code></li>
 <li><code>pubs &lt;publication-id&gt; data [list|add &lt;data-id&gt;]</code></li>
-<li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
 <li><code>pubs &lt;publication-id&gt; figure [list|add &lt;figure-id&gt;|update|&lt;figure-id&gt; update|&lt;figure-id&gt; preview [&lt;subfig-idx&gt;]|&lt;figure-id&gt; latex [subcaption]]</code></li>
 <li><code>pubs &lt;publication-id&gt; stat [list|add &lt;stat-id&gt;|update|&lt;stat-id&gt; update|&lt;stat-id&gt; latex]</code></li>
 <li><code>pubs &lt;publication-id&gt; table [list|add &lt;table-id&gt;|update|&lt;table-id&gt; update|&lt;table-id&gt; latex]</code></li>
 <li><code>pubs &lt;publication-id&gt; update</code></li>
 <li><code>pubs &lt;publication-id&gt; build [--clear]</code></li>
 <li><code>pubs &lt;publication-id&gt; preview</code></li>
-<li><code>pubs &lt;publication-id&gt; tables ...</code></li>
+</ul>
+<p>Advanced workflows:</p>
+<ul>
 <li><code>pubs &lt;publication-id&gt; version [list|create [note]|diff &lt;version-id&gt; [&lt;version-id&gt;]]</code></li>
+<li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
 <li><code>pubs &lt;publication-id&gt; ignore &lt;relative-path&gt;</code></li>
 <li><code>pubs &lt;publication-id&gt; push [--force]</code></li>
 <li><code>pubs &lt;publication-id&gt; pull [--force]</code></li>
@@ -424,18 +345,12 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 </ul>
 <p><code>update</code> refreshes package-owned TeX support files, validates the publication definition, and regenerates figures, stats, and tables. <code>build</code> refreshes package-owned TeX support files, validates the publication definition, and then compiles the current TeX tree; it does not regenerate figures, stats, or tables, so run <code>update</code> first when generated outputs need refreshing.</p>
 <p><code>tables</code> is an alias for <code>table</code> in both the CLI and the publication shell.</p>
-<p>The <code>latex</code> commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. <code>tex</code> is accepted as an alias for <code>latex</code>.
-When possible, they also prepend a missing manuscript prelude line from the current <code>main.tex</code>: <code>figure ... latex</code> adds <code>\usepackage{pubify}</code> if needed, <code>stat ... latex</code> adds <code>\input{autostats.tex}</code> if needed, and <code>table ... latex</code> adds <code>\input{autotables.tex}</code> if needed.</p>
-<p>Version snapshots live under <code>tex/versions/</code>. <code>version create [note]</code> stores the current non-build TeX tree as the next <code>vN</code> snapshot and records metadata in <code>tex/versions/metadata.yaml</code>. <code>version diff v1</code> compares <code>v1</code> to the current live <code>tex/</code> tree; <code>version diff v1 v2</code> compares two stored versions regardless of argument order. In both cases, pubify prepares a temporary TeX tree, runs <code>latexdiff</code> plus <code>latexmk</code>, and copies the resulting redline PDF back into <code>tex/build/</code> using the standardized name <code>&lt;main-stem&gt;-diff-v&lt;older&gt;-v&lt;newer/current&gt;.pdf</code>.</p>
-<p>The shell command opens a publication-scoped interactive session with command history and automatic pickup of changes to <code>figures.py</code>, <code>pub.yaml</code>, and publication-local helpers. Shell <code>update</code> forces a publication refresh and then regenerates figures, stats, and tables. Normal loader data is loaded on shell start and again when the publication is refreshed, then reused across shell commands. <code>nocache=True</code> loaders rerun once per command.</p>
-<p>Preview behavior is workspace-configured:</p>
+<p>The <code>latex</code> commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. <code>tex</code> is accepted as an alias for <code>latex</code>.</p>
+<p>See the dedicated pages for the deferred workflows:</p>
 <ul>
-<li><code>pubs &lt;publication-id&gt; preview</code></li>
-<li>opens the built publication PDF derived from <code>main_tex</code></li>
-<li>uses <code>preview.publication</code></li>
-<li><code>pubs &lt;publication-id&gt; figure &lt;figure-id&gt; preview</code></li>
-<li>opens exported PDFs from <code>tex/autofigures/</code></li>
-<li>uses <code>preview.figure</code></li>
+<li><a href="versions/">Versions</a></li>
+<li><a href="sync/">Sync</a></li>
+<li><a href="pinning/">Pinning</a></li>
 </ul>
 <h2 id="python-api">Python API</h2>
 <p>The public Python API is intentionally small.</p>
@@ -447,26 +362,7 @@ When possible, they also prepend a missing manuscript prelude line from the curr
 <li><code>save_publication_data_npz(...)</code></li>
 <li><code>load_publication_data_npz(...)</code></li>
 <li><code>FigureExport</code></li>
-</ul>
-<h2 id="generated-stats">Generated Stats</h2>
-<p><code>tex/autostats.tex</code> is the framework-owned generated stats file.</p>
-<ul>
-<li><code>pubs &lt;publication-id&gt; stat update</code> rewrites it as one authoritative snapshot</li>
-<li><code>pubs &lt;publication-id&gt; stat &lt;stat-id&gt; update</code> prints one stat block to the console while still rewriting the full snapshot</li>
-<li>TeX should include it explicitly, for example with <code>\input{autostats.tex}</code></li>
-<li>stats return either:</li>
-<li>one value, which is coerced with <code>str(...)</code> and emits <code>\Stat&lt;StatId&gt;</code></li>
-<li>or a <code>dict[str, object]</code>, whose values are coerced with <code>str(...)</code> and emit <code>\Stat&lt;StatId&gt;&lt;Key&gt;</code></li>
-<li>console display is derived from the TeX-facing value with light cleanup for common TeX markup such as <code>$...$</code>, <code>\,</code>, and <code>\mathrm{...}</code></li>
-<li>In prose, use <code>{}</code> after a stat macro before following letters, for example <code>\StatFavorableAsterismCount{} targets</code>.</li>
-<li>stat ids stay <code>snake_case</code> in Python, but generated TeX macro names use CamelCase</li>
-<li><code>compute_favorable_asterism_count(...)</code> maps to <code>\StatFavorableAsterismCount</code></li>
-<li>figure files stay <code>snake_case</code>, for example <code>tex/autofigures/ews_asterism_coverage_map_1.pdf</code></li>
-</ul>
-<p>Generated stat macros use the forms:</p>
-<ul>
-<li><code>\Stat&lt;StatId&gt;</code></li>
-<li><code>\Stat&lt;StatId&gt;&lt;Key&gt;</code></li>
+<li><code>TableResult</code></li>
 </ul>
 <p>See the <a href="api/">API reference</a> for the docstring-driven reference pages.</p></div>
             </div>
@@ -550,5 +446,5 @@ When possible, they also prepend a missing manuscript prelude line from the curr
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-04-04 11:42:47.424283+00:00
+Build Date UTC : 2026-04-04 11:48:08.273630+00:00
 -->

@@ -10,8 +10,6 @@ It is meant for host workspaces that keep publication content, publication-local
 - generated stats into publication-local `tex/autostats.tex`
 - generated tables into publication-local `tex/autotables.tex`
 - LaTeX builds against the publication-local `tex/` tree
-- conservative mirror sync
-- data pinning
 - publication bootstrapping through the `pubs` CLI
 
 This package does not own your publications. A host workspace does.
@@ -45,8 +43,6 @@ The workspace contract is:
 - `publications_root` points at publication folders owned by the host workspace
 - `data_root` points at pinned publication-local data owned by the host workspace
 - package code lives independently from both
-
-Keeping publication content and pinned data separate is intentional. It lets host workspaces keep publication source trees readable while still giving the workflow a stable place to store pinned inputs.
 
 The optional `preview` section configures how PDFs are opened:
 
@@ -120,8 +116,11 @@ That creates a minimal publication skeleton and installs package-owned support f
 2. Define loaders, figure functions, stats, and tables in `figures.py`.
 3. Run `pubs <publication-id> update` to refresh package-owned TeX support files, validate the publication definition, and regenerate figures, stats, and tables.
 4. Run `pubs <publication-id> build` to validate and compile the publication.
-6. If a synced mirror is configured, use `diff`, `push`, or `pull` as needed.
-7. When an external loader input should become publication-local and reproducible, pin it with `pubs <publication-id> data <loader-id> pin`.
+5. Use `pubs <publication-id> preview` or `pubs <publication-id> figure <figure-id> preview` while iterating.
+6. Use the advanced workflows only when needed:
+   - versions and redline diffs: [Versions](versions.md)
+   - conservative mirror sync: [Sync](sync.md)
+   - data pinning: [Pinning](pinning.md)
 
 To scaffold starter entrypoints directly into `figures.py`:
 
@@ -145,7 +144,7 @@ from pubify_pubs.data import (
     save_publication_data_npz,
 )
 from pubify_pubs import TableResult
-from pubify_pubs.decorators import data, external_data, figure, table
+from pubify_pubs.decorators import data, external_data, figure, stat, table
 from pubify_pubs.export import FigureExport, panel
 ```
 
@@ -156,33 +155,7 @@ from pubify_pubs.export import FigureExport, panel
 - a sequence of figures or axes
 - a `FigureExport` value for explicit multi-panel control
 
-`FigureExport` accepts a single Matplotlib `Figure` or `Axes`, a list/tuple of them, one `panel(...)`, or a list/tuple of `panel(...)` values. Prefer passing raw figures or axes directly:
-
-```python
-return FigureExport(fig, layout="one")
-return FigureExport([fig1, fig2], layout="two")
-```
-
-Use `panel(...)` only when one panel needs extra pubify export metadata beyond the figure or axes itself, such as `subcaption_lines` or per-panel export overrides:
-
-```python
-return FigureExport(
-    [panel(fig1), panel(fig2, subcaption_lines=2, hide_cbar=True)],
-    layout="two",
-)
-```
-
-`FigureExport` also carries first-class caption sizing metadata for `pubify-mpl`:
-
-- `layout`
-  - optional explicit layout override
-  - when omitted, `pubify-pubs` uses the publication default layout from `pub.yaml`
-- `caption_lines`
-  - estimated main-caption line count
-- `subcaption_lines`
-  - default estimated subcaption line count for panels
-
-If one panel needs a different subcaption estimate, `panel(..., subcaption_lines=...)` overrides the figure-level default for that panel only.
+`FigureExport` accepts a single Matplotlib `Figure` or `Axes`, a list/tuple of them, one `panel(...)`, or a list/tuple of `panel(...)` values.
 
 When a plotting library creates text artists during figure construction, use `ctx.rc` so those artists are born under the publication construction-time font defaults:
 
@@ -193,26 +166,6 @@ def custom_map(ctx):
         fig = build_custom_map()
     return fig
 ```
-
-The intended styling flow is:
-
-- build under `ctx.rc` when a plotting library reads Matplotlib defaults during construction
-- let pubify run its full export-time setup plus generic post-construction normalization during export
-- use `prepare_export(...)` only for figure-specific text or artists that still need special handling
-
-For those remaining custom text cases, pass a `prepare_export` callback through `FigureExport(..., kwargs={...})` and use the resolved style payload:
-
-```python
-def prepare_export(fig_export, style):
-    sky_ax = fig_export.axes[0]
-    for text in iter_custom_tick_labels(sky_ax):
-        text.set_fontfamily(style.font_family)
-        text.set_fontsize(style.tick_labelsize_pt)
-
-return FigureExport(fig, kwargs={"prepare_export": prepare_export})
-```
-
-One-argument callbacks still work, but the two-argument form is preferred for figure-specific styling adjustments after the generic pubify passes have already run.
 
 `@table` marks a callable as a logical publication table. Table functions return `TableResult(...)`, which owns logical table data and simple rendering while LaTeX keeps ownership of headers, captions, labels, rules, and layout.
 
@@ -230,39 +183,6 @@ def tabulate_summary(ctx):
 ```
 
 `TableResult` accepts one 2D body or a sequence of 2D bodies. Nested lists, tuples, and NumPy arrays are supported when they are unambiguously 2D or 3D.
-
-Column rendering is intentionally small:
-
-- `formats[col]`
-  - `None`, `""`, or `"{}"` means `str(value)` then LaTeX-escape
-  - ordinary format strings like `"{:.2f}"` format then escape
-  - `"tex"` means the value itself is already TeX and is inserted raw
-- `tex_wrappers[col]`
-  - wrap the formatted value into raw TeX using one `@` placeholder
-
-```python
-return TableResult(
-    [["Offset", 1.372]],
-    formats=["{}", "{:.2f}"],
-    tex_wrappers=[None, r"@\,\mathrm{mas}"],
-)
-```
-
-`multicolumns` enables compact horizontal merging without changing logical width:
-
-```python
-return TableResult(
-    [
-        ["Primary", "Primary", "Primary"],
-        [None, None, None],
-        ["Mean", 1.2, 0.4],
-    ],
-    multicolumns=[
-        [0, 2],
-        [0, 2, "n/a"],
-    ],
-)
-```
 
 ## Pinned Publication Data
 
@@ -292,10 +212,8 @@ They are intentionally small and explicit. Format-owned helpers should generally
 
 - `stat update` rewrites it as one authoritative snapshot
 - TeX should include it explicitly, for example with `\input{autostats.tex}`
-- stats return either:
-  - one value, which is coerced with `str(...)` and emits `\Stat<StatId>`
-  - or a `dict[str, object]`, whose values are coerced with `str(...)` and emit `\Stat<StatId><Key>`
-- console display is derived from the TeX-facing value with light cleanup for common TeX markup such as `$...$`, `\,`, and `\mathrm{...}`
+- stats return either one value or a `dict[str, object]`
+- generated stat macros are named `\Stat<StatId>` and `\Stat<StatId><Key>`
 
 `tex/autotables.tex` is the framework-owned generated tables file.
 
@@ -304,28 +222,9 @@ They are intentionally small and explicit. Format-owned helpers should generally
 - TeX should include it explicitly, for example with `\input{autotables.tex}`
 - single-body tables emit `\Table<Id>`
 - multi-body tables emit `\Table<Id>{1}`, `\Table<Id>{2}`, ...
-- the publication validation performed by `update` and `build` validates logical table width against direct manuscript uses inside supported environments such as `tabular`, `tabularx`, and `longtable`
-- unsupported wrappers or unrecognized column-spec syntax fail explicitly rather than falling back to heuristics
+- `update` and `build` validate logical table width against direct manuscript uses inside supported environments such as `tabular`, `tabularx`, and `longtable`
 
 Manual and static publication assets remain ordinary publication-local TeX files. They do not belong in `tex/autofigures/`.
-
-## Mirror Sync Model
-
-The local publication TeX tree is canonical.
-
-Managed source files are publication-local TeX sources under `tex/`, excluding:
-
-- generated figures in `tex/autofigures/`
-- build artifacts in `tex/build/`
-- publication-local sync exclusions from `pub.yaml`
-
-Generated figures are delivered one-way from local `tex/autofigures/` to mirror `autofigures/`. `autostats.tex` and `autotables.tex` are also delivered one-way to the mirror. None of those generated outputs are part of the hash-managed source sync model.
-
-The mirror commands are conservative by design:
-
-- `diff` compares local, mirror, and last-synced state
-- `push` updates managed mirror files from local state
-- `pull` updates managed local files from mirror state without deletions
 
 ## CLI
 
@@ -340,15 +239,17 @@ Publication commands:
 
 - `pubs <publication-id> shell`
 - `pubs <publication-id> data [list|add <data-id>]`
-- `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]`
 - `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]`
 - `pubs <publication-id> table [list|add <table-id>|update|<table-id> update|<table-id> latex]`
 - `pubs <publication-id> update`
 - `pubs <publication-id> build [--clear]`
 - `pubs <publication-id> preview`
-- `pubs <publication-id> tables ...`
+
+Advanced workflows:
+
 - `pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]`
+- `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> ignore <relative-path>`
 - `pubs <publication-id> push [--force]`
 - `pubs <publication-id> pull [--force]`
@@ -359,20 +260,12 @@ Publication commands:
 `tables` is an alias for `table` in both the CLI and the publication shell.
 
 The `latex` commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. `tex` is accepted as an alias for `latex`.
-When possible, they also prepend a missing manuscript prelude line from the current `main.tex`: `figure ... latex` adds `\usepackage{pubify}` if needed, `stat ... latex` adds `\input{autostats.tex}` if needed, and `table ... latex` adds `\input{autotables.tex}` if needed.
 
-Version snapshots live under `tex/versions/`. `version create [note]` stores the current non-build TeX tree as the next `vN` snapshot and records metadata in `tex/versions/metadata.yaml`. `version diff v1` compares `v1` to the current live `tex/` tree; `version diff v1 v2` compares two stored versions regardless of argument order. In both cases, pubify prepares a temporary TeX tree, runs `latexdiff` plus `latexmk`, and copies the resulting redline PDF back into `tex/build/` using the standardized name `<main-stem>-diff-v<older>-v<newer/current>.pdf`.
+See the dedicated pages for the deferred workflows:
 
-The shell command opens a publication-scoped interactive session with command history and automatic pickup of changes to `figures.py`, `pub.yaml`, and publication-local helpers. Shell `update` forces a publication refresh and then regenerates figures, stats, and tables. Normal loader data is loaded on shell start and again when the publication is refreshed, then reused across shell commands. `nocache=True` loaders rerun once per command.
-
-Preview behavior is workspace-configured:
-
-- `pubs <publication-id> preview`
-  - opens the built publication PDF derived from `main_tex`
-  - uses `preview.publication`
-- `pubs <publication-id> figure <figure-id> preview`
-  - opens exported PDFs from `tex/autofigures/`
-  - uses `preview.figure`
+- [Versions](versions.md)
+- [Sync](sync.md)
+- [Pinning](pinning.md)
 
 ## Python API
 
@@ -386,26 +279,6 @@ Primary entrypoints:
 - `save_publication_data_npz(...)`
 - `load_publication_data_npz(...)`
 - `FigureExport`
-
-## Generated Stats
-
-`tex/autostats.tex` is the framework-owned generated stats file.
-
-- `pubs <publication-id> stat update` rewrites it as one authoritative snapshot
-- `pubs <publication-id> stat <stat-id> update` prints one stat block to the console while still rewriting the full snapshot
-- TeX should include it explicitly, for example with `\input{autostats.tex}`
-- stats return either:
-  - one value, which is coerced with `str(...)` and emits `\Stat<StatId>`
-  - or a `dict[str, object]`, whose values are coerced with `str(...)` and emit `\Stat<StatId><Key>`
-- console display is derived from the TeX-facing value with light cleanup for common TeX markup such as `$...$`, `\,`, and `\mathrm{...}`
-- In prose, use `{}` after a stat macro before following letters, for example `\StatFavorableAsterismCount{} targets`.
-- stat ids stay `snake_case` in Python, but generated TeX macro names use CamelCase
-  - `compute_favorable_asterism_count(...)` maps to `\StatFavorableAsterismCount`
-  - figure files stay `snake_case`, for example `tex/autofigures/ews_asterism_coverage_map_1.pdf`
-
-Generated stat macros use the forms:
-
-- `\Stat<StatId>`
-- `\Stat<StatId><Key>`
+- `TableResult`
 
 See the [API reference](api.md) for the docstring-driven reference pages.
