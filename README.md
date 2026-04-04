@@ -62,7 +62,6 @@ papers/my-paper/
 Then iterate with:
 
 ```bash
-pubs my-paper check
 pubs my-paper update
 pubs my-paper build
 ```
@@ -134,9 +133,8 @@ papers/<publication-id>/
 
 1. Keep publication-local TeX sources under `papers/<publication-id>/tex/`.
 2. Define loaders, figure functions, stats, and tables in `figures.py`.
-3. Run `pubs <publication-id> check` to load and validate the publication definition.
-4. Run `pubs <publication-id> update` to refresh generated figures, stats, and tables.
-5. Run `pubs <publication-id> build` to compile the publication.
+3. Run `pubs <publication-id> update` to refresh package-owned TeX support files, validate the publication definition, and regenerate figures, stats, and tables.
+4. Run `pubs <publication-id> build` to validate and compile the publication.
 6. If you use a synced mirror such as a locally mounted Overleaf tree, run `diff`, `push`, or `pull` as needed.
 7. When an external loader input should become publication-local and reproducible, pin it with `pubs <publication-id> data <loader-id> pin`.
 
@@ -301,20 +299,18 @@ The installed command is `pubs`:
 
 - `pubs list`
 - `pubs init <publication-id>`
-- `pubs <publication-id> prepare`
-- `pubs <publication-id> check`
-- `pubs <publication-id> update`
 - `pubs <publication-id> shell`
-- `pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]`
-- `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]`
-- `pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]`
-- `pubs <publication-id> tables ...`
-- `pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]`
 - `pubs <publication-id> data [list|add <data-id>]`
 - `pubs <publication-id> data <loader-id> pin`
-- `pubs <publication-id> ignore <relative-path>`
-- `pubs <publication-id> build [--update|--skipupdate] [--clear]`
+- `pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]`
+- `pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]`
+- `pubs <publication-id> table [list|add <table-id>|update|<table-id> update|<table-id> latex]`
+- `pubs <publication-id> update`
+- `pubs <publication-id> build [--clear]`
 - `pubs <publication-id> preview`
+- `pubs <publication-id> tables ...`
+- `pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]`
+- `pubs <publication-id> ignore <relative-path>`
 - `pubs <publication-id> push [--force]`
 - `pubs <publication-id> pull [--force]`
 - `pubs <publication-id> diff [list|<relative-path>]`
@@ -325,9 +321,9 @@ The installed command is `pubs`:
   - lists available publication ids under the configured workspace publication root
 - `init`
   - creates a new publication skeleton with package-owned starter files
-- `check`
-  - loads and validates the publication definition
 - `update`
+  - refreshes package-owned TeX support files
+  - validates the publication definition
   - regenerates all figures, stats, and tables
 - `shell`
   - opens a publication-scoped interactive session with prompt `<publication-id>> `
@@ -367,12 +363,8 @@ The installed command is `pubs`:
   - appends a starter `@table` scaffold to `figures.py`
 - `table update`
   - computes all tables and rewrites `tex/autotables.tex`
-- `table check`
-  - validates all discovered tables against direct manuscript uses
 - `table <table-id> update`
   - updates one selected table while still rewriting the full `tex/autotables.tex` snapshot
-- `table <table-id> check`
-  - validates one selected table against direct manuscript uses
 - `table <table-id> latex`
   - prints a paste-ready `table`/`tabular` scaffold with generic `Column N` headers
   - multi-body tables are grouped with full-width `\multicolumn` separator rows
@@ -403,10 +395,8 @@ The installed command is `pubs`:
   - records a mirror-sync exclusion in the publication config
 - `build`
   - builds from the current publication-local TeX tree
-  - by default, `build` refreshes generated figures, stats, and tables first only when `figures.py` appears newer than the generated outputs, `tex/autofigures/` is missing or empty, `tex/autostats.tex` is missing, or `tex/autotables.tex` is missing
-  - `--update` forces that refresh before building
-  - `--skipupdate` skips the generated-input refresh and builds with the existing generated outputs
-  - in `pubs <publication-id> shell`, the first `build` after shell start or after `update` also forces one refresh unless `--skipupdate` is used
+  - refreshes package-owned TeX support files and validates the publication definition before building
+  - does not regenerate figures, stats, or tables; run `update` first when generated outputs need refreshing
 - `preview`
   - opens the built publication PDF derived from `main_tex`
   - uses the `preview.publication` backend from `pubify.conf`
@@ -447,7 +437,7 @@ The `version diff` workflow prepares a temporary TeX tree, overlays newer assets
 - TeX should include it explicitly, for example with `\input{autotables.tex}`
 - single-body tables emit `\Table<Id>`
 - multi-body tables emit `\Table<Id>{1}`, `\Table<Id>{2}`, ...
-- `table check` and publication-wide `check` validate logical table width against direct manuscript uses inside supported environments such as `tabular`, `tabularx`, and `longtable`
+- the publication validation performed by `update` and `build` validates logical table width against direct manuscript uses inside supported environments such as `tabular`, `tabularx`, and `longtable`
 - unsupported wrappers or unrecognized column-spec syntax fail explicitly rather than falling back to heuristics
   - `compute_favorable_asterism_count(...)` maps to `\StatFavorableAsterismCount`
   - figure files stay `snake_case`, for example `tex/autofigures/ews_asterism_coverage_map_1.pdf`

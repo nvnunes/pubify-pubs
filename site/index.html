@@ -219,8 +219,7 @@
 <div class="highlight"><pre><span></span><code>pubs<span class="w"> </span>init<span class="w"> </span>my-paper
 </code></pre></div>
 <p>Then iterate with:</p>
-<div class="highlight"><pre><span></span><code>pubs<span class="w"> </span>my-paper<span class="w"> </span>check
-pubs<span class="w"> </span>my-paper<span class="w"> </span>update
+<div class="highlight"><pre><span></span><code>pubs<span class="w"> </span>my-paper<span class="w"> </span>update
 pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 </code></pre></div>
 <p>That creates a minimal publication skeleton and installs package-owned support files into the publication-local TeX tree.</p>
@@ -228,9 +227,8 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <ol>
 <li>Keep publication-local TeX sources under <code>papers/&lt;publication-id&gt;/tex/</code>.</li>
 <li>Define loaders, figure functions, stats, and tables in <code>figures.py</code>.</li>
-<li>Run <code>pubs &lt;publication-id&gt; check</code> to load and validate the publication definition.</li>
-<li>Run <code>pubs &lt;publication-id&gt; update</code> to refresh generated figures, stats, and tables.</li>
-<li>Run <code>pubs &lt;publication-id&gt; build</code> to compile the publication.</li>
+<li>Run <code>pubs &lt;publication-id&gt; update</code> to refresh package-owned TeX support files, validate the publication definition, and regenerate figures, stats, and tables.</li>
+<li>Run <code>pubs &lt;publication-id&gt; build</code> to validate and compile the publication.</li>
 <li>If a synced mirror is configured, use <code>diff</code>, <code>push</code>, or <code>pull</code> as needed.</li>
 <li>When an external loader input should become publication-local and reproducible, pin it with <code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code>.</li>
 </ol>
@@ -380,7 +378,7 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <li>TeX should include it explicitly, for example with <code>\input{autotables.tex}</code></li>
 <li>single-body tables emit <code>\Table&lt;Id&gt;</code></li>
 <li>multi-body tables emit <code>\Table&lt;Id&gt;{1}</code>, <code>\Table&lt;Id&gt;{2}</code>, ...</li>
-<li><code>table check</code> and publication-wide <code>check</code> validate logical table width against direct manuscript uses inside supported environments such as <code>tabular</code>, <code>tabularx</code>, and <code>longtable</code></li>
+<li>the publication validation performed by <code>update</code> and <code>build</code> validates logical table width against direct manuscript uses inside supported environments such as <code>tabular</code>, <code>tabularx</code>, and <code>longtable</code></li>
 <li>unsupported wrappers or unrecognized column-spec syntax fail explicitly rather than falling back to heuristics</li>
 </ul>
 <p>Manual and static publication assets remain ordinary publication-local TeX files. They do not belong in <code>tex/autofigures/</code>.</p>
@@ -408,25 +406,23 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 </ul>
 <p>Publication commands:</p>
 <ul>
-<li><code>pubs &lt;publication-id&gt; prepare</code></li>
-<li><code>pubs &lt;publication-id&gt; check</code></li>
-<li><code>pubs &lt;publication-id&gt; update</code></li>
 <li><code>pubs &lt;publication-id&gt; shell</code></li>
-<li><code>pubs &lt;publication-id&gt; figure [list|add &lt;figure-id&gt;|update|&lt;figure-id&gt; update|&lt;figure-id&gt; preview [&lt;subfig-idx&gt;]|&lt;figure-id&gt; latex [subcaption]]</code></li>
-<li><code>pubs &lt;publication-id&gt; stat [list|add &lt;stat-id&gt;|update|&lt;stat-id&gt; update|&lt;stat-id&gt; latex]</code></li>
-<li><code>pubs &lt;publication-id&gt; table [list|add &lt;table-id&gt;|update|check|&lt;table-id&gt; update|&lt;table-id&gt; check|&lt;table-id&gt; latex]</code></li>
-<li><code>pubs &lt;publication-id&gt; tables ...</code></li>
-<li><code>pubs &lt;publication-id&gt; version [list|create [note]|diff &lt;version-id&gt; [&lt;version-id&gt;]]</code></li>
 <li><code>pubs &lt;publication-id&gt; data [list|add &lt;data-id&gt;]</code></li>
 <li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
-<li><code>pubs &lt;publication-id&gt; ignore &lt;relative-path&gt;</code></li>
-<li><code>pubs &lt;publication-id&gt; build [--update|--skipupdate] [--clear]</code></li>
+<li><code>pubs &lt;publication-id&gt; figure [list|add &lt;figure-id&gt;|update|&lt;figure-id&gt; update|&lt;figure-id&gt; preview [&lt;subfig-idx&gt;]|&lt;figure-id&gt; latex [subcaption]]</code></li>
+<li><code>pubs &lt;publication-id&gt; stat [list|add &lt;stat-id&gt;|update|&lt;stat-id&gt; update|&lt;stat-id&gt; latex]</code></li>
+<li><code>pubs &lt;publication-id&gt; table [list|add &lt;table-id&gt;|update|&lt;table-id&gt; update|&lt;table-id&gt; latex]</code></li>
+<li><code>pubs &lt;publication-id&gt; update</code></li>
+<li><code>pubs &lt;publication-id&gt; build [--clear]</code></li>
 <li><code>pubs &lt;publication-id&gt; preview</code></li>
+<li><code>pubs &lt;publication-id&gt; tables ...</code></li>
+<li><code>pubs &lt;publication-id&gt; version [list|create [note]|diff &lt;version-id&gt; [&lt;version-id&gt;]]</code></li>
+<li><code>pubs &lt;publication-id&gt; ignore &lt;relative-path&gt;</code></li>
 <li><code>pubs &lt;publication-id&gt; push [--force]</code></li>
 <li><code>pubs &lt;publication-id&gt; pull [--force]</code></li>
 <li><code>pubs &lt;publication-id&gt; diff [list|&lt;relative-path&gt;]</code></li>
 </ul>
-<p><code>update</code> refreshes publication code/config state plus generated figures, stats, and tables. By default, <code>build</code> refreshes generated figures, stats, and tables before LaTeX build only when <code>figures.py</code> is newer than the generated outputs, <code>tex/autofigures/</code> is missing or empty, <code>tex/autostats.tex</code> is missing, or <code>tex/autotables.tex</code> is missing. <code>build --update</code> forces that refresh, and <code>build --skipupdate</code> skips it. In <code>pubs &lt;publication-id&gt; shell</code>, the first <code>build</code> after shell start or after <code>update</code> also forces one refresh unless <code>--skipupdate</code> is used.</p>
+<p><code>update</code> refreshes package-owned TeX support files, validates the publication definition, and regenerates figures, stats, and tables. <code>build</code> refreshes package-owned TeX support files, validates the publication definition, and then compiles the current TeX tree; it does not regenerate figures, stats, or tables, so run <code>update</code> first when generated outputs need refreshing.</p>
 <p><code>tables</code> is an alias for <code>table</code> in both the CLI and the publication shell.</p>
 <p>The <code>latex</code> commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. <code>tex</code> is accepted as an alias for <code>latex</code>.
 When possible, they also prepend a missing manuscript prelude line from the current <code>main.tex</code>: <code>figure ... latex</code> adds <code>\usepackage{pubify}</code> if needed, <code>stat ... latex</code> adds <code>\input{autostats.tex}</code> if needed, and <code>table ... latex</code> adds <code>\input{autotables.tex}</code> if needed.</p>
@@ -554,5 +550,5 @@ When possible, they also prepend a missing manuscript prelude line from the curr
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-04-03 13:33:37.816990+00:00
+Build Date UTC : 2026-04-04 03:08:03.774219+00:00
 -->

@@ -36,9 +36,7 @@ from pubify_pubs.runtime import (
     build_publication,
     clear_autofigures,
     check_publication,
-    check_tables,
     clear_publication_build,
-    generated_outputs_are_stale,
     init_publication,
     init_publication_by_id,
     inspect_figure,
@@ -57,7 +55,6 @@ from pubify_pubs.shell_incremental import (
     collect_shell_method_state,
     figure_output_belongs_to_id,
     imported_module_fingerprints_changed,
-    plan_incremental_shell_build,
     purge_modules_by_paths,
 )
 from pubify_pubs.stats import ComputedStat
@@ -128,8 +125,6 @@ class PublicationCommand:
     arg4: str | None = None
     arg5: str | None = None
     force: bool = False
-    update_before_build: bool = False
-    skip_update: bool = False
     clear_build: bool = False
 
 
@@ -237,25 +232,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog="pubs",
-        usage="pubs [--force] [--update] [--skipupdate] [--clear] <command>",
+        usage="pubs [--force] [--clear] <command>",
         description=(
             "Commands:\n"
             "  pubs list\n"
             "  pubs init <publication-id>\n"
             "\n"
-            "  pubs <publication-id> prepare\n"
-            "  pubs <publication-id> check\n"
-            "  pubs <publication-id> update\n"
             "  pubs <publication-id> shell\n"
             "  pubs <publication-id> data [list|add <data-id>]\n"
             "  pubs <publication-id> data <loader-id> pin\n"
             "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]\n"
             "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]\n"
-            "  pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]\n"
+            "  pubs <publication-id> table [list|add <table-id>|update|<table-id> update|<table-id> latex]\n"
+            "  pubs <publication-id> update\n"
+            "  pubs <publication-id> build [--clear]\n"
+            "  pubs <publication-id> preview\n"
             "  pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]\n"
             "  pubs <publication-id> ignore <relative-path>\n"
-            "  pubs <publication-id> build [--update|--skipupdate] [--clear]\n"
-            "  pubs <publication-id> preview\n"
             "  pubs <publication-id> push [--force]\n"
             "  pubs <publication-id> pull [--force]\n"
             "  pubs <publication-id> diff [list|<relative-path>]"
@@ -268,8 +261,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("arg4", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument("arg5", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--update", dest="update_before_build", action="store_true")
-    parser.add_argument("--skipupdate", action="store_true")
     parser.add_argument("--clear", dest="clear_build", action="store_true")
     return parser
 
@@ -282,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.subject == "list":
             workspace_root = find_workspace_root()
-            _reject_build_flags(parser, "list", args.update_before_build, args.skipupdate, args.clear_build)
+            _reject_build_flags(parser, "list", args.clear_build)
             if any(value is not None for value in (args.arg2, args.arg3, args.arg4, args.arg5)):
                 parser.error("list does not accept additional arguments")
             for publication_id in list_publication_ids(workspace_root):
@@ -291,7 +282,7 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.subject == "init":
             workspace_root = find_workspace_root()
-            _reject_build_flags(parser, "init", args.update_before_build, args.skipupdate, args.clear_build)
+            _reject_build_flags(parser, "init", args.clear_build)
             if args.arg2 is None:
                 parser.error("init requires <publication-id>")
             if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
@@ -319,8 +310,6 @@ def main(argv: list[str] | None = None) -> int:
         if command == "init":
             parser.error("use 'pubs init <publication-id>'")
         if command not in {
-            "prepare",
-            "check",
             "update",
             "shell",
             "data",
@@ -340,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
         workspace_root = find_workspace_root()
         publication = load_publication_definition(workspace_root, publication_id)
         if command == "shell":
-            _reject_build_flags(parser, "shell", args.update_before_build, args.skipupdate, args.clear_build)
+            _reject_build_flags(parser, "shell", args.clear_build)
             if args.force:
                 parser.error("shell does not accept --force")
             if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
@@ -353,8 +342,6 @@ def main(argv: list[str] | None = None) -> int:
             arg4=args.arg4,
             arg5=args.arg5,
             force=args.force,
-            update_before_build=args.update_before_build,
-            skip_update=args.skipupdate,
             clear_build=args.clear_build,
         )
         return _run_publication_command(
@@ -397,12 +384,10 @@ def _raise_value_error(message: str) -> None:
 def _reject_build_flags(
     parser: argparse.ArgumentParser,
     command: str,
-    update_before_build: bool,
-    skip_update: bool,
     clear_build: bool,
 ) -> None:
-    if update_before_build or skip_update or clear_build:
-        parser.error(f"{command} does not accept --update, --skipupdate, or --clear")
+    if clear_build:
+        parser.error(f"{command} does not accept --clear")
 
 
 def _parse_force_flag(
@@ -452,6 +437,22 @@ def _run_publication_command(
     shell_session: PublicationShellSession | None = None,
     imported_modules_changed: bool = False,
 ) -> int:
+    if command.command == "update":
+        _reject_build_flags_from_command(command, error)
+        if command.force:
+            error("update does not accept --force")
+        if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
+            error("update does not accept additional arguments")
+        _run_full_refresh(
+            publication,
+            use_color=use_color,
+            loader_cache=loader_cache,
+            pending_data_output=pending_data_output,
+            shell_session=shell_session,
+            refresh_support=True,
+        )
+        return 0
+
     if command.command == "ignore":
         _reject_build_flags_from_command(command, error)
         if command.force:
@@ -469,42 +470,6 @@ def _run_publication_command(
             print(f"{publication.publication_id}: added sync ignore {relative_path}")
         else:
             print(f"{publication.publication_id}: sync ignore already present {relative_path}")
-        return 0
-
-    if command.command == "prepare":
-        _reject_build_flags_from_command(command, error)
-        if command.force:
-            error("prepare does not accept --force")
-        if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
-            error("prepare does not accept additional arguments")
-        changed_paths = _refresh_publication_support(publication)
-        _print_updated_publication_files(publication, changed_paths, use_color=use_color)
-        print(f"{publication.publication_id}: prepared")
-        return 0
-
-    if command.command == "check":
-        _reject_build_flags_from_command(command, error)
-        if command.force:
-            error("check does not accept --force")
-        if command.arg3 is not None or command.arg4 is not None:
-            error("check does not accept additional arguments")
-        check_publication(publication)
-        print(f"{publication.publication_id}: ok")
-        return 0
-
-    if command.command == "update":
-        _reject_build_flags_from_command(command, error)
-        if command.force:
-            error("update does not accept --force")
-        if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
-            error("update does not accept additional arguments")
-        _run_full_refresh(
-            publication,
-            use_color=use_color,
-            loader_cache=loader_cache,
-            pending_data_output=pending_data_output,
-            shell_session=shell_session,
-        )
         return 0
 
     if command.command == "data":
@@ -732,12 +697,6 @@ def _run_publication_command(
             _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
             _run_table_updates(publication, ctx, tuple(sorted(publication.tables)), use_color=use_color)
             return 0
-        if command.arg3 == "check":
-            if command.arg4 is not None or command.arg5 is not None:
-                error("table check does not accept additional arguments")
-            check_tables(publication)
-            print(f"{publication.publication_id}: ok")
-            return 0
         if _is_latex_alias(command.arg4):
             if command.arg5 is not None:
                 error("table <table-id> latex does not accept additional arguments")
@@ -768,16 +727,9 @@ def _run_publication_command(
             _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
             _run_table_updates(publication, ctx, (selected_id,), use_color=use_color)
             return 0
-        if command.arg4 == "check" and command.arg5 is None:
-            selected_id = command.arg3
-            if selected_id not in publication.tables:
-                raise KeyError(f"Unknown table '{selected_id}'")
-            check_tables(publication, selected_id)
-            print(f"{selected_id}: ok")
-            return 0
         error(
-            "table supports only 'list', 'add <table-id>', 'update', 'check', '<table-id> update', "
-            "'<table-id> check', or '<table-id> latex'"
+            "table supports only 'list', 'add <table-id>', 'update', '<table-id> update', "
+            "or '<table-id> latex'"
         )
 
     if command.command == "version":
@@ -824,42 +776,11 @@ def _run_publication_command(
     if command.command == "build":
         if command.force:
             error("build does not accept --force")
-        if command.update_before_build and command.skip_update:
-            error("build accepts only one of --update or --skipupdate")
         if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
             error("build does not accept additional arguments")
         if command.clear_build:
             clear_publication_build(publication)
-        if shell_session is not None:
-            if not command.skip_update:
-                if command.update_before_build:
-                    _run_full_refresh(
-                        publication,
-                        use_color=use_color,
-                        loader_cache=loader_cache,
-                        pending_data_output=pending_data_output,
-                        shell_session=shell_session,
-                    )
-                else:
-                    _run_incremental_shell_build(
-                        publication,
-                        use_color=use_color,
-                        loader_cache=loader_cache,
-                        pending_data_output=pending_data_output,
-                        shell_session=shell_session,
-                        imported_modules_changed=imported_modules_changed,
-                    )
-        elif not command.skip_update and (
-            command.update_before_build
-            or generated_outputs_are_stale(publication)
-        ):
-            _run_full_refresh(
-                publication,
-                use_color=use_color,
-                loader_cache=loader_cache,
-                pending_data_output=pending_data_output,
-                shell_session=None,
-            )
+        _refresh_and_validate_publication(publication, use_color=use_color)
         build_publication(publication)
         _print_updated_pdf(build_pdf_path(publication), use_color=use_color)
         return 0
@@ -1013,21 +934,13 @@ def run_publication_shell(
                     arg4=parsed.arg4,
                     arg5=parsed.arg5,
                     force=parsed.force,
-                    update_before_build=parsed.update_before_build,
-                    skip_update=parsed.skipupdate,
                     clear_build=parsed.clear_build,
                 )
                 reload_result = _ReloadResult(False, False)
                 if not _is_add_stub_command(publication_command):
                     reload_result = _reload_session_publication(
                         session,
-                        force=(
-                            publication_command.command == "update"
-                            or (
-                                publication_command.command == "build"
-                                and publication_command.update_before_build
-                            )
-                        ),
+                        force=publication_command.command == "update",
                         purge_all_imported_modules=publication_command.command == "update",
                     )
                 if publication_command.command in {"update", "build"}:
@@ -1056,8 +969,6 @@ def run_publication_shell(
 def _build_shell_command_parser() -> argparse.ArgumentParser:
     parser = _ShellArgumentParser(add_help=False)
     parser.add_argument("--force", action="store_true")
-    parser.add_argument("--update", dest="update_before_build", action="store_true")
-    parser.add_argument("--skipupdate", action="store_true")
     parser.add_argument("--clear", dest="clear_build", action="store_true")
     parser.add_argument("command")
     parser.add_argument("arg3", nargs="?")
@@ -1247,18 +1158,16 @@ def _shell_help_text(publication_id: str) -> str:
     return "\n".join(
         [
             f"Shell commands for {publication_id}:",
-            "  prepare",
-            "  check",
             "  data [list|add <data-id>]",
             "  data <loader-id> pin",
             "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]",
             "  stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]",
-            "  table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]",
-            "  version [list|create [note]|diff <version-id> [<version-id>]]",
+            "  table [list|add <table-id>|update|<table-id> update|<table-id> latex]",
             "  update",
-            "  ignore <relative-path>",
-            "  build [--update|--skipupdate] [--clear]",
+            "  build [--clear]",
             "  preview",
+            "  version [list|create [note]|diff <version-id> [<version-id>]]",
+            "  ignore <relative-path>",
             "  push [--force]",
             "  pull [--force]",
             "  diff [list|<relative-path>]",
@@ -1293,8 +1202,8 @@ def _reject_build_flags_from_command(
     command: PublicationCommand,
     error: Callable[[str], None],
 ) -> None:
-    if command.update_before_build or command.skip_update or command.clear_build:
-        error(f"{command.command} does not accept --update, --skipupdate, or --clear")
+    if command.clear_build:
+        error(f"{command.command} does not accept --clear")
 
 
 def _build_stat_inventory_rows(publication: PublicationDefinition) -> list[StatInventoryRow]:
@@ -1333,8 +1242,10 @@ def _run_full_refresh(
     pending_data_output: dict[str, list[str]] | None,
     shell_session: PublicationShellSession | None,
     force_loader_reload: bool = True,
+    refresh_support: bool,
 ) -> None:
-    changed_paths = _refresh_publication_support(publication)
+    changed_paths = _refresh_publication_support(publication) if refresh_support else ()
+    check_publication(publication)
     ctx = _command_run_context(
         publication,
         loader_cache=(
@@ -1405,6 +1316,7 @@ def _run_incremental_shell_build(
             loader_cache=loader_cache,
             pending_data_output=pending_data_output,
             shell_session=shell_session,
+            refresh_support=True,
         )
         return
     build_plan = plan_incremental_shell_build(
@@ -1423,8 +1335,10 @@ def _run_incremental_shell_build(
             pending_data_output=pending_data_output,
             shell_session=shell_session,
             force_loader_reload=shell_session.last_success_method_state is not None,
+            refresh_support=True,
         )
         return
+    _refresh_and_validate_publication(publication, use_color=use_color)
     if (
         not build_plan.changed_loader_ids
         and not build_plan.figure_ids
@@ -1502,6 +1416,16 @@ def _refresh_publication_support(publication: PublicationDefinition) -> tuple[Pa
         if _path_content_changed(path, before_contents.get(path)):
             changed_paths.append(path)
     return tuple(changed_paths)
+
+
+def _refresh_and_validate_publication(
+    publication: PublicationDefinition,
+    *,
+    use_color: bool,
+) -> None:
+    changed_paths = _refresh_publication_support(publication)
+    check_publication(publication)
+    _print_updated_publication_files(publication, changed_paths, use_color=use_color)
 
 
 def _path_content_changed(path: Path, previous_content: bytes | None) -> bool:

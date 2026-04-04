@@ -28,7 +28,6 @@ from pubify_pubs.mirror import diff_publication, pull_publication, push_publicat
 from pubify_pubs.runtime import (
     build_publication,
     check_publication,
-    generated_outputs_are_stale,
     init_publication,
     run_figures,
     run_stats,
@@ -1280,7 +1279,7 @@ def test_cli_shell_runs_paper_scoped_commands(
 ) -> None:
     init_publication(load_publication_definition(repo, "demo"))
     prompts: list[str] = []
-    commands = iter(["check", "figure single update", "figure single preview 1", "data list", "diff list", "update", "build", "preview", "quit"])
+    commands = iter(["data list", "figure single update", "figure single preview 1", "diff list", "update", "build", "preview", "quit"])
 
     def fake_input(prompt: str) -> str:
         prompts.append(prompt)
@@ -1305,7 +1304,7 @@ def test_cli_shell_runs_paper_scoped_commands(
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
-    assert prompts == ["demo> "] * 9
+    assert prompts == ["demo> "] * 8
     assert "pinned   training   training.npy" in captured.out
     assert "tex/autofigures/single.pdf" in captured.out
     assert "pinned   " in captured.out
@@ -1331,11 +1330,10 @@ def test_cli_shell_help_and_rejects_top_level_commands(
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
     assert "Shell commands for demo:" in captured.out
-    assert "  prepare" in captured.out
     assert "  data [list|add <data-id>]" in captured.out
     assert "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]" in captured.out
     assert "  stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]" in captured.out
-    assert "  table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]" in captured.out
+    assert "  table [list|add <table-id>|update|<table-id> update|<table-id> latex]" in captured.out
     assert "  version [list|create [note]|diff <version-id> [<version-id>]]" in captured.out
     assert "  update" in captured.out
     assert "  preview" in captured.out
@@ -1893,10 +1891,10 @@ def test_cli_shell_auto_reloads_when_figures_py_changes(
         nonlocal step
         step += 1
         if step == 1:
-            return "check"
+            return "data list"
         if step == 2:
             figures_path.write_text(figures_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-            return "check"
+            return "data list"
         return "quit"
 
     monkeypatch.setattr("builtins.input", fake_input)
@@ -1905,7 +1903,7 @@ def test_cli_shell_auto_reloads_when_figures_py_changes(
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
-    assert captured.out.count("demo: ok") == 2
+    assert captured.out.count("pinned   training   training.npy") == 2
     assert load_count == 2
 
 
@@ -1929,10 +1927,10 @@ def test_cli_shell_auto_reloads_when_pub_yaml_changes(
         nonlocal step
         step += 1
         if step == 1:
-            return "check"
+            return "data list"
         if step == 2:
             config_path.write_text(config_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-            return "check"
+            return "data list"
         return "quit"
 
     monkeypatch.setattr("builtins.input", fake_input)
@@ -1941,7 +1939,7 @@ def test_cli_shell_auto_reloads_when_pub_yaml_changes(
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
-    assert captured.out.count("demo: ok") == 2
+    assert captured.out.count("pinned   training   training.npy") == 2
     assert load_count == 2
 
 
@@ -2071,7 +2069,7 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
         nonlocal step
         step += 1
         if step == 1:
-            return "check"
+            return "data list"
         if step == 2:
             figures_path.write_text(
                 "\n".join(
@@ -2112,7 +2110,7 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
             )
             return "update"
         if step == 3:
-            return "check"
+            return "data list"
         return "quit"
 
     monkeypatch.setattr("builtins.input", fake_input)
@@ -2120,7 +2118,8 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
-    assert captured.out.count("demo: ok") == 2
+    assert "pinned   training   training.npy" in captured.out
+    assert "pinned   dataset   dataset.npy" in captured.out
     assert "Figures" in captured.out
     assert "depends on unknown loader" not in captured.err
 
@@ -2139,13 +2138,13 @@ def test_cli_shell_reload_failure_keeps_session_alive(
         nonlocal step
         step += 1
         if step == 1:
-            return "check"
+            return "data list"
         if step == 2:
             figures_path.write_text("def broken(:\n", encoding="utf-8")
-            return "check"
+            return "data list"
         if step == 3:
             figures_path.write_text(original_text, encoding="utf-8")
-            return "check"
+            return "data list"
         return "quit"
 
     monkeypatch.setattr("builtins.input", fake_input)
@@ -2153,7 +2152,7 @@ def test_cli_shell_reload_failure_keeps_session_alive(
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
-    assert captured.out.count("demo: ok") == 2
+    assert captured.out.count("pinned   training   training.npy") == 2
     assert "Error:" in captured.err
 
 
@@ -2180,7 +2179,7 @@ def test_cli_shell_user_code_exception_keeps_session_alive(
         encoding="utf-8",
     )
     init_publication(load_publication_definition(repo, "demo"))
-    commands = iter(["figure single update", "check", "quit"])
+    commands = iter(["figure single update", "data list", "quit"])
 
     monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
@@ -2189,7 +2188,7 @@ def test_cli_shell_user_code_exception_keeps_session_alive(
     captured = capsys.readouterr()
     assert "  about to explode" in captured.out
     assert "  ZeroDivisionError: bad math" in captured.out
-    assert "demo: ok" in captured.out
+    assert "demo: no declared data" in captured.out
 
 
 def test_cli_figure_update_fails_cleanly_for_tuple_returning_loader(
@@ -2484,7 +2483,7 @@ def test_cli_shell_persists_history_in_publication_root(
 ) -> None:
     init_publication(load_publication_definition(repo, "demo"))
     history_path = repo / "papers" / "demo" / ".pubs-history"
-    history_path.write_text("check\n", encoding="utf-8")
+    history_path.write_text("data list\n", encoding="utf-8")
     fake_readline = FakeReadline()
     commands = iter(["figure single update", "quit"])
 
@@ -2493,7 +2492,7 @@ def test_cli_shell_persists_history_in_publication_root(
 
     assert main(["demo", "shell"]) == 0
     assert fake_readline.read_paths == [str(history_path)]
-    assert history_path.read_text(encoding="utf-8").splitlines() == ["check", "figure single update", "quit"]
+    assert history_path.read_text(encoding="utf-8").splitlines() == ["data list", "figure single update", "quit"]
 
 
 def test_cli_shell_history_is_trimmed_to_recent_entries(
@@ -2526,7 +2525,7 @@ def test_cli_shell_persists_history_when_readline_already_contains_latest_entry(
 ) -> None:
     init_publication(load_publication_definition(repo, "demo"))
     history_path = repo / "papers" / "demo" / ".pubs-history"
-    history_path.write_text("check\n", encoding="utf-8")
+    history_path.write_text("data list\n", encoding="utf-8")
     fake_readline = FakeReadline()
     commands = iter(["figure single update", "quit"])
 
@@ -2539,7 +2538,7 @@ def test_cli_shell_persists_history_when_readline_already_contains_latest_entry(
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: fake_readline)
 
     assert main(["demo", "shell"]) == 0
-    assert history_path.read_text(encoding="utf-8").splitlines() == ["check", "figure single update", "quit"]
+    assert history_path.read_text(encoding="utf-8").splitlines() == ["data list", "figure single update", "quit"]
 
 
 def test_configure_shell_readline_binds_arrow_keys_for_gnu_and_libedit(
@@ -2824,7 +2823,7 @@ def test_cli_build_prints_pdf_output_path(
     assert lines[-1] == f"- {repo / 'papers' / 'demo' / 'tex' / 'build' / 'main.pdf'}: updated"
 
 
-def test_cli_build_skipupdate_does_not_refresh_generated_inputs(
+def test_cli_build_does_not_refresh_generated_inputs(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -2846,67 +2845,25 @@ def test_cli_build_skipupdate_does_not_refresh_generated_inputs(
     monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
     monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
     monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    init_publication(load_publication_definition(repo, "demo"))
 
-    assert main(["demo", "build", "--skipupdate"]) == 0
+    assert main(["demo", "build"]) == 0
     captured = capsys.readouterr()
     assert calls == ["build"]
     assert captured.out.strip().endswith("/tex/build/main.pdf: updated")
 
-
-def test_cli_build_update_runs_full_update_before_build(
+def test_cli_build_does_not_refresh_when_outputs_are_stale_or_missing(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
-
-    def fake_run_figures(paper_definition: object, *args: object, **kwargs: object) -> list[Path]:
-        calls.append("export")
-        return [
-            repo / "papers" / "demo" / "tex" / "autofigures" / "compare_1.pdf",
-            repo / "papers" / "demo" / "tex" / "autofigures" / "compare_2.pdf",
-            repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf",
-        ]
-
-    def fake_run_stat_updates(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
-        calls.append("stats")
-        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
 
     def fake_build(paper_definition: object) -> object:
         calls.append("build")
         return None
 
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
-
-    assert main(["demo", "build", "--update"]) == 0
-    captured = capsys.readouterr()
-    assert calls == ["export", "export", "stats", "build"]
-    lines = [line for line in captured.out.strip().splitlines() if line]
-    assert lines == [
-        "Data",
-        "- bundle: loaded",
-        "- training: loaded",
-        "Publication Files",
-        "- tex/pubify.sty: updated",
-        "- tex/pubify-template.tex: updated",
-        "Figures",
-        "- compare (2): updated",
-        "- single: updated",
-        "PDF",
-        f"- {repo / 'papers' / 'demo' / 'tex' / 'build' / 'main.pdf'}: updated",
-    ]
-
-
-def test_cli_build_runs_update_when_outputs_missing(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-
-    def fake_run_figures(paper_definition: object, *args: object, **kwargs: object) -> list[Path]:
+    def fake_run_figures(*args: object, **kwargs: object) -> list[Path]:
         calls.append("export")
         return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
 
@@ -2914,275 +2871,23 @@ def test_cli_build_runs_update_when_outputs_missing(
         calls.append("stats")
         return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
 
-    def fake_build(paper_definition: object) -> object:
-        calls.append("build")
-        return None
-
+    monkeypatch.setattr(core_cli, "build_publication", fake_build)
     monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
     monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
 
     paper = load_publication_definition(repo, "demo")
+    init_publication(paper)
     if paper.paths.autofigures_root.exists():
         shutil.rmtree(paper.paths.autofigures_root)
     paper.paths.autostats_path.unlink(missing_ok=True)
 
     assert main(["demo", "build"]) == 0
-    assert calls == ["export", "export", "stats", "build"]
-    captured = capsys.readouterr()
-    lines = captured.out.strip().splitlines()
-    assert lines[0] == "Data"
-    assert lines[1] == "- bundle: loaded"
-    assert lines[2] == "- training: loaded"
-    assert lines[4] == "Publication Files"
-    assert lines[5] == "- tex/pubify.sty: updated"
-    assert lines[6] == "- tex/pubify-template.tex: updated"
-    assert lines[8] == "Figures"
-    assert lines[9] == "- compare: updated"
-    assert lines[10] == "- single: updated"
-    assert lines[12] == "PDF"
-
-
-def test_cli_build_runs_update_when_outputs_empty(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-
-    def fake_run_figures(paper_definition: object, *args: object, **kwargs: object) -> list[Path]:
-        calls.append("export")
-        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
-
-    def fake_run_stat_updates(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
-        calls.append("stats")
-        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
-
-    def fake_build(paper_definition: object) -> object:
-        calls.append("build")
-        return None
-
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
-
-    paper = load_publication_definition(repo, "demo")
-    paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
-    paper.paths.autostats_path.write_text("old stats\n", encoding="utf-8")
-
-    assert main(["demo", "build"]) == 0
-    assert calls == ["export", "export", "stats", "build"]
-    captured = capsys.readouterr()
-    lines = captured.out.strip().splitlines()
-    assert lines[0] == "Data"
-    assert lines[1] == "- bundle: loaded"
-    assert lines[2] == "- training: loaded"
-    assert lines[4] == "Publication Files"
-    assert lines[5] == "- tex/pubify.sty: updated"
-    assert lines[6] == "- tex/pubify-template.tex: updated"
-    assert lines[8] == "Figures"
-    assert lines[9] == "- compare: updated"
-    assert lines[10] == "- single: updated"
-    assert lines[12] == "PDF"
-
-
-def test_cli_build_runs_update_when_autostats_missing(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-
-    def fake_run_figures(paper_definition: object, *args: object, **kwargs: object) -> list[Path]:
-        calls.append("export")
-        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
-
-    def fake_run_stat_updates(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
-        calls.append("stats")
-        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
-
-    def fake_build(paper_definition: object) -> object:
-        calls.append("build")
-        return None
-
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
-
-    paper = load_publication_definition(repo, "demo")
-    paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
-    (paper.paths.autofigures_root / "single.pdf").write_text("existing export\n", encoding="utf-8")
-    paper.paths.autostats_path.unlink(missing_ok=True)
-
-    assert main(["demo", "build"]) == 0
-    assert calls == ["export", "export", "stats", "build"]
-    captured = capsys.readouterr()
-    lines = captured.out.strip().splitlines()
-    assert lines[0] == "Data"
-    assert lines[1] == "- bundle: loaded"
-    assert lines[2] == "- training: loaded"
-    assert lines[4] == "Publication Files"
-    assert lines[5] == "- tex/pubify.sty: updated"
-    assert lines[6] == "- tex/pubify-template.tex: updated"
-    assert lines[8] == "Figures"
-    assert lines[9] == "- compare: updated"
-    assert lines[10] == "- single: updated"
-    assert lines[12] == "PDF"
-
-
-def test_cli_build_runs_update_when_figures_py_is_newer(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-
-    def fake_run_figures(paper_definition: object, *args: object, **kwargs: object) -> list[Path]:
-        calls.append("export")
-        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
-
-    def fake_run_stat_updates(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
-        calls.append("stats")
-        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
-
-    def fake_build(paper_definition: object) -> object:
-        calls.append("build")
-        return None
-
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
-
-    paper = load_publication_definition(repo, "demo")
-    paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
-    exported = paper.paths.autofigures_root / "single.pdf"
-    exported.write_text("old export\n", encoding="utf-8")
-    paper.paths.autostats_path.write_text("stats\n", encoding="utf-8")
-    entrypoint_mtime = paper.paths.entrypoint.stat().st_mtime
-    old_mtime = max(entrypoint_mtime - 10, 1)
-    os.utime(exported, (old_mtime, old_mtime))
-    os.utime(paper.paths.autostats_path, (old_mtime, old_mtime))
-    new_entrypoint_mtime = old_mtime + 20
-    os.utime(paper.paths.entrypoint, (new_entrypoint_mtime, new_entrypoint_mtime))
-
-    assert main(["demo", "build"]) == 0
-    assert calls == ["export", "export", "stats", "build"]
-    capsys.readouterr()
-
-
-def test_cli_build_runs_update_when_autostats_is_stale(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-
-    def fake_run_figures(paper_definition: object, *args: object, **kwargs: object) -> list[Path]:
-        calls.append("export")
-        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
-
-    def fake_run_stat_updates(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
-        calls.append("stats")
-        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
-
-    def fake_build(paper_definition: object) -> object:
-        calls.append("build")
-        return None
-
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
-
-    paper = load_publication_definition(repo, "demo")
-    paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
-    exported = paper.paths.autofigures_root / "single.pdf"
-    exported.write_text("new export\n", encoding="utf-8")
-    paper.paths.autostats_path.write_text("old stats\n", encoding="utf-8")
-    entrypoint_mtime = paper.paths.entrypoint.stat().st_mtime
-    old_mtime = max(entrypoint_mtime - 10, 1)
-    new_mtime = entrypoint_mtime + 10
-    os.utime(exported, (new_mtime, new_mtime))
-    os.utime(paper.paths.autostats_path, (old_mtime, old_mtime))
-
-    assert main(["demo", "build"]) == 0
-    assert calls == ["export", "export", "stats", "build"]
-    capsys.readouterr()
-
-
-def test_cli_build_skips_update_when_outputs_are_newer(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-
-    def fake_build(paper_definition: object) -> object:
-        calls.append("build")
-        return None
-
-    def fake_run_figures(*args: object, **kwargs: object) -> list[Path]:
-        calls.append("export")
-        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
-
-    def fake_run_stat_updates(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
-        calls.append("stats")
-        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
-
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-
-    paper = load_publication_definition(repo, "demo")
-    paper.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
-    exported = paper.paths.autofigures_root / "single.pdf"
-    exported.write_text("new export\n", encoding="utf-8")
-    paper.paths.autostats_path.write_text("new stats\n", encoding="utf-8")
-    entrypoint_mtime = paper.paths.entrypoint.stat().st_mtime
-    new_mtime = entrypoint_mtime + 10
-    os.utime(exported, (new_mtime, new_mtime))
-    os.utime(paper.paths.autostats_path, (new_mtime, new_mtime))
-
-    assert main(["demo", "build"]) == 0
     captured = capsys.readouterr()
     assert calls == ["build"]
     assert captured.out.strip().endswith("/tex/build/main.pdf: updated")
 
 
-def test_cli_build_skipupdate_skips_refresh_even_when_outputs_are_missing(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[str] = []
-
-    def fake_build(paper_definition: object) -> object:
-        calls.append("build")
-        return None
-
-    def fake_run_figures(*args: object, **kwargs: object) -> list[Path]:
-        calls.append("export")
-        return [repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"]
-
-    def fake_run_stat_updates(*args: object, **kwargs: object) -> tuple[Path, tuple[object, ...]]:
-        calls.append("stats")
-        return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
-
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-
-    paper = load_publication_definition(repo, "demo")
-    if paper.paths.autofigures_root.exists():
-        shutil.rmtree(paper.paths.autofigures_root)
-    paper.paths.autostats_path.unlink(missing_ok=True)
-
-    assert main(["demo", "build", "--skipupdate"]) == 0
-    captured = capsys.readouterr()
-    assert calls == ["build"]
-    assert captured.out.strip().endswith("/tex/build/main.pdf: updated")
-
-
-def test_cli_shell_build_refreshes_once_after_shell_start_then_skips_when_unchanged(
+def test_cli_shell_build_does_not_refresh_generated_outputs(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -3224,19 +2929,15 @@ def test_cli_shell_build_refreshes_once_after_shell_start_then_skips_when_unchan
 
     monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
     monkeypatch.setattr(core_cli, "build_publication", fake_build)
-    monkeypatch.setattr(core_cli, "generated_outputs_are_stale", lambda publication: False)
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
-    assert calls == ["export", "export", "stats", "build", "build"]
-    assert "Figures" in captured.out
-    assert "Tables" not in captured.out
+    assert calls == ["build", "build"]
+    assert "Figures" not in captured.out
 
 
-def test_cli_shell_build_after_update_skips_refresh_when_code_is_unchanged(
+def test_cli_shell_build_after_update_still_only_builds(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -3275,35 +2976,14 @@ def test_cli_shell_build_after_update_skips_refresh_when_code_is_unchanged(
 
     monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-    monkeypatch.setattr(core_cli, "_run_table_updates", fake_run_table_updates)
     monkeypatch.setattr(core_cli, "build_publication", fake_build)
-    monkeypatch.setattr(core_cli, "generated_outputs_are_stale", lambda publication: False)
 
     assert main(["demo", "shell"]) == 0
     capsys.readouterr()
-    assert calls == ["export", "export", "stats", "build"]
+    assert calls == ["build"]
 
 
-def test_cli_shell_build_update_forces_data_refresh_output(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    commands = iter(["build --update", "quit"])
-
-    monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
-    monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
-
-    assert main(["demo", "shell"]) == 0
-    captured = capsys.readouterr()
-    assert "Data" in captured.out
-    assert "- bundle: loaded" in captured.out
-    assert "- training: loaded" in captured.out
-
-
-def test_cli_shell_build_falls_back_to_full_refresh_when_imported_module_changes(
+def test_cli_shell_build_reloads_publication_when_imported_module_changes(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
@@ -3343,7 +3023,6 @@ def test_cli_shell_build_falls_back_to_full_refresh_when_imported_module_changes
         encoding="utf-8",
     )
     load_publication_definition(repo, "demo")
-    calls: list[str] = []
     commands = iter(["build", "build", "quit"])
     step = 0
 
@@ -3364,21 +3043,13 @@ def test_cli_shell_build_falls_back_to_full_refresh_when_imported_module_changes
             )
         return next(commands)
 
-    def fake_incremental(*args: object, **kwargs: object) -> None:
-        calls.append("full" if kwargs["imported_modules_changed"] else "incremental")
-
-    def fake_full(*args: object, **kwargs: object) -> None:
-        calls.append("full")
-
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
-    monkeypatch.setattr(core_cli, "_run_incremental_shell_build", fake_incremental)
-    monkeypatch.setattr(core_cli, "_run_full_refresh", fake_full)
     monkeypatch.setattr(core_cli, "build_publication", lambda publication: None)
 
     assert main(["demo", "shell"]) == 0
-    capsys.readouterr()
-    assert calls == ["incremental", "incremental"]
+    captured = capsys.readouterr()
+    assert captured.err == ""
 
 
 def test_collect_shell_method_state_tracks_figures_py_helpers_only_for_dependent_nodes(
@@ -3637,13 +3308,14 @@ def test_collect_shell_method_state_skips_pubify_package_modules(
     assert all("pubify-mpl" not in str(path) for path in state.imported_module_paths)
 
 
-def test_cli_build_rejects_update_and_skipupdate(repo: Path) -> None:
+def test_cli_build_rejects_update_flag(repo: Path) -> None:
     with pytest.raises(SystemExit):
-        main(["demo", "build", "--update", "--skipupdate"])
+        main(["demo", "build", "--update"])
 
 
 def test_cli_update_runs_figure_and_stat_refresh(
     repo: Path,
+    fake_pubify_mpl: FakePubifyBackend,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -3675,6 +3347,8 @@ def test_cli_update_runs_figure_and_stat_refresh(
         "- compare: updated",
         "- single: updated",
     ]
+    paper = load_publication_definition(repo, "demo")
+    assert fake_pubify_mpl.prepare_calls == [(paper.paths.tex_root, paper.config.pubify_mpl.template)]
 
 
 def test_cli_build_clear_removes_existing_build_outputs(
@@ -3738,17 +3412,6 @@ def test_init_creates_tex_tree_and_runs_prepare(repo: Path, fake_pubify_mpl: Fak
     assert paper.paths.tex_root.exists()
     assert paper.paths.autofigures_root.exists()
     assert paper.paths.build_root.exists()
-    assert fake_pubify_mpl.prepare_calls == [(paper.paths.tex_root, paper.config.pubify_mpl.template)]
-    assert (paper.paths.tex_root / "pubify.sty").exists()
-    assert (paper.paths.tex_root / "pubify-template.tex").exists()
-
-
-def test_prepare_refreshes_existing_publication(repo: Path, fake_pubify_mpl: FakePubifyBackend) -> None:
-    paper = load_publication_definition(repo, "demo")
-
-    rc = main(["demo", "prepare"])
-
-    assert rc == 0
     assert fake_pubify_mpl.prepare_calls == [(paper.paths.tex_root, paper.config.pubify_mpl.template)]
     assert (paper.paths.tex_root / "pubify.sty").exists()
     assert (paper.paths.tex_root / "pubify-template.tex").exists()
@@ -3981,7 +3644,7 @@ def test_cli_table_latex_emits_missing_autotables_input_when_needed(
     assert captured.out.startswith("\n\\input{autotables.tex}\n\\begin{table}[t]\n")
 
 
-def test_cli_table_check_validates_selected_and_all_tables(repo: Path) -> None:
+def test_cli_update_validates_tables(repo: Path) -> None:
     _write_table_paper(
         repo,
         publication_id="tablecheck",
@@ -4007,9 +3670,7 @@ def test_cli_table_check_validates_selected_and_all_tables(repo: Path) -> None:
 
     init_publication(load_publication_definition(repo, "tablecheck"))
 
-    assert main(["tablecheck", "table", "check"]) == 0
-    assert main(["tablecheck", "table", "summary", "check"]) == 0
-    assert main(["tablecheck", "check"]) == 0
+    assert main(["tablecheck", "update"]) == 0
 
 
 def test_cli_tables_alias_maps_to_table(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -5928,9 +5589,9 @@ def test_cli_normalizes_documented_short_form(
     assert main(["init", "demo"]) == 0
     init_output = capsys.readouterr().out.strip()
     assert init_output.endswith("/papers/demo")
-    rc = main(["demo", "check"])
+    rc = main(["demo", "data", "list"])
     assert rc == 0
-    assert capsys.readouterr().out.strip() == "demo: ok"
+    assert "training.npy" in capsys.readouterr().out
 
 
 def test_old_init_syntax_is_rejected() -> None:
@@ -5939,9 +5600,9 @@ def test_old_init_syntax_is_rejected() -> None:
         main(["demo", "init"])
 
 
-def test_prepare_rejects_force(repo: Path) -> None:
+def test_prepare_is_unsupported(repo: Path) -> None:
     with pytest.raises(SystemExit):
-        main(["demo", "prepare", "--force"])
+        main(["demo", "prepare"])
 
 
 def test_no_arg_invocation_prints_multiline_help_block(
@@ -5952,20 +5613,19 @@ def test_no_arg_invocation_prints_multiline_help_block(
 
     captured = capsys.readouterr()
     assert captured.out == ""
-    assert "usage: pubs [--force] [--update] [--skipupdate] [--clear] <command>" in captured.err
+    assert "usage: pubs [--force] [--clear] <command>" in captured.err
     assert "Commands:" in captured.err
     assert "  pubs list" in captured.err
     assert "  pubs init <publication-id>" in captured.err
-    assert "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]" in captured.err
-    assert "  pubs <publication-id> prepare" in captured.err
     assert "  pubs <publication-id> shell" in captured.err
-    assert "  pubs <publication-id> build [--update|--skipupdate] [--clear]" in captured.err
-    assert "  pubs <publication-id> preview" in captured.err
     assert "  pubs <publication-id> data [list|add <data-id>]" in captured.err
-    assert "  pubs <publication-id> data <loader-id> pin" in captured.err
     assert "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]" in captured.err
     assert "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]" in captured.err
-    assert "  pubs <publication-id> table [list|add <table-id>|update|check|<table-id> update|<table-id> check|<table-id> latex]" in captured.err
+    assert "  pubs <publication-id> table [list|add <table-id>|update|<table-id> update|<table-id> latex]" in captured.err
+    assert "  pubs <publication-id> update" in captured.err
+    assert "  pubs <publication-id> build [--clear]" in captured.err
+    assert "  pubs <publication-id> preview" in captured.err
+    assert "  pubs <publication-id> data <loader-id> pin" in captured.err
     assert "  pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]" in captured.err
     assert "  pubs <publication-id> diff [list|<relative-path>]" in captured.err
     assert "positional arguments:" not in captured.err
@@ -5976,7 +5636,7 @@ def test_no_arg_invocation_prints_multiline_help_block(
     )
 
 
-def test_check_reports_validation_failure_without_traceback(
+def test_build_reports_validation_failure_without_traceback(
     repo: Path,
     fake_pubify_mpl: FakePubifyBackend,
     capsys: pytest.CaptureFixture[str],
@@ -5984,7 +5644,7 @@ def test_check_reports_validation_failure_without_traceback(
     mirror_root = repo / "mirror" / "demo"
     mirror_root.rmdir()
 
-    rc = main(["demo", "check"])
+    rc = main(["demo", "build"])
 
     assert rc == 1
     captured = capsys.readouterr()
