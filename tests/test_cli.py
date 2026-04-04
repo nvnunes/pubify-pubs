@@ -14,6 +14,8 @@ import pytest
 
 from pubify_pubs.cli import build_parser, main
 import pubify_pubs.cli as core_cli
+import pubify_pubs.commands.core as commands_core
+import pubify_pubs.commands.sync as commands_sync
 import pubify_pubs.export as core_export
 import pubify_pubs.mirror as core_mirror
 import pubify_pubs.pinning as core_pinning
@@ -958,8 +960,8 @@ def test_cli_preview_opens_built_pdf(
     pdf_path.write_text("pdf", encoding="utf-8")
 
     monkeypatch.setattr(
-        core_cli,
-        "_open_publication_previews",
+        commands_core,
+        "open_publication_previews",
         lambda paths, *, backend: opened.append((list(paths), backend)),
     )
 
@@ -989,8 +991,8 @@ def test_cli_figure_preview_opens_exported_single_pdf(
     figure_path.write_text("pdf", encoding="utf-8")
 
     monkeypatch.setattr(
-        core_cli,
-        "_open_publication_previews",
+        commands_core,
+        "open_publication_previews",
         lambda paths, *, backend: opened.append((list(paths), backend)),
     )
 
@@ -1014,8 +1016,8 @@ def test_cli_figure_preview_opens_all_exported_multipanel_pdfs(
     right.write_text("pdf", encoding="utf-8")
 
     monkeypatch.setattr(
-        core_cli,
-        "_open_publication_previews",
+        commands_core,
+        "open_publication_previews",
         lambda paths, *, backend: opened.append((list(paths), backend)),
     )
 
@@ -1042,8 +1044,8 @@ def test_cli_figure_preview_opens_requested_subfigure_pdf(
     right.write_text("pdf", encoding="utf-8")
 
     monkeypatch.setattr(
-        core_cli,
-        "_open_publication_previews",
+        commands_core,
+        "open_publication_previews",
         lambda paths, *, backend: opened.append((list(paths), backend)),
     )
 
@@ -1163,8 +1165,8 @@ def test_cli_preview_uses_vscode_backend_when_configured(
     )
 
     monkeypatch.setattr(
-        core_cli,
-        "_open_publication_previews",
+        commands_core,
+        "open_publication_previews",
         lambda paths, *, backend: opened.append((list(paths), backend)),
     )
 
@@ -1195,8 +1197,8 @@ def test_cli_figure_preview_uses_vscode_backend_when_configured(
     )
 
     monkeypatch.setattr(
-        core_cli,
-        "_open_publication_previews",
+        commands_core,
+        "open_publication_previews",
         lambda paths, *, backend: opened.append((list(paths), backend)),
     )
 
@@ -1295,10 +1297,10 @@ def test_cli_shell_runs_paper_scoped_commands(
 
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    monkeypatch.setattr(commands_core, "build_publication", fake_build)
     monkeypatch.setattr(
-        core_cli,
-        "_open_publication_previews",
+        commands_core,
+        "open_publication_previews",
         lambda paths, *, backend: previewed.append((list(paths), backend)),
     )
 
@@ -2798,7 +2800,7 @@ def test_cli_build_reports_expected_error_without_traceback(
             )
         )
 
-    monkeypatch.setattr(core_cli, "build_publication", fail_build)
+    monkeypatch.setattr(commands_core, "build_publication", fail_build)
 
     assert main(["demo", "build"]) == 1
     captured = capsys.readouterr()
@@ -2814,7 +2816,7 @@ def test_cli_build_prints_pdf_output_path(
     def succeed_build(paper_definition: object) -> object:
         return None
 
-    monkeypatch.setattr(core_cli, "build_publication", succeed_build)
+    monkeypatch.setattr(commands_core, "build_publication", succeed_build)
 
     assert main(["demo", "build"]) == 0
     captured = capsys.readouterr()
@@ -2842,9 +2844,9 @@ def test_cli_build_does_not_refresh_generated_inputs(
         calls.append("build")
         return None
 
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    monkeypatch.setattr(commands_core, "run_figures", fake_run_figures)
+    monkeypatch.setattr(commands_core, "run_stat_updates", fake_run_stat_updates)
+    monkeypatch.setattr(commands_core, "build_publication", fake_build)
     init_publication(load_publication_definition(repo, "demo"))
 
     assert main(["demo", "build"]) == 0
@@ -2871,9 +2873,9 @@ def test_cli_build_does_not_refresh_when_outputs_are_stale_or_missing(
         calls.append("stats")
         return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
 
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
+    monkeypatch.setattr(commands_core, "build_publication", fake_build)
+    monkeypatch.setattr(commands_core, "run_figures", fake_run_figures)
+    monkeypatch.setattr(commands_core, "run_stat_updates", fake_run_stat_updates)
 
     paper = load_publication_definition(repo, "demo")
     init_publication(paper)
@@ -2929,7 +2931,7 @@ def test_cli_shell_build_does_not_refresh_generated_outputs(
 
     monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    monkeypatch.setattr(commands_core, "build_publication", fake_build)
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
@@ -2976,7 +2978,7 @@ def test_cli_shell_build_after_update_still_only_builds(
 
     monkeypatch.setattr("builtins.input", lambda prompt: next(commands))
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    monkeypatch.setattr(commands_core, "build_publication", fake_build)
 
     assert main(["demo", "shell"]) == 0
     capsys.readouterr()
@@ -3045,7 +3047,7 @@ def test_cli_shell_build_reloads_publication_when_imported_module_changes(
 
     monkeypatch.setattr("builtins.input", fake_input)
     monkeypatch.setattr(core_cli, "_configure_shell_readline", lambda: None)
-    monkeypatch.setattr(core_cli, "build_publication", lambda publication: None)
+    monkeypatch.setattr(commands_core, "build_publication", lambda publication: None)
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
@@ -3329,8 +3331,8 @@ def test_cli_update_runs_figure_and_stat_refresh(
         calls.append("stat")
         return (repo / "papers" / "demo" / "tex" / "autostats.tex", ())
 
-    monkeypatch.setattr(core_cli, "run_figures", fake_run_figures)
-    monkeypatch.setattr(core_cli, "_run_stat_updates", fake_run_stat_updates)
+    monkeypatch.setattr(commands_core, "run_figures", fake_run_figures)
+    monkeypatch.setattr(commands_core, "run_stat_updates", fake_run_stat_updates)
 
     assert main(["demo", "update"]) == 0
     captured = capsys.readouterr()
@@ -3362,7 +3364,7 @@ def test_cli_build_clear_removes_existing_build_outputs(
         calls.append("build")
         return None
 
-    monkeypatch.setattr(core_cli, "build_publication", fake_build)
+    monkeypatch.setattr(commands_core, "build_publication", fake_build)
 
     paper = load_publication_definition(repo, "demo")
     paper.paths.build_root.mkdir(parents=True, exist_ok=True)
@@ -5141,7 +5143,7 @@ def test_cli_diff_list_and_single_path(
     (paper.paths.sync_base_root / "main.tex").parent.mkdir(parents=True, exist_ok=True)
     (paper.paths.sync_base_root / "main.tex").write_text("baseline\n", encoding="utf-8")
     launched: list[str] = []
-    monkeypatch.setattr(core_cli, "merge_conflicting_file", lambda paper, path: launched.append(path))
+    monkeypatch.setattr(commands_sync, "merge_conflicting_file", lambda paper, path: launched.append(path))
     monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(core_cli.sys.stdin, "isatty", lambda: True)
 
@@ -5211,7 +5213,7 @@ def test_cli_diff_colors_status_only_on_tty(
     (paper.paths.sync_base_root / "main.tex").write_text("baseline\n", encoding="utf-8")
     monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: True)
     monkeypatch.setattr(core_cli.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(core_cli, "merge_conflicting_file", lambda paper, path: None)
+    monkeypatch.setattr(commands_sync, "merge_conflicting_file", lambda paper, path: None)
 
     assert main(["demo", "diff", "main.tex"]) == 0
     output = capsys.readouterr().out
@@ -5246,7 +5248,7 @@ def test_cli_diff_emits_no_color_when_not_tty(
     (paper.paths.sync_base_root / "main.tex").parent.mkdir(parents=True, exist_ok=True)
     (paper.paths.sync_base_root / "main.tex").write_text("baseline\n", encoding="utf-8")
     monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: False)
-    monkeypatch.setattr(core_cli, "merge_conflicting_file", lambda paper, path: None)
+    monkeypatch.setattr(commands_sync, "merge_conflicting_file", lambda paper, path: None)
 
     assert main(["demo", "diff", "main.tex"]) == 0
     output = capsys.readouterr().out
@@ -5310,7 +5312,7 @@ def test_cli_conflicting_diff_path_does_not_launch_kdiff3_when_not_tty(
         nonlocal called
         called = True
 
-    monkeypatch.setattr(core_cli, "merge_conflicting_file", fail_merge)
+    monkeypatch.setattr(commands_sync, "merge_conflicting_file", fail_merge)
     monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: False)
     monkeypatch.setattr(core_cli.sys.stdin, "isatty", lambda: False)
 
@@ -5491,7 +5493,7 @@ def test_non_conflicting_diff_path_does_not_launch_kdiff3(
         nonlocal called
         called = True
 
-    monkeypatch.setattr(core_cli, "merge_conflicting_file", fail_merge)
+    monkeypatch.setattr(commands_sync, "merge_conflicting_file", fail_merge)
 
     assert main(["demo", "diff", "sections/intro.tex"]) == 0
     output = capsys.readouterr().out

@@ -10,6 +10,8 @@ import subprocess
 import shlex
 import sys
 
+from pubify_pubs.commands import run_publication_command as _dispatch_publication_command
+from pubify_pubs.commands.registry import build_cli_description, build_shell_help_text
 from pubify_pubs.export import close_figure_export_sources
 from pubify_pubs.config import add_sync_exclude, load_workspace_config
 from pubify_pubs.discovery import (
@@ -233,26 +235,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pubs",
         usage="pubs [--force] [--clear] <command>",
-        description=(
-            "Commands:\n"
-            "  pubs list\n"
-            "  pubs init <publication-id>\n"
-            "\n"
-            "  pubs <publication-id> shell\n"
-            "  pubs <publication-id> data [list|add <data-id>]\n"
-            "  pubs <publication-id> data <loader-id> pin\n"
-            "  pubs <publication-id> figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]\n"
-            "  pubs <publication-id> stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]\n"
-            "  pubs <publication-id> table [list|add <table-id>|update|<table-id> update|<table-id> latex]\n"
-            "  pubs <publication-id> update\n"
-            "  pubs <publication-id> build [--clear]\n"
-            "  pubs <publication-id> preview\n"
-            "  pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]\n"
-            "  pubs <publication-id> ignore <relative-path>\n"
-            "  pubs <publication-id> push [--force]\n"
-            "  pubs <publication-id> pull [--force]\n"
-            "  pubs <publication-id> diff [list|<relative-path>]"
-        ),
+        description=build_cli_description(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("subject", nargs="?", help=argparse.SUPPRESS)
@@ -344,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
             clear_build=args.clear_build,
         )
-        return _run_publication_command(
+        return _dispatch_publication_command(
             publication,
             publication_command,
             error=parser.error,
@@ -945,7 +928,7 @@ def run_publication_shell(
                     )
                 if publication_command.command in {"update", "build"}:
                     print()
-                _run_publication_command(
+                _dispatch_publication_command(
                     session.publication,
                     publication_command,
                     error=_raise_value_error,
@@ -954,7 +937,6 @@ def run_publication_shell(
                     loader_cache=session.loader_cache,
                     pending_data_output=session.pending_data_output,
                     shell_session=session,
-                        imported_modules_changed=reload_result.imported_modules_changed,
                     )
             except UserCodeExecutionError as exc:
                 _print_indented_lines(exc.lines, stream=sys.stderr)
@@ -1155,26 +1137,7 @@ def _reload_session_publication(
 
 
 def _shell_help_text(publication_id: str) -> str:
-    return "\n".join(
-        [
-            f"Shell commands for {publication_id}:",
-            "  data [list|add <data-id>]",
-            "  data <loader-id> pin",
-            "  figure [list|add <figure-id>|update|<figure-id> update|<figure-id> preview [<subfig-idx>]|<figure-id> latex [subcaption]]",
-            "  stat [list|add <stat-id>|update|<stat-id> update|<stat-id> latex]",
-            "  table [list|add <table-id>|update|<table-id> update|<table-id> latex]",
-            "  update",
-            "  build [--clear]",
-            "  preview",
-            "  version [list|create [note]|diff <version-id> [<version-id>]]",
-            "  ignore <relative-path>",
-            "  push [--force]",
-            "  pull [--force]",
-            "  diff [list|<relative-path>]",
-            "  help",
-            "  quit",
-        ]
-    )
+    return build_shell_help_text(publication_id)
 
 
 class _ShellArgumentParser(argparse.ArgumentParser):
