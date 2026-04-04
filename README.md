@@ -2,7 +2,7 @@
 
 `pubify-pubs` is a local-first publication workflow package built around `pubify-mpl`.
 
-It is meant for host workspaces that keep publications, publication-local TeX sources, and pinned inputs under version control, while the package owns the workflow around publication discovery, figure export, LaTeX builds, publication bootstrapping, and a small set of optional advanced workflows such as version snapshots, conservative mirror sync, and data pinning.
+It is meant for host workspaces that keep publications, publication-local TeX sources, and pinned inputs under version control, while the package owns the workflow around publication discovery, figure export, LaTeX builds, publication bootstrapping, and a small set of optional advanced workflows such as conservative mirror sync and data pinning.
 
 This package does not own your publications. A host workspace does.
 
@@ -136,7 +136,6 @@ papers/<publication-id>/
 4. Run `pubs <publication-id> build` to validate and compile the publication.
 5. Use `pubs <publication-id> preview` or `pubs <publication-id> figure <figure-id> preview` while iterating.
 6. Use the optional advanced workflows only when needed:
-   - version snapshots and redline diffs: see [`docs/versions.md`](docs/versions.md)
    - conservative mirror sync: see [`docs/sync.md`](docs/sync.md)
    - data pinning: see [`docs/pinning.md`](docs/pinning.md)
 
@@ -276,7 +275,6 @@ Publication commands:
 
 Optional advanced workflows:
 
-- `pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]`
 - `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> ignore <relative-path>`
 - `pubs <publication-id> push [--force]`
@@ -291,7 +289,6 @@ The `latex` commands are read-only convenience helpers. They never edit manuscri
 
 See the dedicated docs for the deferred workflows:
 
-- versions and redline diffs: [`docs/versions.md`](docs/versions.md)
 - mirror sync: [`docs/sync.md`](docs/sync.md)
 - data pinning: [`docs/pinning.md`](docs/pinning.md)
 

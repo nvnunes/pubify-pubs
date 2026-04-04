@@ -21,7 +21,6 @@ import pubify_pubs.mirror as core_mirror
 import pubify_pubs.pinning as core_pinning
 import pubify_pubs.runtime as core_runtime
 import pubify_pubs.shell_incremental as core_shell_incremental
-import pubify_pubs.versioning as core_versioning
 from pubify_pubs.data import load_publication_data_npz, publication_data_path, save_publication_data_npz
 from pubify_pubs import TableResult
 from pubify_pubs.decorators import data, external_data, figure, stat, table

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pubify_pubs.discovery import PublicationDefinition
 
 from pubify_pubs.commands.common import PublicationCommand, PublicationShellSession
-from pubify_pubs.commands import core, pinning, sync, versions
+from pubify_pubs.commands import core, pinning, sync
 
 
 def run_publication_command(
@@ -31,9 +31,6 @@ def run_publication_command(
         pending_data_output=pending_data_output,
         shell_session=shell_session,
     )
-    if result is not None:
-        return result
-    result = versions.handle_command(publication, command, error=error)
     if result is not None:
         return result
     result = sync.handle_command(

@@ -118,7 +118,6 @@ That creates a minimal publication skeleton and installs package-owned support f
 4. Run `pubs <publication-id> build` to validate and compile the publication.
 5. Use `pubs <publication-id> preview` or `pubs <publication-id> figure <figure-id> preview` while iterating.
 6. Use the advanced workflows only when needed:
-   - versions and redline diffs: [Versions](versions.md)
    - conservative mirror sync: [Sync](sync.md)
    - data pinning: [Pinning](pinning.md)
 
@@ -248,7 +247,6 @@ Publication commands:
 
 Advanced workflows:
 
-- `pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]`
 - `pubs <publication-id> data <loader-id> pin`
 - `pubs <publication-id> ignore <relative-path>`
 - `pubs <publication-id> push [--force]`
@@ -263,7 +261,6 @@ The `latex` commands are read-only convenience helpers. They never edit manuscri
 
 See the dedicated pages for the deferred workflows:
 
-- [Versions](versions.md)
 - [Sync](sync.md)
 - [Pinning](pinning.md)
 

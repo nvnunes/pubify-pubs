@@ -4,7 +4,6 @@ theme:
   name: mkdocs
 nav:
   - Home: index.md
-  - Versions: versions.md
   - Sync: sync.md
   - Pinning: pinning.md
   - API Reference: api.md

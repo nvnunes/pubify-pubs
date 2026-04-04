@@ -17,7 +17,6 @@ CORE_PUBLICATION_COMMANDS = (
 )
 
 DEFERRED_PUBLICATION_COMMANDS = (
-    "  pubs <publication-id> version [list|create [note]|diff <version-id> [<version-id>]]",
     "  pubs <publication-id> data <loader-id> pin",
     "  pubs <publication-id> ignore <relative-path>",
     "  pubs <publication-id> push [--force]",
@@ -36,7 +35,6 @@ CORE_SHELL_COMMANDS = (
 )
 
 DEFERRED_SHELL_COMMANDS = (
-    "  version [list|create [note]|diff <version-id> [<version-id>]]",
     "  data <loader-id> pin",
     "  ignore <relative-path>",
     "  push [--force]",
@@ -66,4 +64,3 @@ def build_shell_help_text(publication_id: str) -> str:
             "  quit",
         ]
     )
-
