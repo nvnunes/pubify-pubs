@@ -6,6 +6,8 @@ It is meant for host workspaces that keep publications, publication-local TeX so
 
 This package does not own your publications. A host workspace does.
 
+See [CHANGELOG.md](https://github.com/nvnunes/pubify-pubs/blob/main/CHANGELOG.md) for release history and user-visible changes, and [CONTRIBUTING.md](https://github.com/nvnunes/pubify-pubs/blob/main/CONTRIBUTING.md) for contributor and release workflow guidance.
+
 ## Requirements
 
 - Python 3.10+
