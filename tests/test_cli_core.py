@@ -16,7 +16,6 @@ from pubify_pubs.cli import build_parser, main
 import pubify_pubs.cli as core_cli
 import pubify_pubs.commands.core as commands_core
 import pubify_pubs.export as core_export
-import pubify_pubs.pinning as core_pinning
 import pubify_pubs.runtime as core_runtime
 import pubify_pubs.shell_incremental as core_shell_incremental
 from pubify_pubs.data import load_publication_data_npz, publication_data_path, save_publication_data_npz

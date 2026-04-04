@@ -27,7 +27,6 @@ from pubify_pubs.latex_bootstrap import (
     render_stat_latex,
     render_table_latex,
 )
-from pubify_pubs.pinning import pin_loader
 from pubify_pubs.runtime import (
     RunContext,
     UserCodeExecutionError,
@@ -453,14 +452,7 @@ def _run_publication_command(
             _add_publication_stub(publication, kind="data", stub_id=command.arg4)
             _print_added_stub("Data", command.arg4, use_color=use_color)
             return 0
-        if command.arg3 is None or command.arg4 != "pin":
-            error("data supports only 'list', 'add <data-id>', or '<loader-id> pin'")
-        result = pin_loader(publication, command.arg3)
-        print(f"{publication.publication_id}: pinned loader {result.loader_id}")
-        for path in result.copied_paths:
-            print(path)
-        print(result.decorator_summary)
-        return 0
+        error("data supports only 'list' or 'add <data-id>'")
 
     if command.command == "figure":
         _reject_build_flags_from_command(command, error)

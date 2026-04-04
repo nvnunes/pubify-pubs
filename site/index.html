@@ -39,9 +39,6 @@
                                 <a href="." class="nav-link active" aria-current="page">Home</a>
                             </li>
                             <li class="nav-item">
-                                <a href="pinning/" class="nav-link">Pinning</a>
-                            </li>
-                            <li class="nav-item">
                                 <a href="api/" class="nav-link">API Reference</a>
                             </li>
                         </ul>
@@ -58,7 +55,7 @@
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a rel="next" href="pinning/" class="nav-link">
+                                <a rel="next" href="api/" class="nav-link">
                                     Next <i class="fa fa-arrow-right"></i>
                                 </a>
                             </li>
@@ -222,8 +219,6 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <li>Run <code>pubs &lt;publication-id&gt; update</code> to refresh package-owned TeX support files, validate the publication definition, and regenerate figures, stats, and tables.</li>
 <li>Run <code>pubs &lt;publication-id&gt; build</code> to validate and compile the publication.</li>
 <li>Use <code>pubs &lt;publication-id&gt; preview</code> or <code>pubs &lt;publication-id&gt; figure &lt;figure-id&gt; preview</code> while iterating.</li>
-<li>Use the advanced workflows only when needed:</li>
-<li>data pinning: <a href="pinning/">Pinning</a></li>
 </ol>
 <p>To scaffold starter entrypoints directly into <code>figures.py</code>:</p>
 <ul>
@@ -327,16 +322,9 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <li><code>pubs &lt;publication-id&gt; preview</code></li>
 </ul>
 <p>Advanced workflows:</p>
-<ul>
-<li><code>pubs &lt;publication-id&gt; data &lt;loader-id&gt; pin</code></li>
-</ul>
 <p><code>update</code> refreshes package-owned TeX support files, validates the publication definition, and regenerates figures, stats, and tables. <code>build</code> refreshes package-owned TeX support files, validates the publication definition, and then compiles the current TeX tree; it does not regenerate figures, stats, or tables, so run <code>update</code> first when generated outputs need refreshing.</p>
 <p><code>tables</code> is an alias for <code>table</code> in both the CLI and the publication shell.</p>
 <p>The <code>latex</code> commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. <code>tex</code> is accepted as an alias for <code>latex</code>.</p>
-<p>See the dedicated pages for the deferred workflows:</p>
-<ul>
-<li><a href="pinning/">Pinning</a></li>
-</ul>
 <h2 id="python-api">Python API</h2>
 <p>The public Python API is intentionally small.</p>
 <p>Primary entrypoints:</p>
@@ -431,5 +419,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-04-04 12:26:20.020396+00:00
+Build Date UTC : 2026-04-04 12:27:46.764593+00:00
 -->

@@ -2,7 +2,7 @@
 
 `pubify-pubs` is a local-first publication workflow package built around `pubify-mpl`.
 
-It is meant for host workspaces that keep publications, publication-local TeX sources, and pinned inputs under version control, while the package owns the workflow around publication discovery, figure export, LaTeX builds, publication bootstrapping, and a small set of optional advanced workflows such as data pinning.
+It is meant for host workspaces that keep publications, publication-local TeX sources, and pinned inputs under version control, while the package owns the workflow around publication discovery, figure export, LaTeX builds, and publication bootstrapping.
 
 This package does not own your publications. A host workspace does.
 
@@ -135,8 +135,6 @@ papers/<publication-id>/
 3. Run `pubs <publication-id> update` to refresh package-owned TeX support files, validate the publication definition, and regenerate figures, stats, and tables.
 4. Run `pubs <publication-id> build` to validate and compile the publication.
 5. Use `pubs <publication-id> preview` or `pubs <publication-id> figure <figure-id> preview` while iterating.
-6. Use the optional advanced workflows only when needed:
-   - data pinning: see [`docs/pinning.md`](docs/pinning.md)
 
 To scaffold starter entrypoints directly into `figures.py`:
 
@@ -274,17 +272,11 @@ Publication commands:
 
 Optional advanced workflows:
 
-- `pubs <publication-id> data <loader-id> pin`
-
 `update` refreshes package-owned TeX support files, validates the publication definition, and regenerates figures, stats, and tables. `build` refreshes package-owned TeX support files, validates the publication definition, and then compiles the current TeX tree; it does not regenerate figures, stats, or tables, so run `update` first when generated outputs need refreshing.
 
 `tables` is an alias for `table` in both the CLI and the publication shell.
 
 The `latex` commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. `tex` is accepted as an alias for `latex`.
-
-See the dedicated docs for the deferred workflows:
-
-- data pinning: [`docs/pinning.md`](docs/pinning.md)
 
 ## Development
 

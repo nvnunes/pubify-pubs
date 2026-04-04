@@ -17,7 +17,6 @@ CORE_PUBLICATION_COMMANDS = (
 )
 
 DEFERRED_PUBLICATION_COMMANDS = (
-    "  pubs <publication-id> data <loader-id> pin",
 )
 
 CORE_SHELL_COMMANDS = (
@@ -31,7 +30,6 @@ CORE_SHELL_COMMANDS = (
 )
 
 DEFERRED_SHELL_COMMANDS = (
-    "  data <loader-id> pin",
 )
 
 

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pubify_pubs.discovery import PublicationDefinition
 
 from pubify_pubs.commands.common import PublicationCommand, PublicationShellSession
-from pubify_pubs.commands import core, pinning
+from pubify_pubs.commands import core
 
 
 def run_publication_command(
@@ -18,9 +18,6 @@ def run_publication_command(
     pending_data_output: dict[str, list[str]] | None = None,
     shell_session: PublicationShellSession | None = None,
 ) -> int:
-    result = pinning.handle_command(publication, command, error=error)
-    if result is not None:
-        return result
     result = core.handle_command(
         publication,
         command,
