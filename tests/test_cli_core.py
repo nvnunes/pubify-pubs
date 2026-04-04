@@ -15,9 +15,7 @@ from conftest import FakePubifyBackend, FakeReadline, _hash_text, _strip_ansi, _
 from pubify_pubs.cli import build_parser, main
 import pubify_pubs.cli as core_cli
 import pubify_pubs.commands.core as commands_core
-import pubify_pubs.commands.sync as commands_sync
 import pubify_pubs.export as core_export
-import pubify_pubs.mirror as core_mirror
 import pubify_pubs.pinning as core_pinning
 import pubify_pubs.runtime as core_runtime
 import pubify_pubs.shell_incremental as core_shell_incremental
@@ -25,7 +23,6 @@ from pubify_pubs.data import load_publication_data_npz, publication_data_path, s
 from pubify_pubs import TableResult
 from pubify_pubs.decorators import data, external_data, figure, stat, table
 from pubify_pubs.discovery import find_workspace_root, list_publication_ids, load_publication_definition
-from pubify_pubs.mirror import diff_publication, pull_publication, push_publication
 from pubify_pubs.runtime import (
     UserCodeExecutionError,
     build_publication,
@@ -930,7 +927,7 @@ def test_cli_shell_runs_paper_scoped_commands(
 ) -> None:
     init_publication(load_publication_definition(repo, "demo"))
     prompts: list[str] = []
-    commands = iter(["data list", "figure single update", "figure single preview 1", "diff list", "update", "build", "preview", "quit"])
+    commands = iter(["data list", "figure single update", "figure single preview 1", "update", "build", "preview", "quit"])
 
     def fake_input(prompt: str) -> str:
         prompts.append(prompt)
@@ -955,12 +952,11 @@ def test_cli_shell_runs_paper_scoped_commands(
 
     assert main(["demo", "shell"]) == 0
     captured = capsys.readouterr()
-    assert prompts == ["demo> "] * 8
+    assert prompts == ["demo> "] * 7
     assert "pinned   training   training.npy" in captured.out
     assert "tex/autofigures/single.pdf" in captured.out
     assert "pinned   " in captured.out
     assert "training_summary" in captured.out
-    assert "main.tex" in captured.out
     assert str(repo / "papers" / "demo" / "tex" / "build" / "main.pdf") in captured.out
     assert previewed == [
         ([repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"], "preview"),
@@ -3640,51 +3636,3 @@ def test_build_failure_ignores_package_info_and_reports_real_error(repo: Path) -
     text = str(exc_info.value)
     assert "LaTeX error: LaTeX Error: File `missing.sty' not found." in text
     assert "microtype Info" not in text
-
-def test_ignored_files_are_untouched_by_sync(repo: Path) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (mirror_root / "drafts").mkdir(parents=True, exist_ok=True)
-    (mirror_root / "drafts" / "note.txt").write_text("mirror ignored\n", encoding="utf-8")
-    push_publication(paper)
-    assert (mirror_root / "drafts" / "note.txt").read_text(encoding="utf-8") == "mirror ignored\n"
-    pull_publication(paper)
-    assert (paper.paths.tex_root / "drafts" / "note.txt").read_text(encoding="utf-8") == "skip\n"
-
-def test_cli_conflicting_diff_path_does_not_launch_kdiff3_when_not_tty(
-    repo: Path,
-    capsys: pytest.CaptureFixture[str],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    paper = load_publication_definition(repo, "demo")
-    mirror_root = paper.config.mirror_root_path
-    assert mirror_root is not None
-    (paper.paths.tex_root / "main.tex").write_text("local changed\n", encoding="utf-8")
-    (mirror_root / "main.tex").write_text("mirror changed\n", encoding="utf-8")
-    manifest = "\n".join(
-        [
-            "files:",
-            f"  main.tex: {_hash_text('baseline\n')}",
-        ]
-    ) + "\n"
-    (paper.paths.tex_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (mirror_root / ".pubs-sync.yaml").write_text(manifest, encoding="utf-8")
-    (paper.paths.sync_base_root / "main.tex").parent.mkdir(parents=True, exist_ok=True)
-    (paper.paths.sync_base_root / "main.tex").write_text("baseline\n", encoding="utf-8")
-    called = False
-
-    def fail_merge(paper: object, path: str) -> None:
-        nonlocal called
-        called = True
-
-    monkeypatch.setattr(commands_sync, "merge_conflicting_file", fail_merge)
-    monkeypatch.setattr(core_cli.sys.stdout, "isatty", lambda: False)
-    monkeypatch.setattr(core_cli.sys.stdin, "isatty", lambda: False)
-
-    assert main(["demo", "diff", "main.tex"]) == 0
-    output = capsys.readouterr().out
-
-    assert called is False
-    assert output.startswith("conflicting    main.tex")
-    assert "local/main.tex" in output

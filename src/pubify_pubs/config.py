@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 from importlib import resources
 from pathlib import Path
 import ast
-import json
 
 from pubify_mpl import DEFAULT_TEMPLATE as PUBIFY_DEFAULT_TEMPLATE
 from pubify_pubs.stubs import render_init_figures_module
@@ -196,33 +195,6 @@ def write_skeleton_main_tex(path: Path) -> None:
     path.write_text(_load_init_asset_text("main.tex"), encoding="utf-8")
 
 
-def add_sync_exclude(path: Path, relative_path: str) -> bool:
-    """Append one exact ``sync_excludes`` entry to ``pub.yaml`` if needed."""
-
-    text = path.read_text(encoding="utf-8")
-    raw = _parse_simple_yaml(text)
-    sync_excludes = raw.get("sync_excludes", [])
-    if not isinstance(sync_excludes, list) or not all(isinstance(item, str) for item in sync_excludes):
-        raise ValueError(f"{path}: sync_excludes must be a list of strings")
-    if relative_path in sync_excludes:
-        return False
-
-    lines = text.splitlines()
-    insert_lines = [f"  - {_yaml_quote_scalar(relative_path)}"]
-    key_index = _find_top_level_key(lines, "sync_excludes")
-    if key_index is None:
-        if lines and lines[-1].strip():
-            lines.append("")
-        lines.append("sync_excludes:")
-        lines.extend(insert_lines)
-    else:
-        insert_at = _sync_excludes_insert_index(lines, key_index)
-        lines[insert_at:insert_at] = insert_lines
-
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    return True
-
-
 def dump_sync_state(file_hashes: dict[str, str]) -> str:
     """Serialize the sync manifest stored in local and mirror TeX trees."""
 
@@ -270,35 +242,6 @@ def load_sync_state(path: Path) -> dict[str, str]:
             raise ValueError(f"{path}: sync manifest hash for {rel_path!r} must be a non-empty string")
         manifest[rel_path] = digest
     return manifest
-
-
-def _find_top_level_key(lines: list[str], key: str) -> int | None:
-    needle = f"{key}:"
-    for index, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("#"):
-            continue
-        if line == stripped and stripped == needle:
-            return index
-    return None
-
-
-def _sync_excludes_insert_index(lines: list[str], key_index: int) -> int:
-    index = key_index + 1
-    while index < len(lines):
-        stripped = lines[index].strip()
-        if not stripped or stripped.startswith("#"):
-            index += 1
-            continue
-        indent = len(lines[index]) - len(lines[index].lstrip(" "))
-        if indent == 0:
-            break
-        index += 1
-    return index
-
-
-def _yaml_quote_scalar(value: str) -> str:
-    return json.dumps(value)
 
 
 def _require_workspace_relative_root(

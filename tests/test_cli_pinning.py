@@ -15,9 +15,7 @@ from conftest import FakePubifyBackend, FakeReadline, _hash_text, _strip_ansi, _
 from pubify_pubs.cli import build_parser, main
 import pubify_pubs.cli as core_cli
 import pubify_pubs.commands.core as commands_core
-import pubify_pubs.commands.sync as commands_sync
 import pubify_pubs.export as core_export
-import pubify_pubs.mirror as core_mirror
 import pubify_pubs.pinning as core_pinning
 import pubify_pubs.runtime as core_runtime
 import pubify_pubs.shell_incremental as core_shell_incremental
@@ -25,7 +23,6 @@ from pubify_pubs.data import load_publication_data_npz, publication_data_path, s
 from pubify_pubs import TableResult
 from pubify_pubs.decorators import data, external_data, figure, stat, table
 from pubify_pubs.discovery import find_workspace_root, list_publication_ids, load_publication_definition
-from pubify_pubs.mirror import diff_publication, pull_publication, push_publication
 from pubify_pubs.runtime import (
     UserCodeExecutionError,
     build_publication,

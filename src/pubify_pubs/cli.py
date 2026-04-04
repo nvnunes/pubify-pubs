@@ -12,7 +12,7 @@ import sys
 from pubify_pubs.commands import run_publication_command as _dispatch_publication_command
 from pubify_pubs.commands.registry import build_cli_description, build_shell_help_text
 from pubify_pubs.export import close_figure_export_sources
-from pubify_pubs.config import add_sync_exclude, load_workspace_config
+from pubify_pubs.config import load_workspace_config
 from pubify_pubs.discovery import (
     PublicationDefinition,
     PublicationPaths,
@@ -27,7 +27,6 @@ from pubify_pubs.latex_bootstrap import (
     render_stat_latex,
     render_table_latex,
 )
-from pubify_pubs.mirror import diff_publication, merge_conflicting_file, pull_publication, push_publication
 from pubify_pubs.pinning import pin_loader
 from pubify_pubs.runtime import (
     RunContext,
@@ -323,7 +322,6 @@ def main(argv: list[str] | None = None) -> int:
             publication_command,
             error=parser.error,
             use_color=sys.stdout.isatty(),
-            use_interactive_merge=sys.stdout.isatty() and sys.stdin.isatty(),
         )
 
         parser.error(f"Unsupported command: {command}")
@@ -405,7 +403,6 @@ def _run_publication_command(
     *,
     error: Callable[[str], None],
     use_color: bool,
-    use_interactive_merge: bool,
     loader_cache: dict[str, object] | None = None,
     pending_data_output: dict[str, list[str]] | None = None,
     shell_session: PublicationShellSession | None = None,
@@ -425,25 +422,6 @@ def _run_publication_command(
             shell_session=shell_session,
             refresh_support=True,
         )
-        return 0
-
-    if command.command == "ignore":
-        _reject_build_flags_from_command(command, error)
-        if command.force:
-            error("ignore does not accept --force")
-        if command.arg3 is None:
-            error("ignore requires <relative-path>")
-        if command.arg4 is not None:
-            error("ignore accepts only <relative-path>")
-        relative_path = _parse_ignore_path(command.arg3)
-        config_path = publication.paths.config_path
-        if not config_path.exists():
-            raise FileNotFoundError(f"Missing publication config: {config_path}")
-        added = add_sync_exclude(config_path, relative_path)
-        if added:
-            print(f"{publication.publication_id}: added sync ignore {relative_path}")
-        else:
-            print(f"{publication.publication_id}: sync ignore already present {relative_path}")
         return 0
 
     if command.command == "data":
@@ -735,44 +713,6 @@ def _run_publication_command(
         print(pdf_path)
         return 0
 
-    if command.command == "push":
-        _reject_build_flags_from_command(command, error)
-        force = _parse_force_flag_value(command.command, command.arg3, command.arg4, command.force, error)
-        result = push_publication(publication, force=force)
-        for path in result.forced_paths:
-            print(f"Forced overwrite: {path}", file=sys.stderr)
-        print(f"{publication.publication_id}: pushed")
-        return 0
-
-    if command.command == "pull":
-        _reject_build_flags_from_command(command, error)
-        force = _parse_force_flag_value(command.command, command.arg3, command.arg4, command.force, error)
-        result = pull_publication(publication, force=force)
-        for warning in result.warnings:
-            print(f"Warning: {warning}", file=sys.stderr)
-        for path in result.forced_paths:
-            print(f"Forced overwrite: {path}", file=sys.stderr)
-        print(f"{publication.publication_id}: pulled")
-        return 0
-
-    if command.command == "diff":
-        _reject_build_flags_from_command(command, error)
-        if command.force:
-            error("diff does not accept --force")
-        if command.arg4 is not None:
-            error("diff accepts at most one optional selector")
-        summary_only = command.arg3 == "list"
-        rel_path = None if summary_only else command.arg3
-        entries = diff_publication(publication, rel_path)
-        for entry in entries:
-            print(_render_status_line(entry.status, entry.path, use_color=use_color))
-            if use_interactive_merge and rel_path is not None and entry.status == "conflicting":
-                merge_conflicting_file(publication, entry.path)
-                continue
-            if not summary_only and entry.diff:
-                print(entry.diff)
-        return 0
-
     error(f"unsupported command '{command.command}'")
     return 2
 
@@ -883,7 +823,6 @@ def run_publication_shell(
                     publication_command,
                     error=_raise_value_error,
                     use_color=sys.stdout.isatty(),
-                    use_interactive_merge=sys.stdout.isatty() and sys.stdin.isatty(),
                     loader_cache=session.loader_cache,
                     pending_data_output=session.pending_data_output,
                     shell_session=session,
@@ -1701,34 +1640,6 @@ def _build_refresh_loader_ids(publication: PublicationDefinition) -> tuple[str, 
     loader_ids.update(_stat_loader_ids(publication))
     loader_ids.update(_table_loader_ids(publication))
     return tuple(sorted(loader_ids))
-
-
-def _parse_force_flag_value(
-    command: str,
-    arg3: str | None,
-    arg4: str | None,
-    force_flag: bool,
-    error: Callable[[str], None],
-) -> bool:
-    values = [value for value in (arg3, arg4) if value is not None]
-    if values:
-        error(f"{command} accepts only optional --force")
-    return bool(force_flag)
-
-
-def _parse_ignore_path(value: str) -> str:
-    if not value or not value.strip():
-        raise ValueError("ignore path must be a non-empty path relative to tex/")
-    if any(char in value for char in "*?[]"):
-        raise ValueError("ignore path must be an exact relative path, not a glob pattern")
-    if Path(value).is_absolute():
-        raise ValueError(f"ignore path must be relative to tex/: {value}")
-    path = Path(value)
-    if any(part == ".." for part in path.parts):
-        raise ValueError(f"ignore path must stay under tex/: {value}")
-    if path.as_posix() in {"", "."}:
-        raise ValueError("ignore path must be a non-empty path relative to tex/")
-    return value
 
 
 def _open_publication_previews(paths: list[Path], *, backend: str) -> None:

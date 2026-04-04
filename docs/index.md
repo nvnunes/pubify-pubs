@@ -118,7 +118,6 @@ That creates a minimal publication skeleton and installs package-owned support f
 4. Run `pubs <publication-id> build` to validate and compile the publication.
 5. Use `pubs <publication-id> preview` or `pubs <publication-id> figure <figure-id> preview` while iterating.
 6. Use the advanced workflows only when needed:
-   - conservative mirror sync: [Sync](sync.md)
    - data pinning: [Pinning](pinning.md)
 
 To scaffold starter entrypoints directly into `figures.py`:
@@ -248,10 +247,6 @@ Publication commands:
 Advanced workflows:
 
 - `pubs <publication-id> data <loader-id> pin`
-- `pubs <publication-id> ignore <relative-path>`
-- `pubs <publication-id> push [--force]`
-- `pubs <publication-id> pull [--force]`
-- `pubs <publication-id> diff [list|<relative-path>]`
 
 `update` refreshes package-owned TeX support files, validates the publication definition, and regenerates figures, stats, and tables. `build` refreshes package-owned TeX support files, validates the publication definition, and then compiles the current TeX tree; it does not regenerate figures, stats, or tables, so run `update` first when generated outputs need refreshing.
 
@@ -261,7 +256,6 @@ The `latex` commands are read-only convenience helpers. They never edit manuscri
 
 See the dedicated pages for the deferred workflows:
 
-- [Sync](sync.md)
 - [Pinning](pinning.md)
 
 ## Python API
