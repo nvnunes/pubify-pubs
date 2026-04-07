@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+- Added bare `pubs init` to bootstrap a workspace with the default `pubify.yaml` config.
+- Switched the workspace config filename from `pubify.conf` to `pubify.yaml`.
+- Made freshly initialized publications build without requiring generated figures, stats, or tables first.
+
 ## 1.0.0
 
 - Initial public release of `pubify-pubs`.
