@@ -1,25 +1,12 @@
 \documentclass{article}
 \usepackage{pubify}
 \begin{document}
-\input{autostats.tex}
-\input{autotables.tex}
 
-\figfloat
-    {\figone{autofigures/example}}
-    [Example generated figure with \StatExampleCount{} points and mean y value \StatExampleMean{}.]
-    [fig:example]
+\section*{Overview}
 
-\begin{table}[t]
-\centering
-\begin{tabular}{lc}
-\hline
-x & y \\
-\hline
-\TableExample
-\hline
-\end{tabular}
-\caption{Example generated table.}
-\label{tab:example}
-\end{table}
+This is a minimal publication scaffold created by \texttt{pubs init}.
+
+Add manuscript content here, then run \texttt{pubs <publication-id> update}
+before referencing generated figures, stats, or tables in the manuscript.
 
 \end{document}

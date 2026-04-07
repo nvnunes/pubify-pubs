@@ -3147,14 +3147,14 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     assert main_tex.exists()
     main_tex_text = main_tex.read_text(encoding="utf-8")
     assert r"\usepackage{pubify}" in main_tex_text
-    assert r"\input{autostats.tex}" in main_tex_text
-    assert r"\input{autotables.tex}" in main_tex_text
-    assert r"\figfloat" in main_tex_text
-    assert r"\figone{autofigures/example}" in main_tex_text
-    assert r"\StatExampleCount{}" in main_tex_text
-    assert r"\StatExampleMean{}" in main_tex_text
-    assert r"\TableExample" in main_tex_text
-    assert r"[fig:example]" in main_tex_text
+    assert r"\section*{Overview}" in main_tex_text
+    assert r"\input{autostats.tex}" not in main_tex_text
+    assert r"\input{autotables.tex}" not in main_tex_text
+    assert r"\figfloat" not in main_tex_text
+    assert r"\figone{autofigures/example}" not in main_tex_text
+    assert r"\StatExampleCount{}" not in main_tex_text
+    assert r"\StatExampleMean{}" not in main_tex_text
+    assert r"\TableExample" not in main_tex_text
     assert r"\graphicspath{{figures/}}" not in main_tex_text
     assert (fresh_root / "tex" / "autofigures").exists()
     assert (fresh_root / "tex" / "build").exists()
