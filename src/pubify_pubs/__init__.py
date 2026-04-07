@@ -1,4 +1,4 @@
-"""Publication workflow engine for host workspaces configured by ``pubify.conf``."""
+"""Publication workflow engine for host workspaces configured by ``pubify.yaml``."""
 
 from .cli import main
 from .data import load_publication_data_npz, publication_data_path, save_publication_data_npz

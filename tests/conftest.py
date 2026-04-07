@@ -103,7 +103,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo_root = tmp_path / "repo"
     repo_root.mkdir(parents=True, exist_ok=True)
     (repo_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
-    (repo_root / "pubify.conf").write_text(
+    (repo_root / "pubify.yaml").write_text(
         "publications_root: papers\ndata_root: output/papers\n",
         encoding="utf-8",
     )

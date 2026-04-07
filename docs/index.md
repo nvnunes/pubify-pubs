@@ -4,7 +4,7 @@
 
 It is meant for host workspaces that keep publication content, publication-local TeX sources, and pinned inputs under version control, while the package owns the generic workflow around:
 
-- workspace discovery through `pubify.conf`
+- workspace discovery through `pubify.yaml`
 - publication discovery and validation
 - figure export into publication-local `tex/autofigures/`
 - generated stats into publication-local `tex/autostats.tex`
@@ -26,11 +26,11 @@ The build step runs `latexmk` against the publication-local TeX tree. If exporte
 
 `pubify-pubs` treats a configured host workspace as the source of truth.
 
-A workspace is rooted by `pubify.conf`:
+A workspace is rooted by `pubify.yaml`:
 
 ```yaml
 publications_root: papers
-data_root: output/papers
+data_root: ""
 preview:
   publication: preview
   figure: preview
@@ -41,7 +41,8 @@ The package discovers that file by walking upward from the current working direc
 The workspace contract is:
 
 - `publications_root` points at publication folders owned by the host workspace
-- `data_root` points at pinned publication-local data owned by the host workspace
+- blank `data_root` means pinned publication-local data defaults to `papers/<publication-id>/data/`
+- non-empty `data_root` points at a shared pinned-data root owned by the host workspace
 - package code lives independently from both
 
 The optional `preview` section configures how PDFs are opened:
@@ -95,7 +96,13 @@ Key files:
 
 ## Quick Start
 
-Initialize a new publication from a workspace root:
+Initialize a workspace:
+
+```bash
+pubs init
+```
+
+Then initialize a new publication from the workspace root:
 
 ```bash
 pubs init my-paper
@@ -229,6 +236,7 @@ The installed command is `pubs`.
 Top-level commands:
 
 - `pubs list`
+- `pubs init`
 - `pubs init <publication-id>`
 
 Publication commands:

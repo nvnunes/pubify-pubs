@@ -109,7 +109,7 @@ def test_publication_data_path_supports_workspace_root_override(tmp_path: Path) 
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
-    (workspace_root / "pubify.conf").write_text(
+    (workspace_root / "pubify.yaml").write_text(
         "publications_root: papers\ndata_root: output/papers\n",
         encoding="utf-8",
     )
@@ -121,6 +121,24 @@ def test_publication_data_path_supports_workspace_root_override(tmp_path: Path) 
     )
 
     assert path == workspace_root / "output" / "papers" / "demo" / "generated" / "sample.pkl"
+    assert path.parent.exists()
+
+def test_publication_data_path_falls_back_to_publication_local_data_root(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "pkg"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    (workspace_root / "pubify.yaml").write_text(
+        'publications_root: papers\ndata_root: ""\n',
+        encoding="utf-8",
+    )
+
+    path = publication_data_path(
+        "demo",
+        "generated/sample.pkl",
+        workspace_root=workspace_root,
+    )
+
+    assert path == workspace_root / "papers" / "demo" / "data" / "generated" / "sample.pkl"
     assert path.parent.exists()
 
 def test_save_publication_data_npz_creates_parent_directories(repo: Path) -> None:
@@ -171,7 +189,7 @@ def test_save_publication_data_npz_supports_workspace_root_override(tmp_path: Pa
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
-    (workspace_root / "pubify.conf").write_text(
+    (workspace_root / "pubify.yaml").write_text(
         "publications_root: papers\ndata_root: output/papers\n",
         encoding="utf-8",
     )
@@ -187,17 +205,93 @@ def test_save_publication_data_npz_supports_workspace_root_override(tmp_path: Pa
     with np.load(saved_path) as saved:
         assert np.array_equal(saved["values"], np.array([4.0]))
 
+def test_save_publication_data_npz_uses_publication_local_data_root_when_blank(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "pkg"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    (workspace_root / "pubify.yaml").write_text(
+        'publications_root: papers\ndata_root: ""\n',
+        encoding="utf-8",
+    )
+
+    saved_path = save_publication_data_npz(
+        "demo",
+        "generated/sample.npz",
+        workspace_root=workspace_root,
+        values=np.array([4.0]),
+    )
+
+    assert saved_path == workspace_root / "papers" / "demo" / "data" / "generated" / "sample.npz"
+    with np.load(saved_path) as saved:
+        assert np.array_equal(saved["values"], np.array([4.0]))
+
 def test_workspace_config_defaults_preview_backends(repo: Path) -> None:
     workspace = load_workspace_config(repo)
 
     assert workspace.preview.publication == "preview"
     assert workspace.preview.figure == "preview"
 
+def test_workspace_config_allows_blank_data_root(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "pkg"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    (workspace_root / "pubify.yaml").write_text(
+        "\n".join(
+            [
+                "publications_root: papers",
+                'data_root: ""',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    workspace = load_workspace_config(workspace_root)
+
+    assert workspace.publications_root == workspace_root / "papers"
+    assert workspace.data_root is None
+
+def test_load_publication_definition_uses_publication_local_data_root_when_blank(
+    tmp_path: Path,
+) -> None:
+    workspace_root = tmp_path / "pkg"
+    publication_root = workspace_root / "papers" / "demo"
+    publication_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    (workspace_root / "pubify.yaml").write_text(
+        'publications_root: papers\ndata_root: ""\n',
+        encoding="utf-8",
+    )
+    (publication_root / "pub.yaml").write_text(
+        "\n".join(
+            [
+                'mirror_root: ""',
+                "main_tex: main.tex",
+                "pubify-mpl-template:",
+                "  textwidth_in: 6.0",
+                "  textheight_in: 8.0",
+                "  base_fontsize_pt: 10.0",
+                "  baseline_skip_pt: 12.0",
+                "  caption_fontsize_pt: 9.0",
+                "  caption_lineheight_pt: 10.0",
+                "pubify-mpl-defaults:",
+                "  layout: one",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (publication_root / "figures.py").write_text("", encoding="utf-8")
+
+    publication = load_publication_definition(workspace_root, "demo")
+
+    assert publication.paths.data_root == workspace_root / "papers" / "demo" / "data"
+
 def test_workspace_config_parses_nested_preview_backends(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
-    (workspace_root / "pubify.conf").write_text(
+    (workspace_root / "pubify.yaml").write_text(
         "\n".join(
             [
                 "publications_root: papers",
@@ -220,7 +314,7 @@ def test_workspace_config_rejects_invalid_preview_backend(tmp_path: Path) -> Non
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
-    (workspace_root / "pubify.conf").write_text(
+    (workspace_root / "pubify.yaml").write_text(
         "\n".join(
             [
                 "publications_root: papers",
@@ -802,7 +896,7 @@ def test_cli_preview_uses_vscode_backend_when_configured(
     opened: list[tuple[list[Path], str]] = []
     pdf_path = repo / "papers" / "demo" / "tex" / "build" / "main.pdf"
     pdf_path.write_text("pdf", encoding="utf-8")
-    (repo / "pubify.conf").write_text(
+    (repo / "pubify.yaml").write_text(
         "\n".join(
             [
                 "publications_root: papers",
@@ -833,7 +927,7 @@ def test_cli_figure_preview_uses_vscode_backend_when_configured(
     figure_path = repo / "papers" / "demo" / "tex" / "autofigures" / "single.pdf"
     figure_path.parent.mkdir(parents=True, exist_ok=True)
     figure_path.write_text("pdf", encoding="utf-8")
-    (repo / "pubify.conf").write_text(
+    (repo / "pubify.yaml").write_text(
         "\n".join(
             [
                 "publications_root: papers",
@@ -3073,6 +3167,71 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     assert fake_pubify_mpl.prepare_calls[0][1]["base_fontsize_pt"] == 12.0
     assert fake_pubify_mpl.prepare_calls[0][1]["caption_lineheight_pt"] == 13.6
 
+def test_init_without_publication_id_initializes_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    monkeypatch.chdir(workspace_root)
+
+    assert main(["init"]) == 0
+
+    output = capsys.readouterr().out.strip()
+    assert output == str(workspace_root)
+    assert (workspace_root / "papers").exists()
+    assert not (workspace_root / "output" / "papers").exists()
+    assert (workspace_root / "pubify.yaml").read_text(encoding="utf-8") == "\n".join(
+        [
+            "publications_root: papers",
+            'data_root: ""',
+            "preview:",
+            "  publication: preview",
+            "  figure: preview",
+            "",
+        ]
+    )
+
+def test_init_without_publication_id_is_idempotent_and_preserves_existing_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    (workspace_root / "pubify.yaml").write_text(
+        "\n".join(
+            [
+                "publications_root: manuscripts",
+                "data_root: shared-data",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workspace_root)
+
+    assert main(["init"]) == 0
+    capsys.readouterr()
+    papers_root = workspace_root / "papers"
+    papers_root.mkdir(parents=True, exist_ok=True)
+    papers_root.rmdir()
+
+    assert main(["init"]) == 0
+    capsys.readouterr()
+
+    assert (workspace_root / "pubify.yaml").read_text(encoding="utf-8") == "\n".join(
+        [
+            "publications_root: manuscripts",
+            "data_root: shared-data",
+            "",
+        ]
+    )
+    assert (workspace_root / "papers").exists()
+
 def test_check_after_init_passes_when_mirror_root_is_blank(
     repo: Path,
     fake_pubify_mpl: FakePubifyBackend,
@@ -3562,6 +3721,38 @@ def test_old_init_syntax_is_rejected() -> None:
     with pytest.raises(SystemExit):
         main(["demo", "init"])
 
+def test_init_publication_requires_initialized_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    monkeypatch.chdir(workspace_root)
+
+    assert main(["init", "demo"]) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Run `pubs init` in your workspace root and try again." in captured.err
+
+def test_list_requires_initialized_workspace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    monkeypatch.chdir(workspace_root)
+
+    assert main(["list"]) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Run `pubs init` in your workspace root and try again." in captured.err
+
 def test_prepare_is_unsupported(repo: Path) -> None:
     with pytest.raises(SystemExit):
         main(["demo", "prepare"])
@@ -3577,6 +3768,7 @@ def test_no_arg_invocation_prints_multiline_help_block(
     assert "usage: pubs [--force] [--clear] <command>" in captured.err
     assert "Commands:" in captured.err
     assert "  pubs list" in captured.err
+    assert "  pubs init" in captured.err
     assert "  pubs init <publication-id>" in captured.err
     assert "  pubs <publication-id> shell" in captured.err
     assert "  pubs <publication-id> data [list|add <data-id>]" in captured.err
@@ -3590,7 +3782,7 @@ def test_no_arg_invocation_prints_multiline_help_block(
     assert "subject" not in captured.err
     assert "arg2" not in captured.err
     assert (
-        "expected 'list', 'init <publication-id>', or '<publication-id> <command>'" in captured.err
+        "expected 'list', 'init', 'init <publication-id>', or '<publication-id> <command>'" in captured.err
     )
 
 def test_build_reports_validation_failure_without_traceback(

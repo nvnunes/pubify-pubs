@@ -2,6 +2,7 @@ from __future__ import annotations
 
 TOP_LEVEL_COMMANDS = (
     "  pubs list",
+    "  pubs init",
     "  pubs init <publication-id>",
 )
 

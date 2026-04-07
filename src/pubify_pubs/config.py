@@ -10,7 +10,7 @@ from pubify_pubs.stubs import render_init_figures_module
 
 
 SYNC_STATE_FILENAME = ".pubs-sync.yaml"
-WORKSPACE_CONFIG_FILENAME = "pubify.conf"
+WORKSPACE_CONFIG_FILENAME = "pubify.yaml"
 DEFAULT_PUBIFY_DEFAULTS = {
     "layout": "one",
 }
@@ -58,7 +58,7 @@ class PublicationConfig:
 
 @dataclass(frozen=True)
 class PreviewConfig:
-    """Workspace-level preview backend settings loaded from ``pubify.conf``."""
+    """Workspace-level preview backend settings loaded from ``pubify.yaml``."""
 
     publication: str = DEFAULT_PREVIEW_BACKEND
     figure: str = DEFAULT_PREVIEW_BACKEND
@@ -66,11 +66,11 @@ class PreviewConfig:
 
 @dataclass(frozen=True)
 class WorkspaceConfig:
-    """Workspace-level publication roots loaded from ``pubify.conf``."""
+    """Workspace-level publication roots loaded from ``pubify.yaml``."""
 
     workspace_root: Path
     publications_root: Path
-    data_root: Path
+    data_root: Path | None
     preview: PreviewConfig
 
 
@@ -155,7 +155,7 @@ def find_workspace_root(start: Path | None = None) -> Path:
 
 
 def load_workspace_config(workspace_root: Path) -> WorkspaceConfig:
-    """Load the workspace publication and data roots from ``pubify.conf``."""
+    """Load the workspace publication and data roots from ``pubify.yaml``."""
 
     root = workspace_root.resolve()
     config_path = root / WORKSPACE_CONFIG_FILENAME
@@ -164,7 +164,7 @@ def load_workspace_config(workspace_root: Path) -> WorkspaceConfig:
 
     raw = _parse_simple_yaml(config_path.read_text(encoding="utf-8"))
     publications_root = _require_workspace_relative_root(raw, config_path, "publications_root")
-    data_root = _require_workspace_relative_root(raw, config_path, "data_root")
+    data_root = _optional_workspace_relative_root(raw, config_path, "data_root")
     preview = _load_preview_config(raw, config_path)
     return WorkspaceConfig(
         workspace_root=root,
@@ -172,6 +172,13 @@ def load_workspace_config(workspace_root: Path) -> WorkspaceConfig:
         data_root=data_root,
         preview=preview,
     )
+
+
+def write_default_workspace_config(path: Path) -> None:
+    """Write the default ``pubify.yaml`` scaffold for ``pubs init``."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_render_default_workspace_config(), encoding="utf-8")
 
 
 def write_skeleton_publication_config(path: Path, publication_id: str) -> None:
@@ -225,6 +232,14 @@ def _load_init_asset_text(filename: str) -> str:
     return asset.read_text(encoding="utf-8")
 
 
+def resolve_publication_data_root(workspace: WorkspaceConfig, publication_id: str) -> Path:
+    """Resolve the effective publication-local pinned-data root."""
+
+    if workspace.data_root is not None:
+        return workspace.data_root / publication_id
+    return workspace.publications_root / publication_id / "data"
+
+
 def load_sync_state(path: Path) -> dict[str, str]:
     """Load the sync manifest recorded in the hidden sync-state file."""
 
@@ -258,6 +273,22 @@ def _require_workspace_relative_root(
     return resolved
 
 
+def _optional_workspace_relative_root(
+    raw: dict[str, object],
+    config_path: Path,
+    key: str,
+) -> Path | None:
+    value = raw.get(key)
+    if not isinstance(value, str):
+        raise ValueError(f"{config_path}: {key} must be a string")
+    if not value:
+        return None
+    resolved = Path(value).expanduser()
+    if not resolved.is_absolute():
+        resolved = (config_path.parent / resolved).resolve()
+    return resolved
+
+
 def _load_preview_config(raw: dict[str, object], config_path: Path) -> PreviewConfig:
     preview_raw = raw.get("preview", {})
     if not isinstance(preview_raw, dict):
@@ -281,6 +312,19 @@ def _validate_preview_backend(value: object, config_path: Path, key: str) -> str
         allowed = ", ".join(sorted(ALLOWED_PREVIEW_BACKENDS))
         raise ValueError(f"{config_path}: {key} must be one of: {allowed}")
     return value
+
+
+def _render_default_workspace_config() -> str:
+    return "\n".join(
+        [
+            "publications_root: papers",
+            'data_root: ""',
+            "preview:",
+            "  publication: preview",
+            "  figure: preview",
+            "",
+        ]
+    )
 
 
 def _parse_simple_yaml(text: str) -> dict[str, object]:

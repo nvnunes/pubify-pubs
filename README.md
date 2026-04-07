@@ -20,7 +20,7 @@ The `build` command runs `latexmk` against the publication-local TeX tree. If yo
 
 `pubify-pubs` treats a configured host workspace as the source of truth.
 
-- `pubify.conf` defines where publications live and where pinned publication data is stored
+- `pubify.yaml` defines where publications live and where pinned publication data is stored
 - each publication lives under `papers/<publication-id>/`
 - `figures.py` declares loaders, figures, stats, and tables
 - generated figures are exported into `tex/autofigures/`
@@ -32,17 +32,23 @@ The local publication tree is canonical.
 
 ## Quick Start
 
-Create a workspace rooted by `pubify.conf`:
+Initialize a workspace:
+
+```bash
+pubs init
+```
+
+That writes `pubify.yaml` like:
 
 ```yaml
 publications_root: papers
-data_root: output/papers
+data_root: ""
 preview:
   publication: preview
   figure: preview
 ```
 
-Initialize a new publication:
+Then initialize a new publication:
 
 ```bash
 pubs init my-paper
@@ -69,21 +75,33 @@ pubs my-paper build
 
 ## Workspace Model
 
-A host workspace is rooted by `pubify.conf`. The package discovers that file by walking upward from the current working directory.
+A host workspace is rooted by `pubify.yaml`. The package discovers that file by walking upward from the current working directory.
 
-`publications_root` contains publication directories. `data_root` contains pinned publication-local data, typically under:
+`publications_root` contains publication directories. When `data_root` is blank, pinned publication-local data defaults to:
+
+```text
+papers/<publication-id>/data/...
+```
+
+If you want a shared workspace-level data area instead, set `data_root` explicitly, for example:
+
+```yaml
+data_root: output/papers
+```
+
+Then pinned publication-local data resolves under:
 
 ```text
 output/papers/<publication-id>/...
 ```
 
-This separation is intentional:
+This flexibility is intentional:
 
 - publications stay under the host workspace's configured publication root
-- pinned data stays under the configured data root
+- pinned data can stay publication-local by default or under a configured shared data root
 - package code lives independently from both
 
-`pubify.conf` can also configure preview backends independently for publication PDFs and exported figure PDFs:
+`pubify.yaml` can also configure preview backends independently for publication PDFs and exported figure PDFs:
 
 ```yaml
 preview:
@@ -259,6 +277,7 @@ The installed command is `pubs`.
 Top-level commands:
 
 - `pubs list`
+- `pubs init`
 - `pubs init <publication-id>`
 
 Publication commands:

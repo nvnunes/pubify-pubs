@@ -12,7 +12,7 @@ import sys
 from pubify_pubs.commands import run_publication_command as _dispatch_publication_command
 from pubify_pubs.commands.registry import build_cli_description, build_shell_help_text
 from pubify_pubs.export import close_figure_export_sources
-from pubify_pubs.config import load_workspace_config
+from pubify_pubs.config import WORKSPACE_CONFIG_FILENAME, load_workspace_config, write_default_workspace_config
 from pubify_pubs.discovery import (
     PublicationDefinition,
     PublicationPaths,
@@ -253,12 +253,14 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.subject == "init":
-            workspace_root = find_workspace_root()
             _reject_build_flags(parser, "init", args.clear_build)
-            if args.arg2 is None:
-                parser.error("init requires <publication-id>")
             if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
-                parser.error("init accepts only <publication-id>")
+                parser.error("init accepts at most optional <publication-id>")
+            if args.arg2 is None:
+                workspace_root = _init_workspace(Path.cwd())
+                print(workspace_root)
+                return 0
+            workspace_root = find_workspace_root()
             publication_root = init_publication_by_id(workspace_root, args.arg2)
             print(publication_root)
             return 0
@@ -266,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.subject is None or args.arg2 is None:
             _error_with_help(
                 parser,
-                "expected 'list', 'init <publication-id>', or '<publication-id> <command>'",
+                "expected 'list', 'init', 'init <publication-id>', or '<publication-id> <command>'",
             )
 
         publication_id = args.subject
@@ -331,8 +333,27 @@ def main(argv: list[str] | None = None) -> int:
     except _ReportedExecutionError:
         return 1
     except (FileNotFoundError, ImportError, IndexError, KeyError, RuntimeError, SyntaxError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"Error: {_rewrite_workspace_error_message(exc)}", file=sys.stderr)
         return 1
+
+
+def _init_workspace(workspace_root: Path) -> Path:
+    resolved_root = workspace_root.resolve()
+    config_path = resolved_root / WORKSPACE_CONFIG_FILENAME
+    if not config_path.exists():
+        write_default_workspace_config(config_path)
+    (resolved_root / "papers").mkdir(parents=True, exist_ok=True)
+    return resolved_root
+
+
+def _rewrite_workspace_error_message(exc: Exception) -> str:
+    message = str(exc)
+    if isinstance(exc, FileNotFoundError):
+        if message == "Could not locate workspace root from current working directory":
+            return f"{message}. Run `pubs init` in your workspace root and try again."
+        if message.startswith("Missing workspace config:"):
+            return f"{message}. Run `pubs init` in your workspace root and try again."
+    return message
 
 
 def _parse_subfig_idx(parser: argparse.ArgumentParser, value: str) -> int:

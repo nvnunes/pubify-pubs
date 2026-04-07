@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from pubify_pubs.config import load_workspace_config
+from pubify_pubs.config import load_workspace_config, resolve_publication_data_root
 from pubify_pubs.discovery import find_workspace_root
 
 
@@ -19,8 +19,7 @@ def publication_data_path(
     resolved_workspace_root = (workspace_root or find_workspace_root()).resolve()
     workspace = load_workspace_config(resolved_workspace_root)
     destination = (
-        workspace.data_root
-        / publication_id
+        resolve_publication_data_root(workspace, publication_id)
         / _validate_publication_relative_path(relative_path)
     )
     destination.parent.mkdir(parents=True, exist_ok=True)

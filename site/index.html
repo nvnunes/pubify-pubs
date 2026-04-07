@@ -130,7 +130,7 @@
 <p><code>pubify-pubs</code> is a local-first publication workflow package built around <code>pubify-mpl</code>.</p>
 <p>It is meant for host workspaces that keep publication content, publication-local TeX sources, and pinned inputs under version control, while the package owns the generic workflow around:</p>
 <ul>
-<li>workspace discovery through <code>pubify.conf</code></li>
+<li>workspace discovery through <code>pubify.yaml</code></li>
 <li>publication discovery and validation</li>
 <li>figure export into publication-local <code>tex/autofigures/</code></li>
 <li>generated stats into publication-local <code>tex/autostats.tex</code></li>
@@ -148,9 +148,9 @@
 <p>The build step runs <code>latexmk</code> against the publication-local TeX tree. If exported figures use LaTeX text rendering through <code>pubify-mpl</code>, LaTeX must also be available during Python-side export.</p>
 <h2 id="workspace-model">Workspace Model</h2>
 <p><code>pubify-pubs</code> treats a configured host workspace as the source of truth.</p>
-<p>A workspace is rooted by <code>pubify.conf</code>:</p>
+<p>A workspace is rooted by <code>pubify.yaml</code>:</p>
 <div class="highlight"><pre><span></span><code><span class="nt">publications_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">papers</span>
-<span class="nt">data_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">output/papers</span>
+<span class="nt">data_root</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;&quot;</span>
 <span class="nt">preview</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">publication</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview</span>
 <span class="w">  </span><span class="nt">figure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">preview</span>
@@ -159,7 +159,8 @@
 <p>The workspace contract is:</p>
 <ul>
 <li><code>publications_root</code> points at publication folders owned by the host workspace</li>
-<li><code>data_root</code> points at pinned publication-local data owned by the host workspace</li>
+<li>blank <code>data_root</code> means pinned publication-local data defaults to <code>papers/&lt;publication-id&gt;/data/</code></li>
+<li>non-empty <code>data_root</code> points at a shared pinned-data root owned by the host workspace</li>
 <li>package code lives independently from both</li>
 </ul>
 <p>The optional <code>preview</code> section configures how PDFs are opened:</p>
@@ -204,7 +205,10 @@
 <li>local build output directory</li>
 </ul>
 <h2 id="quick-start">Quick Start</h2>
-<p>Initialize a new publication from a workspace root:</p>
+<p>Initialize a workspace:</p>
+<div class="highlight"><pre><span></span><code>pubs<span class="w"> </span>init
+</code></pre></div>
+<p>Then initialize a new publication from the workspace root:</p>
 <div class="highlight"><pre><span></span><code>pubs<span class="w"> </span>init<span class="w"> </span>my-paper
 </code></pre></div>
 <p>Then iterate with:</p>
@@ -308,6 +312,7 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 <p>Top-level commands:</p>
 <ul>
 <li><code>pubs list</code></li>
+<li><code>pubs init</code></li>
 <li><code>pubs init &lt;publication-id&gt;</code></li>
 </ul>
 <p>Publication commands:</p>
@@ -419,5 +424,5 @@ pubs<span class="w"> </span>my-paper<span class="w"> </span>build
 
 <!--
 MkDocs version : 1.6.1
-Build Date UTC : 2026-04-04 13:38:37.334463+00:00
+Build Date UTC : 2026-04-07 11:30:59.915390+00:00
 -->

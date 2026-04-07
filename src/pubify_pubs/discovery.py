@@ -13,6 +13,7 @@ from pubify_pubs.config import (
     find_workspace_root as resolve_workspace_root,
     load_publication_config,
     load_workspace_config,
+    resolve_publication_data_root,
 )
 
 
@@ -235,7 +236,7 @@ def build_publication_paths(workspace_root: Path, publication_id: str) -> Public
     return PublicationPaths(
         workspace_root=workspace_root,
         publication_root=publication_root,
-        data_root=workspace.data_root / publication_id,
+        data_root=resolve_publication_data_root(workspace, publication_id),
         tex_root=tex_root,
         sync_base_root=tex_root / ".pubs-sync-base",
         build_root=tex_root / "build",
