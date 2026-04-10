@@ -33,6 +33,23 @@ from pubify_pubs.runtime import (
 )
 from pubify_pubs.config import load_workspace_config
 
+PUBLICATIONS_AGENTS_TEMPLATE = "\n".join(
+    [
+        "# AGENTS.md",
+        "",
+        "## Prompt Routing",
+        "- Follow any higher-level workspace prompt-routing instructions when present.",
+        "- Repo-specific instructions in this file take precedence within this repository.",
+        "",
+        "## First Reads",
+        "- When a higher-level shared prompt library or workspace router is available, follow it first.",
+        "- Read the `pubify-pubs` agent surface before making publication-workflow decisions:",
+        "  - `pubify-pubs/AGENTS.md`",
+        "  - `pubify-pubs/README.md`",
+        "",
+    ]
+)
+
 def test_data_decorator_supports_single_path_form() -> None:
     @data("training.npy")
     def load_training(ctx, path):
@@ -3182,6 +3199,7 @@ def test_init_without_publication_id_initializes_workspace(
     output = capsys.readouterr().out.strip()
     assert output == str(workspace_root)
     assert (workspace_root / "papers").exists()
+    assert (workspace_root / "papers" / "AGENTS.md").read_text(encoding="utf-8") == PUBLICATIONS_AGENTS_TEMPLATE
     assert not (workspace_root / "output" / "papers").exists()
     assert (workspace_root / "pubify.yaml").read_text(encoding="utf-8") == "\n".join(
         [
@@ -3216,9 +3234,10 @@ def test_init_without_publication_id_is_idempotent_and_preserves_existing_config
 
     assert main(["init"]) == 0
     capsys.readouterr()
-    papers_root = workspace_root / "papers"
-    papers_root.mkdir(parents=True, exist_ok=True)
-    papers_root.rmdir()
+    publications_root = workspace_root / "manuscripts"
+    agents_path = publications_root / "AGENTS.md"
+    agents_path.unlink()
+    publications_root.rmdir()
 
     assert main(["init"]) == 0
     capsys.readouterr()
@@ -3230,7 +3249,34 @@ def test_init_without_publication_id_is_idempotent_and_preserves_existing_config
             "",
         ]
     )
-    assert (workspace_root / "papers").exists()
+    assert publications_root.exists()
+    assert (publications_root / "AGENTS.md").read_text(encoding="utf-8") == PUBLICATIONS_AGENTS_TEMPLATE
+
+def test_init_without_publication_id_creates_agents_in_configured_publications_root(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    (workspace_root / "pubify.yaml").write_text(
+        "\n".join(
+            [
+                "publications_root: manuscripts",
+                'data_root: ""',
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(workspace_root)
+
+    assert main(["init"]) == 0
+    capsys.readouterr()
+
+    assert (workspace_root / "manuscripts" / "AGENTS.md").read_text(encoding="utf-8") == PUBLICATIONS_AGENTS_TEMPLATE
+    assert not (workspace_root / "papers" / "AGENTS.md").exists()
 
 def test_check_after_init_passes_when_mirror_root_is_blank(
     repo: Path,
@@ -3259,6 +3305,30 @@ def test_init_is_idempotent_and_recreates_missing_bootstrap_files(
     assert len(fake_pubify_mpl.prepare_calls) == 2
     assert fake_pubify_mpl.prepare_calls[0][0] == fresh_root / "tex"
     assert fake_pubify_mpl.prepare_calls[1][0] == fresh_root / "tex"
+
+def test_init_publication_backfills_publications_agents_file_when_missing(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    agents_path = repo / "papers" / "AGENTS.md"
+    agents_path.unlink(missing_ok=True)
+
+    assert main(["init", "fresh"]) == 0
+    capsys.readouterr()
+
+    assert agents_path.read_text(encoding="utf-8") == PUBLICATIONS_AGENTS_TEMPLATE
+
+def test_init_publication_does_not_overwrite_existing_publications_agents_file(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    agents_path = repo / "papers" / "AGENTS.md"
+    agents_path.write_text("# custom\n", encoding="utf-8")
+
+    assert main(["init", "fresh"]) == 0
+    capsys.readouterr()
+
+    assert agents_path.read_text(encoding="utf-8") == "# custom\n"
 
 def test_init_respects_existing_configured_main_tex_path(
     repo: Path,

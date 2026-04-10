@@ -36,6 +36,7 @@ from pubify_pubs.runtime import (
     clear_autofigures,
     check_publication,
     clear_publication_build,
+    ensure_publications_agents_file,
     init_publication,
     init_publication_by_id,
     inspect_figure,
@@ -342,7 +343,9 @@ def _init_workspace(workspace_root: Path) -> Path:
     config_path = resolved_root / WORKSPACE_CONFIG_FILENAME
     if not config_path.exists():
         write_default_workspace_config(config_path)
-    (resolved_root / "papers").mkdir(parents=True, exist_ok=True)
+    workspace = load_workspace_config(resolved_root)
+    workspace.publications_root.mkdir(parents=True, exist_ok=True)
+    ensure_publications_agents_file(resolved_root)
     return resolved_root
 
 

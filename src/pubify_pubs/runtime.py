@@ -14,6 +14,8 @@ from pubify_mpl import pubify_rc_context as publication_rc_context
 
 from pubify_pubs.config import (
     load_publication_config,
+    load_workspace_config,
+    write_publications_agents_file,
     write_skeleton_main_tex,
     write_skeleton_publication_config,
     write_skeleton_figures_module,
@@ -117,6 +119,7 @@ def init_publication_by_id(workspace_root: Path, publication_id: str, backend: o
     """Create any missing publication scaffolding, then prepare its TeX tree."""
 
     paths = build_publication_paths(workspace_root, publication_id)
+    _ensure_publications_agents_file(workspace_root)
     wrote_figures_module = False
     paths.publication_root.mkdir(parents=True, exist_ok=True)
     paths.data_root.mkdir(parents=True, exist_ok=True)
@@ -141,6 +144,20 @@ def init_publication_by_id(workspace_root: Path, publication_id: str, backend: o
     paths.build_root.mkdir(parents=True, exist_ok=True)
     backend.prepare(paths.tex_root, template=config.pubify_mpl.template)
     return paths.publication_root
+
+
+def ensure_publications_agents_file(workspace_root: Path) -> Path:
+    """Create the shared publications-root ``AGENTS.md`` when missing."""
+
+    return _ensure_publications_agents_file(workspace_root)
+
+
+def _ensure_publications_agents_file(workspace_root: Path) -> Path:
+    workspace = load_workspace_config(workspace_root)
+    agents_path = workspace.publications_root / "AGENTS.md"
+    if not agents_path.exists():
+        write_publications_agents_file(agents_path)
+    return agents_path
 
 
 def run_figures(

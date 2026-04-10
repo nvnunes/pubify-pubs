@@ -117,6 +117,9 @@ pubs my-paper build
 
 That creates a minimal publication skeleton and installs package-owned support files into the publication-local TeX tree.
 
+`pubs init` also creates a minimal shared `AGENTS.md` under the configured
+`publications_root`, which is `papers/AGENTS.md` by default.
+
 ## Typical Workflow
 
 1. Keep publication-local TeX sources under `papers/<publication-id>/tex/`.
