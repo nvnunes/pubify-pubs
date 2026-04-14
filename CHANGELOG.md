@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2
+
+- Added a shared `AGENTS.md` bootstrap under the publications root during `pubs init`.
+- Renamed the stored `AGENTS` init template asset to avoid confusing other agents scanning the package source.
+
 ## 1.0.1
 
 - Added bare `pubs init` to bootstrap a workspace with the default `pubify.yaml` config.
