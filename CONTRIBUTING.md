@@ -3,61 +3,24 @@
 This document is for human contributors working on `pubify-pubs`.
 
 For package usage, examples, and CLI behavior, see `README.md`.
+For repo structure and ownership rules, see `docs/architecture.md`.
+For local setup and daily commands, see `docs/development.md`.
+For canonical verification commands and completion expectations, see `docs/testing.md`.
 For release history, see `CHANGELOG.md`.
 
-## Development Setup
+## Contributor Workflow
 
-`pubify-pubs` targets Python 3.10+ and expects a working LaTeX installation for build and publication-validation workflows.
-
-Install the project with development dependencies:
-
-```bash
-./.conda/bin/pip install -e ".[dev]"
-```
-
-If you are not using the repo-local `.conda` environment, install the same extras into your own environment.
-
-## Local Checks
-
-The canonical full test command is:
-
-```bash
-./.conda/bin/pytest tests -q
-```
-
-The repo also has a local pre-commit hook:
-
-```bash
-sh .githooks/pre-commit
-```
-
-That hook is not just linting. It regenerates the tracked docs artifact:
-
-- `site/`
-
-It may rewrite that directory even if you did not edit docs directly.
-
-A practical verification sequence after nontrivial changes is:
-
-1. Run the full pytest command.
-2. Run `sh .githooks/pre-commit`.
-
-## Generated Artifacts
-
-These tracked files are generated and should not be edited by hand:
-
-- `site/`
-
-Refresh them with:
-
-- `./.conda/bin/mkdocs build --strict`
+- Keep publication-specific science code, manuscript-local helpers, and pinned scientific data in host publications rather than in this package.
+- Use the repo-local `./.conda` environment and the commands in `docs/development.md` unless a task explicitly requires something else.
+- Finish substantial work with the verification path in `docs/testing.md`.
+- Do not hand-edit `site/`; rebuild it through the docs workflow or the pre-commit hook.
 
 ## Release Process
 
 Releases are standardized around the checked-in script:
 
 ```bash
-./.conda/bin/python3.12 scripts/release.py
+./.conda/bin/python scripts/release.py
 ```
 
 This is the canonical release path. It performs the full release flow and aborts immediately if any requirement is not met.
@@ -73,12 +36,12 @@ The intended branch workflow is:
 
 The release script itself must run from `main`, but the normal development branch is `develop`.
 
-### Before Running the Release Script
+### Before Running The Release Script
 
 Make the release edits manually first:
 
-1. Update `pyproject.toml` with the new version.
-2. Add the matching version entry to `CHANGELOG.md`.
+1. update `pyproject.toml` with the new version
+2. add the matching version entry to `CHANGELOG.md`
 
 The changelog format is:
 
@@ -95,7 +58,9 @@ Each release entry must:
 - use a `## <version>` heading
 - contain at least one non-empty bullet
 
-### What the Release Script Does
+Before running the release script, satisfy the verification expectations in `docs/testing.md`.
+
+### What The Release Script Does
 
 The script requires:
 
@@ -118,6 +83,7 @@ It then runs, in order:
 9. `twine upload`
 
 The script builds fresh artifacts for that run and uploads only those artifacts.
+
 Because the pre-commit hook regenerates tracked outputs, the release script restores the known generated hook outputs from `HEAD` before its final clean-worktree check. Any remaining changes after that are treated as a real release blocker.
 
 ### PyPI Credentials
@@ -131,9 +97,5 @@ By default, the release script uses:
 You can override that path with:
 
 ```bash
-./.conda/bin/python3.12 scripts/release.py --config-file /path/to/config
+./.conda/bin/python scripts/release.py --config-file /path/to/config
 ```
-
-## Notes
-
-`AGENTS.md` is reserved for repo-specific notes that help coding agents and new threads avoid mistakes. It should stay focused on non-obvious conventions, not general contributor workflow.

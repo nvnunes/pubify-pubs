@@ -2,11 +2,19 @@
 
 `pubify-pubs` is a local-first publication workflow package built around `pubify-mpl`.
 
-It is meant for host workspaces that keep publications, publication-local TeX sources, and pinned inputs under version control, while the package owns the workflow around publication discovery, figure export, LaTeX builds, and publication bootstrapping.
+It is meant for host workspaces that keep publications, publication-local TeX sources, and pinned inputs under version control, while the package owns the generic workflow around publication discovery, figure export, LaTeX builds, and publication bootstrapping.
 
 This package does not own your publications. A host workspace does.
 
-See [CHANGELOG.md](https://github.com/nvnunes/pubify-pubs/blob/main/CHANGELOG.md) for release history and user-visible changes, and [CONTRIBUTING.md](https://github.com/nvnunes/pubify-pubs/blob/main/CONTRIBUTING.md) for contributor and release workflow guidance.
+## Project Docs
+
+- [Documentation home](https://nvnunes.github.io/pubify-pubs/)
+- [Architecture](https://nvnunes.github.io/pubify-pubs/architecture/)
+- [Development setup](https://nvnunes.github.io/pubify-pubs/development/)
+- [Testing and validation](https://nvnunes.github.io/pubify-pubs/testing/)
+- [API reference](https://nvnunes.github.io/pubify-pubs/api/)
+- [Contributing](https://github.com/nvnunes/pubify-pubs/blob/main/CONTRIBUTING.md)
+- [Changelog](https://github.com/nvnunes/pubify-pubs/blob/main/CHANGELOG.md)
 
 ## Requirements
 
@@ -14,7 +22,7 @@ See [CHANGELOG.md](https://github.com/nvnunes/pubify-pubs/blob/main/CHANGELOG.md
 - `pubify-mpl`
 - a working LaTeX installation for `pubs <publication-id> build`
 
-The `build` command runs `latexmk` against the publication-local TeX tree. If you export figures that use LaTeX text rendering through `pubify-mpl`, your TeX installation also needs to be available during Python-side figure export.
+The build command runs `latexmk` against the publication-local TeX tree. If exported figures use LaTeX text rendering through `pubify-mpl`, LaTeX must also be available during Python-side figure export.
 
 ## How It Works
 
@@ -151,6 +159,8 @@ papers/<publication-id>/
 - stats decorated with `@stat`
 - tables decorated with `@table`
 
+The publication-local `tex/` tree is canonical. `tex/autofigures/` is the framework-owned generated figure directory, and `tex/build/` is the local build output directory.
+
 ## Typical Workflow
 
 1. Keep publication-local TeX sources under `papers/<publication-id>/tex/`.
@@ -170,27 +180,40 @@ To scaffold starter entrypoints directly into `figures.py`:
 
 Prefer `@data(...)` for pinned publication-local inputs under the configured `data_root`. Use `@external_data(...)` only for explicit external roots declared in `pub.yaml`.
 
+Both data decorators require relative paths. They reject absolute paths and path traversal.
+
 Host publications import from the extracted package namespace directly:
 
 ```python
-from pubify_pubs.data import load_publication_data_npz, publication_data_path, save_publication_data_npz
 from pubify_pubs import TableResult
+from pubify_pubs.data import (
+    load_publication_data_npz,
+    publication_data_path,
+    save_publication_data_npz,
+)
 from pubify_pubs.decorators import data, external_data, figure, stat, table
 from pubify_pubs.export import FigureExport, panel
 ```
 
-`@data(...)` and `@external_data(...)` both require relative paths. They reject absolute paths and path traversal.
+`@figure` marks a callable as a logical publication figure. Exported figure functions may return:
 
-`@figure` marks a callable as a logical publication figure. Exported figure functions typically return `FigureExport` values built from one or more panels.
+- a Matplotlib `Figure`
+- a Matplotlib `Axes`
+- a sequence of figures or axes
+- a `FigureExport` value for explicit multi-panel control
+
+`FigureExport` accepts a single Matplotlib `Figure` or `Axes`, a list or tuple of them, one `panel(...)`, or a list or tuple of `panel(...)` values.
+
+Exported figure functions commonly return `FigureExport` values built from one or more panels:
 
 ```python
-return FigureExport(fig, layout="one")
-return FigureExport([fig1, fig2], layout="two")
+return FigureExport(fig, layout="onewide")
+return FigureExport([fig1, fig2], layout="twowide")
 ```
 
 Use `panel(...)` only when one panel needs extra pubify export metadata beyond the figure or axes itself, such as `subcaption_lines` or per-panel export overrides.
 
-When a plotting library creates text artists during figure construction, build the figure under `ctx.rc` so those artists inherit publication font defaults at creation time:
+When a plotting library creates text artists during figure construction, use `ctx.rc` so those artists are born under the publication construction-time font defaults:
 
 ```python
 @figure
@@ -236,13 +259,13 @@ Column rendering is intentionally small:
 - `save_publication_data_npz(...)`
 - `load_publication_data_npz(...)`
 
-`publication_data_path(...)` resolves paths under:
+These helpers resolve data under:
 
 ```text
 <data_root>/<publication-id>/...
 ```
 
-It rejects absolute paths and `..`, and it creates parent directories automatically.
+`publication_data_path(...)` resolves paths under that root. It rejects absolute paths and `..`, and it creates parent directories automatically.
 
 Format-specific helpers should generally come in save/load pairs when `pubify-pubs` owns the format handling.
 
@@ -270,10 +293,11 @@ Format-specific helpers should generally come in save/load pairs when `pubify-pu
 - single-body tables emit `\Table<Id>`
 - multi-body tables emit `\Table<Id>{1}`, `\Table<Id>{2}`, ...
 - `update` and `build` validate logical table width against direct manuscript uses inside supported environments such as `tabular`, `tabularx`, and `longtable`
+- `build` validates and compiles the current TeX tree, but does not regenerate figures, stats, or tables
 
-Manual and static paper assets are ordinary publication-local TeX files. They are not part of the generated export surface and do not belong in `tex/autofigures/`.
+Manual and static publication assets remain ordinary publication-local TeX files. They do not belong in `tex/autofigures/`.
 
-## CLI
+## CLI Overview
 
 The installed command is `pubs`.
 
@@ -296,35 +320,33 @@ Publication commands:
 
 Optional advanced workflows:
 
-`update` refreshes package-owned TeX support files, validates the publication definition, and regenerates figures, stats, and tables. `build` refreshes package-owned TeX support files, validates the publication definition, and then compiles the current TeX tree; it does not regenerate figures, stats, or tables, so run `update` first when generated outputs need refreshing.
+`update` refreshes package-owned TeX support files, validates the publication definition, and regenerates figures, stats, and tables. `build` validates and compiles the current publication-local TeX tree; it does not regenerate figures, stats, or tables, so run `update` first when generated outputs need refreshing.
 
 `tables` is an alias for `table` in both the CLI and the publication shell.
 
 The `latex` commands are read-only convenience helpers. They never edit manuscript files, and they print one blank line above and below the emitted snippet to make terminal selection easier. `tex` is accepted as an alias for `latex`.
 
+## Python API Overview
+
+The public Python API is intentionally small. Host publications import from the `pubify_pubs.*` namespace directly:
+
+```python
+from pubify_pubs import TableResult
+from pubify_pubs.data import (
+    load_publication_data_npz,
+    publication_data_path,
+    save_publication_data_npz,
+)
+from pubify_pubs.decorators import data, external_data, figure, stat, table
+from pubify_pubs.export import FigureExport, panel
+from pubify_pubs.discovery import find_workspace_root
+```
+
+Use the [API reference](https://nvnunes.github.io/pubify-pubs/api/) for the docstring-driven reference pages.
+
 ## Development
 
-Install the package in editable mode:
-
-```bash
-pip install -e .
-```
-
-Run the package tests:
-
-```bash
-pytest
-```
-
-Build the docs site:
-
-```bash
-mkdocs build --strict
-```
-
-## Development Approach
-
-Keep publication-specific science code in host publications, not in this package.
+Use the repo-local `./.conda` environment by default for Python commands, test runs, and docs builds. The durable contributor workflow lives in the [development setup](https://nvnunes.github.io/pubify-pubs/development/) and [testing](https://nvnunes.github.io/pubify-pubs/testing/) docs.
 
 ## License
 

@@ -15,6 +15,11 @@ dependencies = [
   "pubify-mpl>=1.0.0",
 ]
 
+[project.urls]
+Documentation = "https://nvnunes.github.io/pubify-pubs/"
+Repository = "https://github.com/nvnunes/pubify-pubs"
+Changelog = "https://github.com/nvnunes/pubify-pubs/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 dev = [
   "pytest>=8.0",

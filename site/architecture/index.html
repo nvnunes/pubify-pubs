@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="light">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        <link rel="canonical" href="https://nvnunes.github.io/pubify-pubs/architecture/">
+        <link rel="shortcut icon" href="../img/favicon.ico">
+        <title>Architecture - pubify-pubs</title>
+        <link href="../css/bootstrap.min.css" rel="stylesheet">
+        <link href="../css/fontawesome.min.css" rel="stylesheet">
+        <link href="../css/brands.min.css" rel="stylesheet">
+        <link href="../css/solid.min.css" rel="stylesheet">
+        <link href="../css/v4-font-face.min.css" rel="stylesheet">
+        <link href="../css/base.css" rel="stylesheet">
+        <link id="hljs-light" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css" >
+        <link id="hljs-dark" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github-dark.min.css" disabled>
+        <link href="../assets/_mkdocstrings.css" rel="stylesheet">
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+        <script>hljs.highlightAll();</script> 
+    </head>
+
+    <body>
+        <div class="navbar fixed-top navbar-expand-lg navbar-dark bg-primary">
+            <div class="container">
+                <a class="navbar-brand" href="..">pubify-pubs</a>
+                <!-- Expander button -->
+                <button type="button" class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#navbar-collapse" aria-controls="navbar-collapse" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <!-- Expanded navigation -->
+                <div id="navbar-collapse" class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li class="nav-item">
+                                <a href=".." class="nav-link">Home</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="./" class="nav-link active" aria-current="page">Architecture</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../development/" class="nav-link">Development</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../testing/" class="nav-link">Testing</a>
+                            </li>
+                            <li class="nav-item">
+                                <a href="../api/" class="nav-link">API Reference</a>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav ms-md-auto">
+                        <li class="nav-item">
+                            <a href="#" class="nav-link" data-bs-toggle="modal" data-bs-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li class="nav-item">
+                                <a rel="prev" href=".." class="nav-link">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a rel="next" href="../development/" class="nav-link">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="row">
+                    <div class="col-md-3"><div class="navbar-expand-md bs-sidebar hidden-print affix" role="complementary">
+    <div class="navbar-header">
+        <button type="button" class="navbar-toggler collapsed" data-bs-toggle="collapse" data-bs-target="#toc-collapse" title="Table of Contents">
+            <span class="fa fa-angle-down"></span>
+        </button>
+    </div>
+
+    
+    <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
+        <ul class="nav flex-column">
+            
+            <li class="nav-item" data-bs-level="1"><a href="#architecture" class="nav-link">Architecture</a>
+              <ul class="nav flex-column">
+            <li class="nav-item" data-bs-level="2"><a href="#shared-guidance" class="nav-link">Shared Guidance</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#package-role" class="nav-link">Package Role</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#workspace-and-ownership-boundaries" class="nav-link">Workspace And Ownership Boundaries</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#public-package-surface" class="nav-link">Public Package Surface</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#publication-workflow-contracts" class="nav-link">Publication Workflow Contracts</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#generated-outputs-and-lifecycle" class="nav-link">Generated Outputs And Lifecycle</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+            <li class="nav-item" data-bs-level="2"><a href="#generated-repo-artifacts" class="nav-link">Generated Repo Artifacts</a>
+              <ul class="nav flex-column">
+              </ul>
+            </li>
+              </ul>
+            </li>
+        </ul>
+    </div>
+</div></div>
+                    <div class="col-md-9" role="main">
+
+<h1 id="architecture">Architecture</h1>
+<p>This document is the source of truth for <code>pubify-pubs</code> package boundaries,
+public API and CLI contracts, generated-artifact ownership, and
+publication-workflow rules that must remain stable.</p>
+<h2 id="shared-guidance">Shared Guidance</h2>
+<p>This repo adopts the shared guidance in:</p>
+<ul>
+<li><code>astro-agents/guidance/agent-surface.md</code></li>
+<li><code>astro-agents/guidance/public-python-projects.md</code></li>
+<li><code>astro-agents/guidance/python-development.md</code></li>
+</ul>
+<p>Repo-local commands, package boundaries, persisted contracts, lifecycle rules,
+and publication-workflow conventions in this document remain the source of
+truth for this repo.</p>
+<h2 id="package-role">Package Role</h2>
+<p><code>pubify-pubs</code> is the package-owned publication engine.</p>
+<p>It owns the generic workflow around:</p>
+<ul>
+<li>workspace discovery through <code>pubify.yaml</code></li>
+<li>publication discovery and validation</li>
+<li>CLI behavior and shell behavior</li>
+<li>export, build, and runtime orchestration</li>
+<li>conservative mirror sync and diff logic</li>
+<li>pinned publication-data helpers</li>
+<li>publication bootstrap templates, including the shared publications-root
+  <code>AGENTS.md</code> scaffold</li>
+<li>generic tests against temporary host workspaces</li>
+</ul>
+<p>It does not own publication content. A host workspace does.</p>
+<h2 id="workspace-and-ownership-boundaries">Workspace And Ownership Boundaries</h2>
+<p>Package-owned:</p>
+<ul>
+<li>workspace discovery through <code>pubify.yaml</code></li>
+<li>publication folders as workflow targets rather than as package-owned content</li>
+<li>package-managed TeX support files</li>
+<li>generated outputs under <code>tex/autofigures/</code>, <code>tex/autostats.tex</code>, and
+  <code>tex/autotables.tex</code></li>
+</ul>
+<p>Host-owned:</p>
+<ul>
+<li><code>pubify.yaml</code></li>
+<li><code>papers/&lt;publication-id&gt;</code></li>
+<li><code>pub.yaml</code> content</li>
+<li>publication figures, manuscript-local helpers, and LaTeX source</li>
+<li>pinned and external scientific data</li>
+<li>host-specific integration tests</li>
+</ul>
+<p>The workspace contract is intentionally small:</p>
+<ul>
+<li><code>publications_root</code> points at host-owned publication directories</li>
+<li>blank <code>data_root</code> means pinned publication-local data defaults to
+  <code>papers/&lt;publication-id&gt;/data/</code></li>
+<li>non-empty <code>data_root</code> points at a shared host-owned pinned-data root</li>
+<li>package code must not depend on additional host-repo layout beyond that
+  config contract</li>
+</ul>
+<h2 id="public-package-surface">Public Package Surface</h2>
+<p>Keep the public surface conservative.</p>
+<ul>
+<li>Keep imports and docs on the <code>pubify_pubs.*</code> namespace.</li>
+<li>Keep the CLI name <code>pubs</code> stable.</li>
+<li>Keep the CLI as a thin wrapper over the Python API.</li>
+<li>Keep the public Python API intentionally small and explicit.</li>
+<li>New generic workflow behavior belongs here; publication-specific figure logic
+  does not.</li>
+<li>Prefer small explicit helpers over broad generic escape hatches.</li>
+</ul>
+<p>Primary supported Python entrypoints are:</p>
+<ul>
+<li><code>find_workspace_root(...)</code></li>
+<li><code>figure</code>, <code>stat</code>, <code>table</code>, <code>data</code>, <code>external_data</code></li>
+<li><code>publication_data_path(...)</code></li>
+<li><code>save_publication_data_npz(...)</code></li>
+<li><code>load_publication_data_npz(...)</code></li>
+<li><code>FigureExport</code></li>
+<li><code>TableResult</code></li>
+</ul>
+<h2 id="publication-workflow-contracts">Publication Workflow Contracts</h2>
+<p>Preserve these publication-facing conventions:</p>
+<ul>
+<li><code>figures.py</code> is the publication entrypoint.</li>
+<li>The manuscript is the publication-local LaTeX tree rooted at the <code>main_tex</code>
+  entry in <code>pub.yaml</code>.</li>
+<li><code>figures.py</code> is a manuscript-ordered entrypoint file.</li>
+<li>Order <code>@figure</code>, <code>@stat</code>, and <code>@table</code> methods by the first place their
+  outputs are used in the manuscript, regardless of object type.</li>
+<li>Do not group figures, stats, and tables by type unless that still matches
+  first-use order in the manuscript.</li>
+<li>Order loaders by the first place they are needed by the manuscript-ordered
+  <code>@figure</code>, <code>@stat</code>, and <code>@table</code> methods below.</li>
+<li>Prefer <code>@data(...)</code> over <code>@external_data(...)</code> when the input should be
+  pinned under the workspace <code>data_root</code>.</li>
+<li><code>publication_data_path(...)</code> owns pinned publication-data path resolution and
+  parent creation.</li>
+<li>Format-owned publication-data helpers should generally come in save/load
+  pairs.</li>
+<li>Small publication-local helpers may live in <code>figures.py</code>; larger
+  publication-specific helper sets belong in publication-local modules, not in
+  the package.</li>
+<li>Large or repeated filenames may be lifted into top-level constants for
+  readability.</li>
+<li>Section comments in <code>figures.py</code> are only needed for sections that actually
+  exist.</li>
+<li>When section comments are used, prefer <code># Figures</code> if there are no stats or
+  tables, <code># Figures &amp; Stats</code> if stats are present without tables, and
+  <code># Figures, Stats &amp; Tables</code> if tables are present.</li>
+<li>When several pinned filenames share a scientific basename, prefer one
+  basename constant plus derived filenames.</li>
+<li>Thin named loaders are acceptable when they give the paper a clear dependency
+  name.</li>
+<li>Prefer local nested helpers for repeated subpanel assembly within one figure.</li>
+<li>Pinned result loaders may load domain objects directly through the owning
+  library when that is the intended plotting object.</li>
+</ul>
+<h2 id="generated-outputs-and-lifecycle">Generated Outputs And Lifecycle</h2>
+<p>Generated outputs remain framework-owned rather than generic asset directories.</p>
+<ul>
+<li><code>tex/autofigures/</code> is the generated figure directory.</li>
+<li>full <code>figure update</code> treats <code>tex/autofigures/</code> as an authoritative snapshot
+  and clears stale generated files first.</li>
+<li>targeted <code>figure &lt;figure-id&gt; update</code> stays incremental.</li>
+<li><code>tex/autostats.tex</code> is rewritten as one authoritative snapshot during stat
+  updates.</li>
+<li><code>tex/autotables.tex</code> is rewritten as one authoritative snapshot during table
+  updates.</li>
+<li>generated figures remain one-way local-to-mirror delivery, separate from
+  managed-source sync.</li>
+</ul>
+<p>CLI lifecycle expectations that docs and tests must stay aligned on:</p>
+<ul>
+<li><code>update</code> refreshes package-owned TeX support files, validates the publication
+  definition, and regenerates figures, stats, and tables.</li>
+<li><code>build [--clear]</code> validates and compiles the current TeX tree; it does not
+  regenerate figures, stats, or tables.</li>
+<li>shell prompt, history, automatic pickup of publication changes, and shell
+  <code>update</code> behavior remain part of the supported CLI contract.</li>
+<li>diff status names and meanings stay documented and tested together.</li>
+<li>data pinning behavior and helper semantics stay documented and tested
+  together.</li>
+</ul>
+<h2 id="generated-repo-artifacts">Generated Repo Artifacts</h2>
+<ul>
+<li><code>site/</code> is a tracked generated artifact used for hosted docs output.</li>
+<li>Refresh it with <code>./.conda/bin/mkdocs build --strict</code>.</li>
+<li>Do not hand-edit files under <code>site/</code>.</li>
+</ul></div>
+            </div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script src="../js/bootstrap.bundle.min.js"></script>
+        <script>
+            var base_url = "..",
+                shortcuts = {"help": 191, "next": 78, "previous": 80, "search": 83};
+        </script>
+        <script src="../js/base.js"></script>
+        <script src="../search/main.js"></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="searchModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="searchModalLabel">Search</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>From here you can search these documents. Enter your search terms below.</p>
+                <form>
+                    <div class="form-group">
+                        <input type="search" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results" data-no-results-text="No results found"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="keyboardModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title" id="keyboardModalLabel">Keyboard Shortcuts</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

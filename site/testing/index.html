@@ -6,9 +6,9 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         
         
-        <link rel="canonical" href="https://nvnunes.github.io/pubify-pubs/api/">
+        <link rel="canonical" href="https://nvnunes.github.io/pubify-pubs/testing/">
         <link rel="shortcut icon" href="../img/favicon.ico">
-        <title>API Reference - pubify-pubs</title>
+        <title>Testing - pubify-pubs</title>
         <link href="../css/bootstrap.min.css" rel="stylesheet">
         <link href="../css/fontawesome.min.css" rel="stylesheet">
         <link href="../css/brands.min.css" rel="stylesheet">
@@ -45,10 +45,10 @@
                                 <a href="../development/" class="nav-link">Development</a>
                             </li>
                             <li class="nav-item">
-                                <a href="../testing/" class="nav-link">Testing</a>
+                                <a href="./" class="nav-link active" aria-current="page">Testing</a>
                             </li>
                             <li class="nav-item">
-                                <a href="./" class="nav-link active" aria-current="page">API Reference</a>
+                                <a href="../api/" class="nav-link">API Reference</a>
                             </li>
                         </ul>
 
@@ -59,12 +59,12 @@
                             </a>
                         </li>
                             <li class="nav-item">
-                                <a rel="prev" href="../testing/" class="nav-link">
+                                <a rel="prev" href="../development/" class="nav-link">
                                     <i class="fa fa-arrow-left"></i> Previous
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a rel="next" class="nav-link disabled">
+                                <a rel="next" href="../api/" class="nav-link">
                                     Next <i class="fa fa-arrow-right"></i>
                                 </a>
                             </li>
@@ -86,41 +86,33 @@
     <div id="toc-collapse" class="navbar-collapse collapse card bg-body-tertiary">
         <ul class="nav flex-column">
             
-            <li class="nav-item" data-bs-level="1"><a href="#api-reference" class="nav-link">API Reference</a>
+            <li class="nav-item" data-bs-level="1"><a href="#testing" class="nav-link">Testing</a>
               <ul class="nav flex-column">
-            <li class="nav-item" data-bs-level="2"><a href="#workspace-discovery" class="nav-link">Workspace Discovery</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            <li class="nav-item" data-bs-level="2"><a href="#decorators" class="nav-link">Decorators</a>
+            <li class="nav-item" data-bs-level="2"><a href="#shared-validation" class="nav-link">Shared Validation</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#pubify_pubs.data.load_publication_data_npz" class="nav-link">load_publication_data_npz</a>
+            <li class="nav-item" data-bs-level="2"><a href="#environment" class="nav-link">Environment</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#pubify_pubs.data.publication_data_path" class="nav-link">publication_data_path</a>
+            <li class="nav-item" data-bs-level="2"><a href="#canonical-verification-commands" class="nav-link">Canonical Verification Commands</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#pubify_pubs.data.save_publication_data_npz" class="nav-link">save_publication_data_npz</a>
+            <li class="nav-item" data-bs-level="2"><a href="#important-test-surfaces" class="nav-link">Important Test Surfaces</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#publication-data-helpers" class="nav-link">Publication Data Helpers</a>
+            <li class="nav-item" data-bs-level="2"><a href="#completion-expectations" class="nav-link">Completion Expectations</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#export-model" class="nav-link">Export Model</a>
+            <li class="nav-item" data-bs-level="2"><a href="#git-hook-behavior" class="nav-link">Git Hook Behavior</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#table-model" class="nav-link">Table Model</a>
-              <ul class="nav flex-column">
-              </ul>
-            </li>
-            <li class="nav-item" data-bs-level="2"><a href="#cli-entrypoint" class="nav-link">CLI Entrypoint</a>
+            <li class="nav-item" data-bs-level="2"><a href="#generated-artifacts" class="nav-link">Generated Artifacts</a>
               <ul class="nav flex-column">
               </ul>
             </li>
@@ -131,378 +123,80 @@
 </div></div>
                     <div class="col-md-9" role="main">
 
-<h1 id="api-reference">API Reference</h1>
-<p>This page is generated from the public Python docstrings.</p>
-<h2 id="workspace-discovery">Workspace Discovery</h2>
-<h3 id="find_workspace_root">find_workspace_root</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Walk upward from <code>start</code> until a publication workspace root is found.</p>
-
-
-    </div>
-
-</div><h2 id="decorators">Decorators</h2>
-<h3 id="figure">figure</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Mark a callable as an exported publication figure entrypoint.</p>
-
-
-    </div>
-
-</div><h3 id="stat">stat</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Mark a callable as a computed publication stat entrypoint.</p>
-
-
-    </div>
-
-</div><h3 id="table">table</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Mark a callable as a generated publication table entrypoint.</p>
-
-
-    </div>
-
-</div><h3 id="data">data</h3>
-
-
-<div class="doc doc-object doc-module">
-
-
-
-
-    <div class="doc doc-contents first">
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-object doc-function">
-
-
-<h2 id="pubify_pubs.data.load_publication_data_npz" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">load_publication_data_npz</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
-
-</h2>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Load a pinned <code>.npz</code> file into detached NumPy arrays.</p>
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h2 id="pubify_pubs.data.publication_data_path" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">publication_data_path</span><span class="p">(</span><span class="n">publication_id</span><span class="p">,</span> <span class="n">relative_path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">workspace_root</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
-
-</h2>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Resolve one pinned publication-data path under the configured workspace <code>data_root</code>.</p>
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h2 id="pubify_pubs.data.save_publication_data_npz" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">save_publication_data_npz</span><span class="p">(</span><span class="n">publication_id</span><span class="p">,</span> <span class="n">relative_path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">workspace_root</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">)</span></code>
-
-</h2>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Save arrays as a pinned <code>.npz</code> file under a publication's data root.</p>
-
-
-    </div>
-
-</div>
-
-
-
-  </div>
-
-    </div>
-
-</div><h3 id="external_data">external_data</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Declare a loader that reads from one configured external data root.</p>
-
-
-    </div>
-
-</div><h2 id="publication-data-helpers">Publication Data Helpers</h2>
-<h3 id="publication_data_path">publication_data_path</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Resolve one pinned publication-data path under the configured workspace <code>data_root</code>.</p>
-
-
-    </div>
-
-</div><h3 id="save_publication_data_npz">save_publication_data_npz</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Save arrays as a pinned <code>.npz</code> file under a publication's data root.</p>
-
-
-    </div>
-
-</div><h3 id="load_publication_data_npz">load_publication_data_npz</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Load a pinned <code>.npz</code> file into detached NumPy arrays.</p>
-
-
-    </div>
-
-</div><h2 id="export-model">Export Model</h2>
-<h3 id="figurepanel">FigurePanel</h3>
-
-
-<div class="doc doc-object doc-class">
-
-
-
-
-    <div class="doc doc-contents first">
-
-
-
-        <p>One exported panel plus optional per-panel export metadata and overrides.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div><h3 id="figureexport">FigureExport</h3>
-
-
-<div class="doc doc-object doc-class">
-
-
-
-
-    <div class="doc doc-contents first">
-
-
-
-        <p>Normalized logical-figure export payload for the publication runtime.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div><h3 id="panel">panel</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Wrap one panel with optional per-panel subcaption sizing and overrides.</p>
-
-
-    </div>
-
-</div><h2 id="table-model">Table Model</h2>
-<h3 id="tableresult">TableResult</h3>
-
-
-<div class="doc doc-object doc-class">
-
-
-
-
-    <div class="doc doc-contents first">
-
-
-
-        <p>Normalized logical-table payload for the publication runtime.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div><h2 id="cli-entrypoint">CLI Entrypoint</h2>
-<h3 id="main">main</h3>
-
-
-<div class="doc doc-object doc-function">
-
-
-
-
-    <div class="doc doc-contents first">
-
-        <p>Run the <code>pubs</code> CLI and return its process exit code.</p>
-
-
-    </div>
-
-</div></div>
+<h1 id="testing">Testing</h1>
+<p>This document is the source of truth for local verification commands and
+completion expectations in <code>pubify-pubs</code>.</p>
+<h2 id="shared-validation">Shared Validation</h2>
+<p>Use the shared base testing guidance in
+<code>astro-agents/validation/base-testing.md</code>.</p>
+<h2 id="environment">Environment</h2>
+<p>Use the repo-local <code>./.conda</code> environment for Python commands, test runs, and
+docs builds unless a task explicitly requires something else.</p>
+<p>Build and publication-validation workflows also expect a working LaTeX
+installation. If exported figures use LaTeX text rendering through
+<code>pubify-mpl</code>, LaTeX must be available during Python-side export as well.</p>
+<h2 id="canonical-verification-commands">Canonical Verification Commands</h2>
+<p>Run the package test suite with:</p>
+<div class="highlight"><pre><span></span><code>./.conda/bin/pytest<span class="w"> </span>tests<span class="w"> </span>-q
+</code></pre></div>
+<p>Build the docs with:</p>
+<div class="highlight"><pre><span></span><code>./.conda/bin/mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
+</code></pre></div>
+<p>Run the repo-local pre-commit hook with:</p>
+<div class="highlight"><pre><span></span><code>sh<span class="w"> </span>.githooks/pre-commit
+</code></pre></div>
+<h2 id="important-test-surfaces">Important Test Surfaces</h2>
+<ul>
+<li><code>tests/test_cli_core.py</code></li>
+<li>main workflow contract suite covering config loading, init, check, export,
+    build, shell behavior, pinning, sync, and diff</li>
+<li><code>tests/test_export.py</code></li>
+<li>focused export and config-normalization coverage</li>
+<li><code>tests/test_release.py</code></li>
+<li>release-script and changelog validation coverage</li>
+<li><code>tests/test_stats.py</code> and <code>tests/test_tables.py</code></li>
+<li>focused stats and table behavior coverage</li>
+</ul>
+<h2 id="completion-expectations">Completion Expectations</h2>
+<p>Run the full test suite before concluding substantial code changes.</p>
+<p>Always finish with the full package test suite for changes that affect:</p>
+<ul>
+<li>config loading or workspace discovery</li>
+<li>publication discovery or validation</li>
+<li>export, build, or runtime orchestration</li>
+<li>CLI semantics or shell behavior</li>
+<li>publication bootstrap templates</li>
+<li>public helper behavior or generated-output semantics</li>
+</ul>
+<p>Run the strict docs build for changes that affect:</p>
+<ul>
+<li><code>README.md</code></li>
+<li><code>docs/*</code></li>
+<li><code>CONTRIBUTING.md</code></li>
+<li><code>AGENTS.md</code></li>
+<li><code>mkdocs.yml</code></li>
+<li>package metadata or docstrings that feed the public docs surface</li>
+</ul>
+<p>Run the repo-local pre-commit hook whenever docs or package behavior changed,
+because it rebuilds and stages the tracked <code>site/</code> artifact.</p>
+<p>Targeted tests are acceptable during iteration, but final verification should
+match the changed surface area.</p>
+<h2 id="git-hook-behavior">Git Hook Behavior</h2>
+<p>The repo includes a versioned pre-commit hook at <code>.githooks/pre-commit</code>.</p>
+<p>When active, it runs:</p>
+<ul>
+<li><code>./.conda/bin/pytest tests -q</code></li>
+<li><code>./.conda/bin/mkdocs build --strict</code></li>
+</ul>
+<p>If the hooks path is not active in your clone, set it with:</p>
+<div class="highlight"><pre><span></span><code>git<span class="w"> </span>config<span class="w"> </span>core.hooksPath<span class="w"> </span>.githooks
+</code></pre></div>
+<p>The hook also stages <code>site/</code> after rebuilding it.</p>
+<h2 id="generated-artifacts">Generated Artifacts</h2>
+<p>These tracked files are generated and should not be edited by hand:</p>
+<ul>
+<li><code>site/</code></li>
+</ul></div>
             </div>
         </div>
 
