@@ -672,6 +672,12 @@ def test_cli_figure_update_prints_paper_relative_paths(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    autofigures_root = repo / "papers" / "demo" / "tex" / "autofigures"
+    autofigures_root.mkdir(parents=True, exist_ok=True)
+    (autofigures_root / "compare_1.pdf").write_text("compare 1", encoding="utf-8")
+    (autofigures_root / "compare_2.pdf").write_text("compare 2", encoding="utf-8")
+    (autofigures_root / "keep.pdf").write_text("keep", encoding="utf-8")
+
     assert main(["demo", "figure", "single", "update"]) == 0
     assert [line for line in capsys.readouterr().out.strip().splitlines() if line] == [
         "Data",
@@ -679,6 +685,9 @@ def test_cli_figure_update_prints_paper_relative_paths(
         "Figures",
         "- single: updated",
     ]
+    assert (autofigures_root / "compare_1.pdf").read_text(encoding="utf-8") == "compare 1"
+    assert (autofigures_root / "compare_2.pdf").read_text(encoding="utf-8") == "compare 2"
+    assert (autofigures_root / "keep.pdf").read_text(encoding="utf-8") == "keep"
 
 def test_cli_data_without_subcommand_aliases_to_data_list(
     repo: Path,

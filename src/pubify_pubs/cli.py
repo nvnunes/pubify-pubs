@@ -531,7 +531,7 @@ def _run_publication_command(
             figure_ids = _selected_figure_ids(publication, command.arg3)
             loader_ids = _figure_loader_ids(publication, command.arg3)
             _run_data_updates(ctx, loader_ids, use_color=use_color, include_nocache=True)
-            _run_figure_updates(publication, ctx, figure_ids, use_color=use_color, clear_existing=True)
+            _run_figure_updates(publication, ctx, figure_ids, use_color=use_color, clear_existing=False)
             return 0
         if _is_latex_alias(command.arg4):
             selected_id = command.arg3

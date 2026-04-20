@@ -151,7 +151,7 @@ def handle_command(
                 ctx,
                 selected_figure_ids(publication, command.arg3),
                 use_color=use_color,
-                clear_existing=True,
+                clear_existing=False,
             )
             return 0
         if is_latex_alias(command.arg4):
