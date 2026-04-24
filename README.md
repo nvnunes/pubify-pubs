@@ -34,12 +34,12 @@ The build command runs `latexmk` against the publication-local TeX tree. If expo
 uses `pubify-data` for reusable decorator discovery, loader execution, neutral
 runtime results, and neutral list/update command dispatch.
 
-- `pubify.yaml` contains a `pubify-pubs` section that defines where publications live and where pinned publication data is stored
+- `pubify.yaml` contains a `pubify-pubs` section that defines where publications live
 - each publication lives under `papers/<publication-id>/`
 - `figures.py` declares loaders, figures, stats, and tables
-- generated figures are exported into `tex/autofigures/`
-- generated stats are written into `tex/autostats.tex`
-- generated tables are written into `tex/autotables.tex`
+- pinned publication data lives under `papers/<publication-id>/data/`
+- generated figures, stats, and tables are stored under `data/tex-artifacts/`
+- the TeX tree exposes those generated artifacts through local symlinks such as `tex/autofigures/`
 - LaTeX builds run against the publication-local `tex/` tree
 
 The local publication tree is canonical.
@@ -57,7 +57,6 @@ That writes `pubify.yaml` like:
 ```yaml
 pubify-pubs:
   publications_root: papers
-  data_root: ""
   preview:
     publication: preview
     figure: preview
@@ -73,11 +72,18 @@ That creates a publication skeleton like:
 
 ```text
 papers/my-paper/
+  data/
+    tex-artifacts/
+      autofigures/
+      autostats.tex
+      autotables.tex
   figures.py
   pub.yaml
   tex/
     main.tex
-    autofigures/
+    autofigures -> ../data/tex-artifacts/autofigures
+    autostats.tex -> ../data/tex-artifacts/autostats.tex
+    autotables.tex -> ../data/tex-artifacts/autotables.tex
     build/
 ```
 
@@ -95,38 +101,27 @@ pubs my-paper build
 
 A host workspace is rooted by `pubify.yaml`. The package discovers that file by walking upward from the current working directory.
 
-`pubify-pubs.publications_root` contains publication directories. When `pubify-pubs.data_root` is blank, pinned publication-local data defaults to:
+`pubify-pubs.publications_root` contains publication directories. Pinned publication-local data resolves under:
 
 ```text
 papers/<publication-id>/data/...
 ```
 
-If you want a shared workspace-level data area instead, set `data_root` explicitly, for example:
-
-```yaml
-pubify-pubs:
-  publications_root: papers
-  data_root: output/papers
-```
-
-Then pinned publication-local data resolves under:
+If a host wants to keep the physical data elsewhere, make the publication-local
+`data/` path a filesystem redirect, such as a symlink:
 
 ```text
-output/papers/<publication-id>/...
+papers/<publication-id>/data -> ../../output/papers/<publication-id>
 ```
 
-This flexibility is intentional:
-
-- publications stay under the host workspace's configured publication root
-- pinned data can stay publication-local by default or under a configured shared data root
-- package code lives independently from both
+`pubify-pubs` treats that redirected `data/` path as the publication data root;
+there is no workspace-level `data_root` setting.
 
 `pubify.yaml` can also configure preview backends independently for publication PDFs and exported figure PDFs:
 
 ```yaml
 pubify-pubs:
   publications_root: papers
-  data_root: ""
   preview:
     publication: vscode
     figure: preview
@@ -149,9 +144,13 @@ A typical publication contains:
 papers/<publication-id>/
   figures.py
   pub.yaml
+  data/
+    tex-artifacts/
   tex/
     main.tex
-    autofigures/
+    autofigures -> ../data/tex-artifacts/autofigures
+    autostats.tex -> ../data/tex-artifacts/autostats.tex
+    autotables.tex -> ../data/tex-artifacts/autotables.tex
     build/
 ```
 
@@ -171,7 +170,7 @@ papers/<publication-id>/
 - stats decorated with `@stat`
 - tables decorated with `@table`
 
-The publication-local `tex/` tree is canonical. `tex/autofigures/` is the framework-owned generated figure directory, and `tex/build/` is the local build output directory.
+The publication-local `data/tex-artifacts/` tree is canonical for generated figures, stats, and tables. The publication-local `tex/` tree exposes a symlink view for LaTeX convenience, and `tex/build/` is the local build output directory.
 
 ## Typical Workflow
 
@@ -190,7 +189,7 @@ To scaffold starter entrypoints directly into `figures.py`:
 
 ## Figures, Tables, And Loaders
 
-Prefer `@data(...)` for pinned publication-local inputs under the configured `pubify-pubs.data_root`. Use `@external_data(...)` only for explicit external roots declared in `pub.yaml`.
+Prefer `@data(...)` for pinned publication-local inputs under `papers/<publication-id>/data/`. Use `@external_data(...)` only for explicit external roots declared in `pub.yaml`.
 
 Both data decorators require relative paths. They reject absolute paths and path traversal.
 
@@ -274,7 +273,7 @@ Column rendering is intentionally small:
 These helpers resolve data under:
 
 ```text
-<data_root>/<publication-id>/...
+papers/<publication-id>/data/...
 ```
 
 `publication_data_path(...)` resolves paths under that root. It rejects absolute paths and `..`, and it creates parent directories automatically.
@@ -283,21 +282,21 @@ Format-specific helpers should generally come in save/load pairs when `pubify-pu
 
 ## Generated Figures, Stats, Tables, And TeX Assets
 
-`tex/autofigures/` is the framework-owned generated figure directory.
+`data/tex-artifacts/autofigures/` is the canonical framework-owned generated figure directory. `tex/autofigures` is a symlink view for LaTeX.
 
-- generated figures from `figures.py` are exported there
-- full `figure update` treats it as an authoritative snapshot and clears stale generated files first
+- generated figures from `figures.py` are exported to the canonical directory
+- full `figure update` treats the canonical directory as an authoritative snapshot and clears stale generated files first
 - targeted `figure <figure-id> update` stays incremental
 - TeX should reference generated figures explicitly by path such as `autofigures/<name>.pdf`
 
-`tex/autostats.tex` is the framework-owned generated stats file.
+`data/tex-artifacts/autostats.tex` is the canonical framework-owned generated stats file. `tex/autostats.tex` is a symlink view for LaTeX.
 
 - `stat update` rewrites it as one authoritative snapshot
 - TeX should include it explicitly, for example with `\input{autostats.tex}`
 - stats return either one value or a `dict[str, object]`
 - generated stat macros are named `\Stat<StatId>` and `\Stat<StatId><Key>`
 
-`tex/autotables.tex` is the framework-owned generated tables file.
+`data/tex-artifacts/autotables.tex` is the canonical framework-owned generated tables file. `tex/autotables.tex` is a symlink view for LaTeX.
 
 - `table update` rewrites it as one authoritative snapshot
 - `table <table-id> update` still rewrites the full snapshot after computing the selected table
@@ -307,7 +306,7 @@ Format-specific helpers should generally come in save/load pairs when `pubify-pu
 - `update` and `build` validate logical table width against direct manuscript uses inside supported environments such as `tabular`, `tabularx`, and `longtable`
 - `build` validates and compiles the current TeX tree, but does not regenerate figures, stats, or tables
 
-Manual and static publication assets remain ordinary publication-local TeX files. They do not belong in `tex/autofigures/`.
+Manual and static publication assets remain ordinary publication-local TeX files. They do not belong in `data/tex-artifacts/` or the `tex/autofigures` symlink view.
 
 ## CLI Overview
 

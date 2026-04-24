@@ -19,6 +19,7 @@ PUBLICATION_ENTRYPOINT = "figures.py"
 PUBLICATION_CONFIG = "pub.yaml"
 PUBIFY_STYLE = "pubify.sty"
 PUBIFY_TEMPLATE = "pubify-template.tex"
+TEX_ARTIFACTS_NAMESPACE = "tex-artifacts"
 
 LoaderSpec = pubify_data.LoaderSpec
 FigureSpec = pubify_data.FigureSpec
@@ -38,9 +39,13 @@ class PublicationPaths:
     build_root: Path
     versions_root: Path
     versions_metadata_path: Path
+    tex_artifacts_root: Path
     autofigures_root: Path
     autostats_path: Path
     autotables_path: Path
+    tex_autofigures_root: Path
+    tex_autostats_path: Path
+    tex_autotables_path: Path
     entrypoint: Path
     config_path: Path
 
@@ -193,18 +198,24 @@ def build_publication_paths(workspace_root: Path, publication_id: str) -> Public
     workspace = load_workspace_config(workspace_root)
     publication_root = workspace.publications_root / publication_id
     tex_root = publication_root / "tex"
+    data_root = resolve_publication_data_root(workspace, publication_id)
+    tex_artifacts_root = pubify_data.artifact_namespace_root(data_root, TEX_ARTIFACTS_NAMESPACE)
     return PublicationPaths(
         workspace_root=workspace_root,
         publication_root=publication_root,
-        data_root=resolve_publication_data_root(workspace, publication_id),
+        data_root=data_root,
         tex_root=tex_root,
         sync_base_root=tex_root / ".pubs-sync-base",
         build_root=tex_root / "build",
         versions_root=tex_root / "versions",
         versions_metadata_path=tex_root / "versions" / "metadata.yaml",
-        autofigures_root=tex_root / "autofigures",
-        autostats_path=tex_root / "autostats.tex",
-        autotables_path=tex_root / "autotables.tex",
+        tex_artifacts_root=tex_artifacts_root,
+        autofigures_root=tex_artifacts_root / "autofigures",
+        autostats_path=tex_artifacts_root / "autostats.tex",
+        autotables_path=tex_artifacts_root / "autotables.tex",
+        tex_autofigures_root=tex_root / "autofigures",
+        tex_autostats_path=tex_root / "autostats.tex",
+        tex_autotables_path=tex_root / "autotables.tex",
         entrypoint=publication_root / PUBLICATION_ENTRYPOINT,
         config_path=publication_root / PUBLICATION_CONFIG,
     )

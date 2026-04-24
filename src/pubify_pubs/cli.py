@@ -258,11 +258,13 @@ def main(argv: list[str] | None = None) -> int:
             if args.arg3 is not None or args.arg4 is not None or args.arg5 is not None:
                 parser.error("init accepts at most optional <publication-id>")
             if args.arg2 is None:
+                if args.force:
+                    parser.error("workspace init does not accept --force")
                 workspace_root = _init_workspace(Path.cwd())
                 print(workspace_root)
                 return 0
             workspace_root = find_workspace_root()
-            publication_root = init_publication_by_id(workspace_root, args.arg2)
+            publication_root = init_publication_by_id(workspace_root, args.arg2, force=args.force)
             print(publication_root)
             return 0
 
@@ -343,6 +345,11 @@ def _init_workspace(workspace_root: Path) -> Path:
     config_path = resolved_root / WORKSPACE_CONFIG_FILENAME
     if not config_path.exists():
         write_default_workspace_config(config_path)
+    elif "data_root:" in config_path.read_text(encoding="utf-8"):
+        print(
+            "Warning: pubify-pubs.data_root is deprecated and ignored; use publication-local data/ symlinks instead.",
+            file=sys.stderr,
+        )
     workspace = load_workspace_config(resolved_root)
     workspace.publications_root.mkdir(parents=True, exist_ok=True)
     ensure_publications_agents_file(resolved_root)
@@ -1718,7 +1725,7 @@ def _preview_figure_paths(
 ) -> list[Path]:
     if figure_id not in publication.figures:
         raise KeyError(f"Unknown figure '{figure_id}'")
-    root = publication.paths.autofigures_root
+    root = publication.paths.tex_autofigures_root
     primary = root / f"{figure_id}.pdf"
     if primary.exists():
         if subfigure_index is not None and subfigure_index != 1:

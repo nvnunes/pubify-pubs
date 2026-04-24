@@ -91,18 +91,18 @@ def test_data_decorator_rejects_parent_traversal() -> None:
     with pytest.raises(ValueError, match="@data paths must stay under their configured root"):
         data("../training.npy")
 
-def test_save_publication_data_npz_saves_new_file_under_paper_output(repo: Path) -> None:
+def test_save_publication_data_npz_saves_new_file_under_publication_data_root(repo: Path) -> None:
     saved_path = save_publication_data_npz("demo", "generated/sample.npz", values=np.array([1.0, 2.0]))
 
-    assert saved_path == repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
+    assert saved_path == repo / "papers" / "demo" / "data" / "generated" / "sample.npz"
     assert saved_path.exists()
     with np.load(saved_path) as saved:
         assert np.array_equal(saved["values"], np.array([1.0, 2.0]))
 
-def test_publication_data_path_resolves_under_paper_output(repo: Path) -> None:
+def test_publication_data_path_resolves_under_publication_data_root(repo: Path) -> None:
     path = publication_data_path("demo", "generated/sample.pkl")
 
-    assert path == repo / "output" / "papers" / "demo" / "generated" / "sample.pkl"
+    assert path == repo / "papers" / "demo" / "data" / "generated" / "sample.pkl"
 
 def test_publication_data_path_creates_parent_directories(repo: Path) -> None:
     path = publication_data_path("demo", "nested/deeper/sample.pkl")
@@ -117,7 +117,7 @@ def test_publication_data_path_rejects_parent_traversal(repo: Path) -> None:
     with pytest.raises(ValueError, match="must stay under the publication data root"):
         publication_data_path("demo", "../sample.pkl")
 
-def test_publication_data_path_supports_workspace_root_override(tmp_path: Path) -> None:
+def test_publication_data_path_ignores_legacy_workspace_data_root(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
@@ -132,15 +132,15 @@ def test_publication_data_path_supports_workspace_root_override(tmp_path: Path) 
         workspace_root=workspace_root,
     )
 
-    assert path == workspace_root / "output" / "papers" / "demo" / "generated" / "sample.pkl"
+    assert path == workspace_root / "papers" / "demo" / "data" / "generated" / "sample.pkl"
     assert path.parent.exists()
 
-def test_publication_data_path_falls_back_to_publication_local_data_root(tmp_path: Path) -> None:
+def test_publication_data_path_uses_publication_local_data_root(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (workspace_root / "pubify.yaml").write_text(
-        'pubify-pubs:\n  publications_root: papers\n  data_root: ""\n',
+        "pubify-pubs:\n  publications_root: papers\n",
         encoding="utf-8",
     )
 
@@ -175,7 +175,7 @@ def test_save_publication_data_npz_rejects_parent_traversal(repo: Path) -> None:
         save_publication_data_npz("demo", "../sample.npz", values=np.array([1.0]))
 
 def test_save_publication_data_npz_rejects_existing_file_without_overwrite(repo: Path) -> None:
-    target = repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
+    target = repo / "papers" / "demo" / "data" / "generated" / "sample.npz"
     target.parent.mkdir(parents=True, exist_ok=True)
     np.savez(target, values=np.array([1.0]))
 
@@ -183,7 +183,7 @@ def test_save_publication_data_npz_rejects_existing_file_without_overwrite(repo:
         save_publication_data_npz("demo", "generated/sample.npz", values=np.array([2.0]))
 
 def test_save_publication_data_npz_overwrites_existing_file_when_requested(repo: Path) -> None:
-    target = repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
+    target = repo / "papers" / "demo" / "data" / "generated" / "sample.npz"
     target.parent.mkdir(parents=True, exist_ok=True)
     np.savez(target, values=np.array([1.0]))
 
@@ -197,7 +197,7 @@ def test_save_publication_data_npz_overwrites_existing_file_when_requested(repo:
     with np.load(target) as saved:
         assert np.array_equal(saved["values"], np.array([2.0]))
 
-def test_save_publication_data_npz_supports_workspace_root_override(tmp_path: Path) -> None:
+def test_save_publication_data_npz_ignores_legacy_workspace_data_root(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
@@ -213,16 +213,16 @@ def test_save_publication_data_npz_supports_workspace_root_override(tmp_path: Pa
         values=np.array([4.0]),
     )
 
-    assert saved_path == workspace_root / "output" / "papers" / "demo" / "generated" / "sample.npz"
+    assert saved_path == workspace_root / "papers" / "demo" / "data" / "generated" / "sample.npz"
     with np.load(saved_path) as saved:
         assert np.array_equal(saved["values"], np.array([4.0]))
 
-def test_save_publication_data_npz_uses_publication_local_data_root_when_blank(tmp_path: Path) -> None:
+def test_save_publication_data_npz_uses_publication_local_data_root(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (workspace_root / "pubify.yaml").write_text(
-        'pubify-pubs:\n  publications_root: papers\n  data_root: ""\n',
+        "pubify-pubs:\n  publications_root: papers\n",
         encoding="utf-8",
     )
 
@@ -257,7 +257,7 @@ def test_workspace_config_rejects_legacy_top_level_roots(tmp_path: Path) -> None
         load_workspace_config(workspace_root)
 
 
-def test_workspace_config_allows_blank_data_root(tmp_path: Path) -> None:
+def test_workspace_config_ignores_legacy_data_root(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
@@ -276,9 +276,8 @@ def test_workspace_config_allows_blank_data_root(tmp_path: Path) -> None:
     workspace = load_workspace_config(workspace_root)
 
     assert workspace.publications_root == workspace_root / "papers"
-    assert workspace.data_root is None
 
-def test_load_publication_definition_uses_publication_local_data_root_when_blank(
+def test_load_publication_definition_uses_publication_local_data_root(
     tmp_path: Path,
 ) -> None:
     workspace_root = tmp_path / "pkg"
@@ -286,7 +285,7 @@ def test_load_publication_definition_uses_publication_local_data_root_when_blank
     publication_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (workspace_root / "pubify.yaml").write_text(
-        'pubify-pubs:\n  publications_root: papers\n  data_root: ""\n',
+        "pubify-pubs:\n  publications_root: papers\n",
         encoding="utf-8",
     )
     (publication_root / "pub.yaml").write_text(
@@ -360,7 +359,7 @@ def test_workspace_config_rejects_invalid_preview_backend(tmp_path: Path) -> Non
         load_workspace_config(workspace_root)
 
 def test_load_publication_data_npz_returns_plain_dict_of_arrays(repo: Path) -> None:
-    source = repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
+    source = repo / "papers" / "demo" / "data" / "generated" / "sample.npz"
     source.parent.mkdir(parents=True, exist_ok=True)
     np.savez(source, alpha=np.array([1.0, 2.0]), beta=np.array([3.0]))
 
@@ -372,13 +371,13 @@ def test_load_publication_data_npz_returns_plain_dict_of_arrays(repo: Path) -> N
     assert np.array_equal(loaded["beta"], np.array([3.0]))
 
 def test_load_publication_data_npz_missing_path_fails_clearly(repo: Path) -> None:
-    missing = repo / "output" / "papers" / "demo" / "generated" / "missing.npz"
+    missing = repo / "papers" / "demo" / "data" / "generated" / "missing.npz"
 
     with pytest.raises(FileNotFoundError, match="does not exist"):
         load_publication_data_npz(missing)
 
 def test_load_publication_data_npz_non_file_path_fails_clearly(repo: Path) -> None:
-    directory = repo / "output" / "papers" / "demo" / "generated"
+    directory = repo / "papers" / "demo" / "data" / "generated"
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / "folder.npz"
     path.mkdir()
@@ -387,7 +386,7 @@ def test_load_publication_data_npz_non_file_path_fails_clearly(repo: Path) -> No
         load_publication_data_npz(path)
 
 def test_load_publication_data_npz_non_npz_path_fails_clearly(repo: Path) -> None:
-    path = repo / "output" / "papers" / "demo" / "generated" / "sample.npy"
+    path = repo / "papers" / "demo" / "data" / "generated" / "sample.npy"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("x", encoding="utf-8")
 
@@ -395,7 +394,7 @@ def test_load_publication_data_npz_non_npz_path_fails_clearly(repo: Path) -> Non
         load_publication_data_npz(path)
 
 def test_load_publication_data_npz_materializes_arrays_before_returning(repo: Path) -> None:
-    source = repo / "output" / "papers" / "demo" / "generated" / "sample.npz"
+    source = repo / "papers" / "demo" / "data" / "generated" / "sample.npz"
     source.parent.mkdir(parents=True, exist_ok=True)
     np.savez(source, alpha=np.array([1.0, 2.0]))
 
@@ -689,8 +688,9 @@ def test_cli_figure_update_prints_paper_relative_paths(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    autofigures_root = repo / "papers" / "demo" / "tex" / "autofigures"
-    autofigures_root.mkdir(parents=True, exist_ok=True)
+    paper = load_publication_definition(repo, "demo")
+    init_publication(paper)
+    autofigures_root = paper.paths.autofigures_root
     (autofigures_root / "compare_1.pdf").write_text("compare 1", encoding="utf-8")
     (autofigures_root / "compare_2.pdf").write_text("compare 2", encoding="utf-8")
     (autofigures_root / "keep.pdf").write_text("keep", encoding="utf-8")
@@ -1573,7 +1573,7 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
         encoding="utf-8",
     )
     init_publication(load_publication_definition(repo, "demo"))
-    data_root = repo / "output" / "papers" / "demo"
+    data_root = repo / "papers" / "demo" / "data"
     (data_root / "training.npy").write_bytes(b"training")
     (data_root / "dataset.npy").write_bytes(b"dataset")
     step = 0
@@ -1873,7 +1873,7 @@ def test_cli_shell_update_recomputes_loader_data(
         + "\n",
         encoding="utf-8",
     )
-    training_path = repo / "output" / "papers" / "demo" / "training.txt"
+    training_path = repo / "papers" / "demo" / "data" / "training.txt"
     training_path.write_text("first\n", encoding="utf-8")
     init_publication(load_publication_definition(repo, "demo"))
     commands = iter(["stat training_value update", "update", "quit"])
@@ -1920,7 +1920,7 @@ def test_cli_shell_preloads_normal_loaders_once_and_reuses_them_across_commands(
         + "\n",
         encoding="utf-8",
     )
-    training_path = repo / "output" / "papers" / "demo" / "training.txt"
+    training_path = repo / "papers" / "demo" / "data" / "training.txt"
     training_path.write_text("alpha\n", encoding="utf-8")
     init_publication(load_publication_definition(repo, "demo"))
     commands = iter(["stat training_value update", "stat training_value update", "quit"])
@@ -1966,7 +1966,7 @@ def test_cli_shell_nocache_loader_runs_once_per_command(
         + "\n",
         encoding="utf-8",
     )
-    training_path = repo / "output" / "papers" / "demo" / "training.txt"
+    training_path = repo / "papers" / "demo" / "data" / "training.txt"
     training_path.write_text("beta\n", encoding="utf-8")
     init_publication(load_publication_definition(repo, "demo"))
     commands = iter(["stat update", "stat update", "quit"])
@@ -3147,7 +3147,7 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     output = capsys.readouterr().out.strip()
     assert output.endswith("/papers/fresh")
     fresh_root = repo / "papers" / "fresh"
-    fresh_data_root = repo / "output" / "papers" / "fresh"
+    fresh_data_root = repo / "papers" / "fresh" / "data"
     assert fresh_root.exists()
     assert fresh_data_root.exists()
     config_path = fresh_root / "pub.yaml"
@@ -3197,6 +3197,13 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     assert r"\TableExample" not in main_tex_text
     assert r"\graphicspath{{figures/}}" not in main_tex_text
     assert (fresh_root / "tex" / "autofigures").exists()
+    assert (fresh_root / "tex" / "autofigures").is_symlink()
+    assert os.readlink(fresh_root / "tex" / "autofigures") == "../data/tex-artifacts/autofigures"
+    assert os.readlink(fresh_root / "tex" / "autostats.tex") == "../data/tex-artifacts/autostats.tex"
+    assert os.readlink(fresh_root / "tex" / "autotables.tex") == "../data/tex-artifacts/autotables.tex"
+    assert (fresh_root / "data" / "tex-artifacts" / "autofigures").is_dir()
+    assert (fresh_root / "data" / "tex-artifacts" / "autostats.tex").exists()
+    assert (fresh_root / "data" / "tex-artifacts" / "autotables.tex").exists()
     assert (fresh_root / "tex" / "build").exists()
     assert not (fresh_root / "preview").exists()
     assert (fresh_root / "tex" / "pubify.sty").exists()
@@ -3206,6 +3213,27 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     assert fake_pubify_mpl.prepare_calls[0][1]["textheight_in"] == 7.5896
     assert fake_pubify_mpl.prepare_calls[0][1]["base_fontsize_pt"] == 12.0
     assert fake_pubify_mpl.prepare_calls[0][1]["caption_lineheight_pt"] == 13.6
+
+def test_force_init_migrates_legacy_direct_tex_artifacts(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    legacy_autofigures = repo / "papers" / "demo" / "tex" / "autofigures"
+    legacy_autofigures.mkdir(parents=True, exist_ok=True)
+    (legacy_autofigures / "single.pdf").write_text("legacy figure", encoding="utf-8")
+    (repo / "papers" / "demo" / "tex" / "autostats.tex").write_text("% legacy stats\n", encoding="utf-8")
+    (repo / "papers" / "demo" / "tex" / "autotables.tex").write_text("% legacy tables\n", encoding="utf-8")
+
+    assert main(["--force", "init", "demo"]) == 0
+    capsys.readouterr()
+
+    publication = load_publication_definition(repo, "demo")
+    assert publication.paths.tex_autofigures_root.is_symlink()
+    assert publication.paths.tex_autostats_path.is_symlink()
+    assert publication.paths.tex_autotables_path.is_symlink()
+    assert (publication.paths.autofigures_root / "single.pdf").read_text(encoding="utf-8") == "legacy figure"
+    assert publication.paths.autostats_path.read_text(encoding="utf-8") == "% legacy stats\n"
+    assert publication.paths.autotables_path.read_text(encoding="utf-8") == "% legacy tables\n"
 
 def test_init_without_publication_id_initializes_workspace(
     tmp_path: Path,
@@ -3228,13 +3256,26 @@ def test_init_without_publication_id_initializes_workspace(
         [
             "pubify-pubs:",
             "  publications_root: papers",
-            '  data_root: ""',
             "  preview:",
             "    publication: preview",
             "    figure: preview",
             "",
         ]
     )
+
+def test_workspace_init_rejects_force(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(workspace_root)
+
+    with pytest.raises(SystemExit):
+        main(["--force", "init"])
+
+    assert "workspace init does not accept --force" in capsys.readouterr().err
 
 def test_init_without_publication_id_is_idempotent_and_preserves_existing_config(
     tmp_path: Path,
@@ -3416,7 +3457,7 @@ def test_check_fails_when_mirror_root_is_missing(repo: Path, fake_pubify_mpl: Fa
         check_publication(paper)
 
 def test_check_fails_when_declared_data_path_is_missing(repo: Path) -> None:
-    (repo / "output" / "papers" / "demo" / "training.npy").unlink()
+    (repo / "papers" / "demo" / "data" / "training.npy").unlink()
     paper = load_publication_definition(repo, "demo")
 
     with pytest.raises(ValueError, match="Missing data path for loader 'training'"):

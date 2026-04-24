@@ -4,6 +4,7 @@ from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager, redirect_stderr, redirect_stdout
 from dataclasses import dataclass, field
 import io
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -25,6 +26,7 @@ from pubify_pubs.config import (
 from pubify_pubs.discovery import (
     FigureSpec,
     PublicationDefinition,
+    PublicationPaths,
     StatSpec,
     TableSpec,
     build_publication_paths,
@@ -33,14 +35,12 @@ from pubify_pubs.discovery import (
 from pubify_pubs.export import FigureExport, FigurePanel, export_figure, normalize_figure_result
 from pubify_pubs.stats import (
     ComputedStat,
-    autostats_path,
     compute_resolved_stat,
     ensure_unique_macro_names,
     render_autostats_text,
 )
 from pubify_pubs.tables import (
     ComputedTable,
-    autotables_path,
     check_table_references,
     compute_table,
     render_autotables_text,
@@ -91,6 +91,7 @@ def check_publication(publication: PublicationDefinition) -> None:
     if errors:
         joined = "\n".join(f"- {message}" for message in errors)
         raise ValueError(f"Publication '{publication.publication_id}' failed validation:\n{joined}")
+    ensure_generated_artifact_paths(publication)
     check_tables(publication)
 
 
@@ -104,7 +105,7 @@ def init_publication(
         backend = pubify_mpl
 
     publication.paths.tex_root.mkdir(parents=True, exist_ok=True)
-    publication.paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+    ensure_generated_artifact_paths(publication)
     publication.paths.build_root.mkdir(parents=True, exist_ok=True)
     return backend.prepare(
         publication.paths.tex_root,
@@ -112,7 +113,13 @@ def init_publication(
     )
 
 
-def init_publication_by_id(workspace_root: Path, publication_id: str, backend: object | None = None) -> Path:
+def init_publication_by_id(
+    workspace_root: Path,
+    publication_id: str,
+    backend: object | None = None,
+    *,
+    force: bool = False,
+) -> Path:
     """Create any missing publication scaffolding, then prepare its TeX tree."""
 
     paths = build_publication_paths(workspace_root, publication_id)
@@ -137,10 +144,86 @@ def init_publication_by_id(workspace_root: Path, publication_id: str, backend: o
     if backend is None:
         backend = pubify_mpl
     paths.tex_root.mkdir(parents=True, exist_ok=True)
-    paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+    ensure_generated_artifact_paths(paths, force=force)
     paths.build_root.mkdir(parents=True, exist_ok=True)
     backend.prepare(paths.tex_root, template=config.pubify_mpl.template)
     return paths.publication_root
+
+
+def ensure_generated_artifact_paths(
+    publication_or_paths: PublicationDefinition | PublicationPaths,
+    *,
+    force: bool = False,
+) -> None:
+    """Create canonical generated-artifact paths and their local TeX symlink view."""
+
+    paths = getattr(publication_or_paths, "paths", publication_or_paths)
+    paths.data_root.mkdir(parents=True, exist_ok=True)
+    paths.tex_artifacts_root.mkdir(parents=True, exist_ok=True)
+    paths.autofigures_root.mkdir(parents=True, exist_ok=True)
+
+    _ensure_artifact_symlink(paths.tex_autofigures_root, paths.autofigures_root, force=force)
+    _ensure_artifact_symlink(paths.tex_autostats_path, paths.autostats_path, force=force)
+    _ensure_artifact_symlink(paths.tex_autotables_path, paths.autotables_path, force=force)
+    for output_file in (paths.autostats_path, paths.autotables_path):
+        output_file.parent.mkdir(parents=True, exist_ok=True)
+        if not output_file.exists():
+            output_file.write_text("", encoding="utf-8")
+
+
+def _ensure_artifact_symlink(link_path: Path, target_path: Path, *, force: bool) -> None:
+    expected_target = _relative_symlink_target(link_path, target_path)
+    if link_path.is_symlink():
+        if Path(os.readlink(link_path)) == expected_target:
+            return
+        if not force:
+            raise ValueError(
+                f"Generated artifact link has unexpected target: {link_path}. "
+                "Run `pubs --force init <publication-id>` to repair it."
+            )
+        link_path.unlink()
+    elif link_path.exists():
+        if not force:
+            raise ValueError(
+                f"Generated artifact path must be a symlink to {expected_target}: {link_path}. "
+                "Run `pubs --force init <publication-id>` to migrate it."
+            )
+        _migrate_generated_artifact(link_path, target_path)
+
+    link_path.parent.mkdir(parents=True, exist_ok=True)
+    link_path.symlink_to(expected_target, target_is_directory=target_path.is_dir())
+
+
+def _relative_symlink_target(link_path: Path, target_path: Path) -> Path:
+    return Path(os.path.relpath(target_path, start=link_path.parent))
+
+
+def _migrate_generated_artifact(source: Path, destination: Path) -> None:
+    if source.is_dir():
+        _merge_generated_artifact_directory(source, destination)
+        shutil.rmtree(source)
+        return
+    if destination.exists() and destination.read_bytes() != source.read_bytes():
+        raise ValueError(f"Generated artifact migration conflict: {source} -> {destination}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if not destination.exists():
+        shutil.move(str(source), str(destination))
+    else:
+        source.unlink()
+
+
+def _merge_generated_artifact_directory(source: Path, destination: Path) -> None:
+    destination.mkdir(parents=True, exist_ok=True)
+    for child in source.iterdir():
+        target = destination / child.name
+        if child.is_dir():
+            _merge_generated_artifact_directory(child, target)
+            continue
+        if target.exists() and target.read_bytes() != child.read_bytes():
+            raise ValueError(f"Generated artifact migration conflict: {child} -> {target}")
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(child), str(target))
 
 
 def ensure_publications_agents_file(workspace_root: Path) -> Path:
@@ -163,7 +246,7 @@ def run_figures(
     subfigure_index: int | None = None,
     ctx: RunContext | None = None,
 ) -> list[Path]:
-    """Run one or more figures and export PDFs into ``tex/autofigures``."""
+    """Run one or more figures and export PDFs into the generated artifact store."""
 
     errors = validate_publication_definition(publication, require_tex_support=False)
     if errors:
@@ -171,6 +254,7 @@ def run_figures(
         raise ValueError(
             f"Publication '{publication.publication_id}' failed validation:\n{joined}"
         )
+    ensure_generated_artifact_paths(publication)
     run_ctx = ctx or build_run_context(publication)
     figure_ids = [figure_id] if figure_id is not None else sorted(publication.figures)
     outputs: list[Path] = []
@@ -246,8 +330,9 @@ def update_stats(
 ) -> tuple[Path, tuple[ComputedStat, ...]]:
     """Compute all stats and rewrite the framework-owned ``autostats.tex`` snapshot."""
 
+    ensure_generated_artifact_paths(publication)
     computed = run_stats(publication, ctx=ctx)
-    output_path = autostats_path(publication.paths.tex_root)
+    output_path = publication.paths.autostats_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_autostats_text(computed), encoding="utf-8")
     return output_path, computed
@@ -282,8 +367,9 @@ def update_tables(
 ) -> tuple[Path, tuple[ComputedTable, ...]]:
     """Compute all tables and rewrite the framework-owned ``autotables.tex`` snapshot."""
 
+    ensure_generated_artifact_paths(publication)
     computed = run_tables(publication, ctx=ctx)
-    output_path = autotables_path(publication.paths.tex_root)
+    output_path = publication.paths.autotables_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_autotables_text(computed), encoding="utf-8")
     return output_path, computed
@@ -295,7 +381,8 @@ def write_computed_tables(
 ) -> Path:
     """Write an already-computed table snapshot to ``autotables.tex``."""
 
-    output_path = autotables_path(publication.paths.tex_root)
+    ensure_generated_artifact_paths(publication)
+    output_path = publication.paths.autotables_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_autotables_text(computed), encoding="utf-8")
     return output_path
@@ -308,6 +395,7 @@ def check_tables(
 ) -> None:
     """Validate discovered tables against surrounding manuscript table definitions."""
 
+    ensure_generated_artifact_paths(publication)
     computed = run_tables(publication, table_id=table_id, ctx=ctx)
     check_table_references(
         publication.paths.tex_root,
@@ -324,7 +412,8 @@ def write_computed_stats(
     """Write an already-computed stat snapshot to ``autostats.tex``."""
 
     ensure_unique_macro_names(computed)
-    output_path = autostats_path(publication.paths.tex_root)
+    ensure_generated_artifact_paths(publication)
+    output_path = publication.paths.autostats_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(render_autostats_text(computed), encoding="utf-8")
     return output_path
@@ -384,6 +473,7 @@ def build_publication(
 ) -> subprocess.CompletedProcess[str]:
     """Compile the publication's TeX source into ``tex/build`` with ``latexmk``."""
 
+    ensure_generated_artifact_paths(publication)
     errors = validate_publication_definition(publication, require_tex_support=True)
     if errors:
         missing_support = [
@@ -431,8 +521,9 @@ def clear_publication_build(publication: PublicationDefinition) -> None:
 
 
 def clear_autofigures(publication: PublicationDefinition) -> None:
-    """Remove all generated figure files under ``tex/autofigures``."""
+    """Remove all generated figure files under the canonical generated artifact store."""
 
+    ensure_generated_artifact_paths(publication)
     _clear_output_directory(publication.paths.autofigures_root)
 
 

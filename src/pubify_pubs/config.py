@@ -71,7 +71,6 @@ class WorkspaceConfig:
 
     workspace_root: Path
     publications_root: Path
-    data_root: Path | None
     preview: PreviewConfig
 
 
@@ -156,7 +155,7 @@ def find_workspace_root(start: Path | None = None) -> Path:
 
 
 def load_workspace_config(workspace_root: Path) -> WorkspaceConfig:
-    """Load the workspace publication and data roots from ``pubify.yaml``."""
+    """Load workspace-level publication settings from ``pubify.yaml``."""
 
     root = workspace_root.resolve()
     config_path = root / WORKSPACE_CONFIG_FILENAME
@@ -170,12 +169,10 @@ def load_workspace_config(workspace_root: Path) -> WorkspaceConfig:
         config_path,
         "publications_root",
     )
-    data_root = _optional_workspace_relative_root(section, config_path, "data_root")
     preview = _load_preview_config(section, config_path)
     return WorkspaceConfig(
         workspace_root=root,
         publications_root=publications_root,
-        data_root=data_root,
         preview=preview,
     )
 
@@ -246,10 +243,8 @@ def _load_init_asset_text(filename: str) -> str:
 
 
 def resolve_publication_data_root(workspace: WorkspaceConfig, publication_id: str) -> Path:
-    """Resolve the effective publication-local pinned-data root."""
+    """Resolve the publication-local pinned-data root."""
 
-    if workspace.data_root is not None:
-        return workspace.data_root / publication_id
     return workspace.publications_root / publication_id / "data"
 
 
@@ -286,22 +281,6 @@ def _require_workspace_relative_root(
     return resolved
 
 
-def _optional_workspace_relative_root(
-    raw: dict[str, object],
-    config_path: Path,
-    key: str,
-) -> Path | None:
-    value = raw.get(key)
-    if not isinstance(value, str):
-        raise ValueError(f"{config_path}: {key} must be a string")
-    if not value:
-        return None
-    resolved = Path(value).expanduser()
-    if not resolved.is_absolute():
-        resolved = (config_path.parent / resolved).resolve()
-    return resolved
-
-
 def _load_preview_config(raw: dict[str, object], config_path: Path) -> PreviewConfig:
     preview_raw = raw.get("preview", {})
     if not isinstance(preview_raw, dict):
@@ -332,7 +311,6 @@ def _render_default_workspace_config() -> str:
         [
             f"{WORKSPACE_CONFIG_SECTION}:",
             "  publications_root: papers",
-            '  data_root: ""',
             "  preview:",
             "    publication: preview",
             "    figure: preview",

@@ -14,7 +14,7 @@ def publication_data_path(
     *,
     workspace_root: Path | None = None,
 ) -> Path:
-    """Resolve one pinned publication-data path under the configured workspace ``data_root``."""
+    """Resolve one pinned publication-data path under the publication-local ``data`` root."""
 
     resolved_workspace_root = (workspace_root or find_workspace_root()).resolve()
     workspace = load_workspace_config(resolved_workspace_root)

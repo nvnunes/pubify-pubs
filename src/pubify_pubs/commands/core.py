@@ -977,7 +977,7 @@ def preview_figure_paths(
 ) -> list[Path]:
     if figure_id not in publication.figures:
         raise KeyError(f"Unknown figure '{figure_id}'")
-    root = publication.paths.autofigures_root
+    root = publication.paths.tex_autofigures_root
     primary = root / f"{figure_id}.pdf"
     if primary.exists():
         if subfigure_index is not None and subfigure_index != 1:

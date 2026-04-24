@@ -42,8 +42,8 @@ Package-owned:
 - the `pubify-pubs` section in `pubify.yaml`
 - publication folders as workflow targets rather than as package-owned content
 - package-managed TeX support files
-- generated outputs under `tex/autofigures/`, `tex/autostats.tex`, and
-  `tex/autotables.tex`
+- generated outputs under `papers/<publication-id>/data/tex-artifacts/`
+- the local TeX symlink view for generated outputs
 
 Host-owned:
 
@@ -51,7 +51,8 @@ Host-owned:
 - `papers/<publication-id>`
 - `pub.yaml` content
 - publication figures, manuscript-local helpers, and LaTeX source
-- pinned and external scientific data
+- pinned and external scientific data, including any filesystem redirect for
+  `papers/<publication-id>/data`
 - host-specific integration tests
 
 The workspace contract is intentionally small and downstream-owned. `pubify-data`
@@ -59,11 +60,11 @@ loads shared config files, but `pubify-pubs` owns these roots under the
 `pubify-pubs` section:
 
 - `pubify-pubs.publications_root` points at host-owned publication directories
-- blank `pubify-pubs.data_root` means pinned publication-local data defaults to
+- pinned publication-local data resolves through
   `papers/<publication-id>/data/`
-- non-empty `pubify-pubs.data_root` points at a shared host-owned pinned-data root
 - package code must not depend on additional host-repo layout beyond that
-  config contract
+  config contract; hosts that need data elsewhere should use a symlink, bind
+  mount, or equivalent filesystem redirect for the publication `data/` path
 
 ## Public Package Surface
 
@@ -107,7 +108,7 @@ Preserve these publication-facing conventions:
 - Order loaders by the first place they are needed by the manuscript-ordered
   `@figure`, `@stat`, and `@table` methods below.
 - Prefer `@data(...)` over `@external_data(...)` when the input should be
-  pinned under the workspace `data_root`.
+  pinned under the publication-local `data/` root.
 - `publication_data_path(...)` owns pinned publication-data path resolution and
   parent creation.
 - Format-owned publication-data helpers should generally come in save/load
@@ -134,14 +135,15 @@ Preserve these publication-facing conventions:
 
 Generated outputs remain framework-owned rather than generic asset directories.
 
-- `tex/autofigures/` is the generated figure directory.
-- full `figure update` treats `tex/autofigures/` as an authoritative snapshot
-  and clears stale generated files first.
+- `data/tex-artifacts/autofigures/` is the canonical generated figure directory.
+- `tex/autofigures` is a symlink view for LaTeX convenience.
+- full `figure update` treats the canonical generated figure directory as an
+  authoritative snapshot and clears stale generated files first.
 - targeted `figure <figure-id> update` stays incremental.
-- `tex/autostats.tex` is rewritten as one authoritative snapshot during stat
-  updates.
-- `tex/autotables.tex` is rewritten as one authoritative snapshot during table
-  updates.
+- `data/tex-artifacts/autostats.tex` is rewritten as one authoritative snapshot
+  during stat updates and exposed through `tex/autostats.tex`.
+- `data/tex-artifacts/autotables.tex` is rewritten as one authoritative snapshot
+  during table updates and exposed through `tex/autotables.tex`.
 - generated figures remain one-way local-to-mirror delivery, separate from
   managed-source sync.
 

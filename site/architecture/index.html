@@ -159,8 +159,8 @@ the TeX-agnostic <code>pubify-data</code> runtime.</p>
 <li>the <code>pubify-pubs</code> section in <code>pubify.yaml</code></li>
 <li>publication folders as workflow targets rather than as package-owned content</li>
 <li>package-managed TeX support files</li>
-<li>generated outputs under <code>tex/autofigures/</code>, <code>tex/autostats.tex</code>, and
-  <code>tex/autotables.tex</code></li>
+<li>generated outputs under <code>papers/&lt;publication-id&gt;/data/tex-artifacts/</code></li>
+<li>the local TeX symlink view for generated outputs</li>
 </ul>
 <p>Host-owned:</p>
 <ul>
@@ -168,7 +168,8 @@ the TeX-agnostic <code>pubify-data</code> runtime.</p>
 <li><code>papers/&lt;publication-id&gt;</code></li>
 <li><code>pub.yaml</code> content</li>
 <li>publication figures, manuscript-local helpers, and LaTeX source</li>
-<li>pinned and external scientific data</li>
+<li>pinned and external scientific data, including any filesystem redirect for
+  <code>papers/&lt;publication-id&gt;/data</code></li>
 <li>host-specific integration tests</li>
 </ul>
 <p>The workspace contract is intentionally small and downstream-owned. <code>pubify-data</code>
@@ -176,11 +177,11 @@ loads shared config files, but <code>pubify-pubs</code> owns these roots under t
 <code>pubify-pubs</code> section:</p>
 <ul>
 <li><code>pubify-pubs.publications_root</code> points at host-owned publication directories</li>
-<li>blank <code>pubify-pubs.data_root</code> means pinned publication-local data defaults to
+<li>pinned publication-local data resolves through
   <code>papers/&lt;publication-id&gt;/data/</code></li>
-<li>non-empty <code>pubify-pubs.data_root</code> points at a shared host-owned pinned-data root</li>
 <li>package code must not depend on additional host-repo layout beyond that
-  config contract</li>
+  config contract; hosts that need data elsewhere should use a symlink, bind
+  mount, or equivalent filesystem redirect for the publication <code>data/</code> path</li>
 </ul>
 <h2 id="public-package-surface">Public Package Surface</h2>
 <p>Keep the public surface conservative.</p>
@@ -222,7 +223,7 @@ loads shared config files, but <code>pubify-pubs</code> owns these roots under t
 <li>Order loaders by the first place they are needed by the manuscript-ordered
   <code>@figure</code>, <code>@stat</code>, and <code>@table</code> methods below.</li>
 <li>Prefer <code>@data(...)</code> over <code>@external_data(...)</code> when the input should be
-  pinned under the workspace <code>data_root</code>.</li>
+  pinned under the publication-local <code>data/</code> root.</li>
 <li><code>publication_data_path(...)</code> owns pinned publication-data path resolution and
   parent creation.</li>
 <li>Format-owned publication-data helpers should generally come in save/load
@@ -248,14 +249,15 @@ loads shared config files, but <code>pubify-pubs</code> owns these roots under t
 <h2 id="generated-outputs-and-lifecycle">Generated Outputs And Lifecycle</h2>
 <p>Generated outputs remain framework-owned rather than generic asset directories.</p>
 <ul>
-<li><code>tex/autofigures/</code> is the generated figure directory.</li>
-<li>full <code>figure update</code> treats <code>tex/autofigures/</code> as an authoritative snapshot
-  and clears stale generated files first.</li>
+<li><code>data/tex-artifacts/autofigures/</code> is the canonical generated figure directory.</li>
+<li><code>tex/autofigures</code> is a symlink view for LaTeX convenience.</li>
+<li>full <code>figure update</code> treats the canonical generated figure directory as an
+  authoritative snapshot and clears stale generated files first.</li>
 <li>targeted <code>figure &lt;figure-id&gt; update</code> stays incremental.</li>
-<li><code>tex/autostats.tex</code> is rewritten as one authoritative snapshot during stat
-  updates.</li>
-<li><code>tex/autotables.tex</code> is rewritten as one authoritative snapshot during table
-  updates.</li>
+<li><code>data/tex-artifacts/autostats.tex</code> is rewritten as one authoritative snapshot
+  during stat updates and exposed through <code>tex/autostats.tex</code>.</li>
+<li><code>data/tex-artifacts/autotables.tex</code> is rewritten as one authoritative snapshot
+  during table updates and exposed through <code>tex/autotables.tex</code>.</li>
 <li>generated figures remain one-way local-to-mirror delivery, separate from
   managed-source sync.</li>
 </ul>

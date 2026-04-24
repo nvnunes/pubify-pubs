@@ -104,12 +104,12 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo_root.mkdir(parents=True, exist_ok=True)
     (repo_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (repo_root / "pubify.yaml").write_text(
-        "pubify-pubs:\n  publications_root: papers\n  data_root: output/papers\n",
+        "pubify-pubs:\n  publications_root: papers\n",
         encoding="utf-8",
     )
     (repo_root / "mirror" / "demo").mkdir(parents=True)
     (repo_root / "papers" / "demo" / "tex" / "sections").mkdir(parents=True)
-    (repo_root / "output" / "papers" / "demo" / "bundle").mkdir(parents=True)
+    (repo_root / "papers" / "demo" / "data" / "bundle").mkdir(parents=True)
     (repo_root / "papers" / "demo" / "pub.yaml").write_text(
         "\n".join(
             [
@@ -194,9 +194,9 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         "skip\n",
         encoding="utf-8",
     )
-    (repo_root / "output" / "papers" / "demo" / "training.npy").write_text("training", encoding="utf-8")
-    (repo_root / "output" / "papers" / "demo" / "bundle" / "model.txt").write_text("model", encoding="utf-8")
-    (repo_root / "output" / "papers" / "demo" / "bundle" / "meta.txt").write_text("meta", encoding="utf-8")
+    (repo_root / "papers" / "demo" / "data" / "training.npy").write_text("training", encoding="utf-8")
+    (repo_root / "papers" / "demo" / "data" / "bundle" / "model.txt").write_text("model", encoding="utf-8")
+    (repo_root / "papers" / "demo" / "data" / "bundle" / "meta.txt").write_text("meta", encoding="utf-8")
     monkeypatch.chdir(repo_root)
     return repo_root
 
@@ -222,7 +222,7 @@ def _write_external_paper(
 ) -> Path:
     publication_root = repo / "papers" / publication_id
     (publication_root / "tex").mkdir(parents=True, exist_ok=True)
-    (repo / "output" / "papers" / publication_id).mkdir(parents=True, exist_ok=True)
+    (publication_root / "data").mkdir(parents=True, exist_ok=True)
     lines = [
         'mirror_root: ""',
         "main_tex: main.tex",
@@ -253,7 +253,7 @@ def _write_table_paper(
 ) -> Path:
     publication_root = repo / "papers" / publication_id
     (publication_root / "tex").mkdir(parents=True, exist_ok=True)
-    (repo / "output" / "papers" / publication_id).mkdir(parents=True, exist_ok=True)
+    (publication_root / "data").mkdir(parents=True, exist_ok=True)
     (publication_root / "pub.yaml").write_text(
         "\n".join(
             [
