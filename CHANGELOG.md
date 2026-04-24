@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.3
+
+- Fixed `pubs <publication-id> figure <figure-id> update` so it no longer deletes unrelated generated figures.
+
 ## 1.0.2
 
 - Added a shared `AGENTS.md` bootstrap under the publications root during `pubs init`.
