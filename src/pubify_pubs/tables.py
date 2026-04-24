@@ -10,7 +10,7 @@ import re
 AUTOTABLES_FILENAME = "autotables.tex"
 _MACRO_NAME_PART = re.compile(r"[A-Za-z0-9]+")
 _INPUT_RE = re.compile(r"\\(?:input|include)\{([^}]+)\}")
-_TABLE_ENV_RE = re.compile(r"\\(begin|end)\{(tabular|tabularx|longtable)\}")
+_TABLE_ENV_RE = re.compile(r"\\(begin|end)\{(tabular\*|tabular|tabularx|longtable)\}")
 
 
 @dataclass(frozen=True, init=False)
@@ -489,7 +489,7 @@ def _parse_environment_width(text: str, position: int, environment: str) -> int:
     if index < len(text) and text[index] == "[":
         _, index = _read_bracketed_group(text, index, "[", "]")
         index = _skip_whitespace(text, index)
-    if environment == "tabularx":
+    if environment in {"tabular*", "tabularx"}:
         _, index = _read_bracketed_group(text, index, "{", "}")
         index = _skip_whitespace(text, index)
     colspec, _ = _read_bracketed_group(text, index, "{", "}")
