@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Removed `pubify_pubs` authoring decorator re-exports; publication code must import `data`, `external_data`, `figure`, `stat`, and `table` from `pubify_data`.
+- Removed legacy top-level `pubify.yaml` root keys; workspace roots must live under the `pubify-pubs` section.
+
 ## 1.0.3
 
 - Fixed `pubs <publication-id> figure <figure-id> update` so it no longer deletes unrelated generated figures.

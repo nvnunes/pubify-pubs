@@ -108,8 +108,8 @@ pubify-pubs:
   data_root: output/papers
 ```
 
-- `src/pubify_pubs/config.py` still supports legacy top-level
-  `publications_root` and `data_root` as a temporary migration fallback.
+- `src/pubify_pubs/config.py` requires roots under the `pubify-pubs` section;
+  legacy top-level `publications_root` and `data_root` are no longer accepted.
 - `src/pubify_pubs/assets/init/figures.py` imports decorators from
   `pubify_data`.
 - `src/pubify_pubs/stubs.py` adds new decorators from `pubify_data`.
@@ -199,8 +199,8 @@ Recommended immediate next action for a new thread:
 
 ## Phase 4: Complete The Hard Migration
 
-- Remove public authoring re-export shims from `pubify-pubs`.
-- Update tests and templates so publication authoring imports use:
+- Public authoring re-export shims from `pubify-pubs` have been removed.
+- Tests and templates now require publication authoring imports to use:
 
 ```python
 from pubify_data import data, external_data, figure, stat, table
@@ -212,8 +212,8 @@ from pubify_data import data, external_data, figure, stat, table
 from pubify_pubs import FigureExport, TableResult
 ```
 
-- Remove legacy top-level `pubify.yaml` root fallback after tests and docs are
-  migrated to:
+- Legacy top-level `pubify.yaml` root fallback has been removed; workspace
+  roots must be declared as:
 
 ```yaml
 pubify-pubs:
@@ -221,7 +221,7 @@ pubify-pubs:
   data_root: output/papers
 ```
 
-- Update migration notes to mark the import/config changes as breaking.
+- Migration notes mark the import/config changes as breaking.
 
 ## Phase 5: Docs And Integration
 

@@ -346,7 +346,7 @@ def _workspace_config_section(
     config_path: Path,
 ) -> dict[str, object]:
     if WORKSPACE_CONFIG_SECTION not in raw:
-        return raw
+        raise ValueError(f"{config_path}: missing required {WORKSPACE_CONFIG_SECTION} section")
     section = raw[WORKSPACE_CONFIG_SECTION]
     if not isinstance(section, dict):
         raise ValueError(f"{config_path}: {WORKSPACE_CONFIG_SECTION} must be a mapping")

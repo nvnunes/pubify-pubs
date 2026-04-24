@@ -104,7 +104,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     repo_root.mkdir(parents=True, exist_ok=True)
     (repo_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (repo_root / "pubify.yaml").write_text(
-        "publications_root: papers\ndata_root: output/papers\n",
+        "pubify-pubs:\n  publications_root: papers\n  data_root: output/papers\n",
         encoding="utf-8",
     )
     (repo_root / "mirror" / "demo").mkdir(parents=True)
@@ -137,7 +137,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs.decorators import data, figure, stat",
+                "from pubify_data import data, figure, stat",
                 "",
                 "CALLS = {'training': 0, 'bundle': 0}",
                 "",

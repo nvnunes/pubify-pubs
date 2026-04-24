@@ -20,7 +20,7 @@ import pubify_pubs.runtime as core_runtime
 import pubify_pubs.shell_incremental as core_shell_incremental
 from pubify_pubs.data import load_publication_data_npz, publication_data_path, save_publication_data_npz
 from pubify_pubs import TableResult
-from pubify_pubs.decorators import data, external_data, figure, stat, table
+from pubify_data import data, external_data, figure, stat, table
 from pubify_pubs.discovery import find_workspace_root, list_publication_ids, load_publication_definition
 from pubify_pubs.runtime import (
     UserCodeExecutionError,
@@ -122,7 +122,7 @@ def test_publication_data_path_supports_workspace_root_override(tmp_path: Path) 
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (workspace_root / "pubify.yaml").write_text(
-        "publications_root: papers\ndata_root: output/papers\n",
+        "pubify-pubs:\n  publications_root: papers\n  data_root: output/papers\n",
         encoding="utf-8",
     )
 
@@ -140,7 +140,7 @@ def test_publication_data_path_falls_back_to_publication_local_data_root(tmp_pat
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (workspace_root / "pubify.yaml").write_text(
-        'publications_root: papers\ndata_root: ""\n',
+        'pubify-pubs:\n  publications_root: papers\n  data_root: ""\n',
         encoding="utf-8",
     )
 
@@ -202,7 +202,7 @@ def test_save_publication_data_npz_supports_workspace_root_override(tmp_path: Pa
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (workspace_root / "pubify.yaml").write_text(
-        "publications_root: papers\ndata_root: output/papers\n",
+        "pubify-pubs:\n  publications_root: papers\n  data_root: output/papers\n",
         encoding="utf-8",
     )
 
@@ -222,7 +222,7 @@ def test_save_publication_data_npz_uses_publication_local_data_root_when_blank(t
     workspace_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (workspace_root / "pubify.yaml").write_text(
-        'publications_root: papers\ndata_root: ""\n',
+        'pubify-pubs:\n  publications_root: papers\n  data_root: ""\n',
         encoding="utf-8",
     )
 
@@ -243,6 +243,20 @@ def test_workspace_config_defaults_preview_backends(repo: Path) -> None:
     assert workspace.preview.publication == "preview"
     assert workspace.preview.figure == "preview"
 
+
+def test_workspace_config_rejects_legacy_top_level_roots(tmp_path: Path) -> None:
+    workspace_root = tmp_path / "pkg"
+    workspace_root.mkdir(parents=True, exist_ok=True)
+    (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    (workspace_root / "pubify.yaml").write_text(
+        "publications_root: papers\ndata_root: output/papers\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="missing required pubify-pubs section"):
+        load_workspace_config(workspace_root)
+
+
 def test_workspace_config_allows_blank_data_root(tmp_path: Path) -> None:
     workspace_root = tmp_path / "pkg"
     workspace_root.mkdir(parents=True, exist_ok=True)
@@ -250,8 +264,9 @@ def test_workspace_config_allows_blank_data_root(tmp_path: Path) -> None:
     (workspace_root / "pubify.yaml").write_text(
         "\n".join(
             [
-                "publications_root: papers",
-                'data_root: ""',
+                "pubify-pubs:",
+                "  publications_root: papers",
+                '  data_root: ""',
             ]
         )
         + "\n",
@@ -271,7 +286,7 @@ def test_load_publication_definition_uses_publication_local_data_root_when_blank
     publication_root.mkdir(parents=True, exist_ok=True)
     (workspace_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
     (workspace_root / "pubify.yaml").write_text(
-        'publications_root: papers\ndata_root: ""\n',
+        'pubify-pubs:\n  publications_root: papers\n  data_root: ""\n',
         encoding="utf-8",
     )
     (publication_root / "pub.yaml").write_text(
@@ -306,11 +321,12 @@ def test_workspace_config_parses_nested_preview_backends(tmp_path: Path) -> None
     (workspace_root / "pubify.yaml").write_text(
         "\n".join(
             [
-                "publications_root: papers",
-                "data_root: output/papers",
-                "preview:",
-                "  publication: vscode",
-                "  figure: preview",
+                "pubify-pubs:",
+                "  publications_root: papers",
+                "  data_root: output/papers",
+                "  preview:",
+                "    publication: vscode",
+                "    figure: preview",
             ]
         )
         + "\n",
@@ -329,10 +345,11 @@ def test_workspace_config_rejects_invalid_preview_backend(tmp_path: Path) -> Non
     (workspace_root / "pubify.yaml").write_text(
         "\n".join(
             [
-                "publications_root: papers",
-                "data_root: output/papers",
-                "preview:",
-                "  publication: finder",
+                "pubify-pubs:",
+                "  publications_root: papers",
+                "  data_root: output/papers",
+                "  preview:",
+                "    publication: finder",
             ]
         )
         + "\n",
@@ -520,7 +537,7 @@ def test_named_path_loader_requires_named_parameters_after_ctx(repo: Path) -> No
     (repo / "papers" / "demo" / "figures.py").write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import data",
+                "from pubify_data import data",
                 "",
                 "@data(model='bundle/model.txt', meta='bundle/meta.txt')",
                 "def load_bundle(ctx, paths):",
@@ -563,7 +580,7 @@ def test_check_fails_when_stat_depends_on_unknown_loader(repo: Path) -> None:
         publication_id="badstats",
         external_root_lines=["  project: output"],
         figure_lines=[
-            "from pubify_pubs.decorators import stat",
+            "from pubify_data import stat",
             "",
             "@stat",
             "def compute_missing_dep(ctx, missing_loader):",
@@ -582,7 +599,7 @@ def test_load_publication_definition_rejects_duplicate_stat_ids(repo: Path) -> N
         publication_id="dupes",
         external_root_lines=["  project: output"],
         figure_lines=[
-            "from pubify_pubs.decorators import stat",
+            "from pubify_data import stat",
             "",
             "@stat",
             "def compute_same(ctx):",
@@ -608,7 +625,7 @@ def test_run_figures_exposes_publication_rc_context(
             [
                 "import matplotlib as mpl",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs.decorators import figure",
+                "from pubify_data import figure",
                 "",
                 "@figure",
                 "def single(ctx):",
@@ -920,10 +937,11 @@ def test_cli_preview_uses_vscode_backend_when_configured(
     (repo / "pubify.yaml").write_text(
         "\n".join(
             [
-                "publications_root: papers",
-                "data_root: output/papers",
-                "preview:",
-                "  publication: vscode",
+                "pubify-pubs:",
+                "  publications_root: papers",
+                "  data_root: output/papers",
+                "  preview:",
+                "    publication: vscode",
             ]
         )
         + "\n",
@@ -951,10 +969,11 @@ def test_cli_figure_preview_uses_vscode_backend_when_configured(
     (repo / "pubify.yaml").write_text(
         "\n".join(
             [
-                "publications_root: papers",
-                "data_root: output/papers",
-                "preview:",
-                "  figure: vscode",
+                "pubify-pubs:",
+                "  publications_root: papers",
+                "  data_root: output/papers",
+                "  preview:",
+                "    figure: vscode",
             ]
         )
         + "\n",
@@ -1158,7 +1177,7 @@ def test_cli_figure_add_appends_stub_and_adds_missing_imports(
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import data",
+                "from pubify_data import data",
                 "",
                 "@data('training.npy')",
                 "def load_training(ctx, path):",
@@ -1177,8 +1196,7 @@ def test_cli_figure_add_appends_stub_and_adds_missing_imports(
     assert "- sample_plot: added" in _strip_ansi(captured.out)
     assert "import matplotlib.pyplot as plt" in figures_text
     assert "from pubify_pubs import FigureExport" in figures_text
-    assert "from pubify_pubs.decorators import data" in figures_text
-    assert "from pubify_data import figure" in figures_text
+    assert "from pubify_data import data, figure" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
             [
@@ -1202,7 +1220,7 @@ def test_cli_stat_add_appends_stub_and_adds_missing_imports(
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import data",
+                "from pubify_data import data",
                 "",
                 "@data('training.npy')",
                 "def load_training(ctx, path):",
@@ -1220,8 +1238,7 @@ def test_cli_stat_add_appends_stub_and_adds_missing_imports(
     assert "Stats" in captured.out
     assert "- sample_stat: added" in _strip_ansi(captured.out)
     assert "import numpy as np" in figures_text
-    assert "from pubify_pubs.decorators import data" in figures_text
-    assert "from pubify_data import stat" in figures_text
+    assert "from pubify_data import data, stat" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
             [
@@ -1243,7 +1260,7 @@ def test_cli_table_add_appends_stub_and_adds_missing_imports(
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import data",
+                "from pubify_data import data",
                 "",
                 "@data('training.npy')",
                 "def load_training(ctx, path):",
@@ -1262,8 +1279,7 @@ def test_cli_table_add_appends_stub_and_adds_missing_imports(
     assert "- sample_table: added" in _strip_ansi(captured.out)
     assert "import numpy as np" in figures_text
     assert "from pubify_pubs import TableResult" in figures_text
-    assert "from pubify_pubs.decorators import data" in figures_text
-    assert "from pubify_data import table" in figures_text
+    assert "from pubify_data import data, table" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
             [
@@ -1451,7 +1467,7 @@ def test_reload_session_publication_keeps_unchanged_imports_on_build_style_reloa
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import figure",
+                "from pubify_data import figure",
                 "from support_plotting import add_title",
                 "import matplotlib",
                 "matplotlib.use('Agg')",
@@ -1522,7 +1538,7 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import data",
+                "from pubify_data import data",
                 "from helpers import compute_summary, plot_single",
                 "",
                 "@data('training.npy')",
@@ -1540,7 +1556,7 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs.decorators import figure, stat",
+                "from pubify_data import figure, stat",
                 "",
                 "@figure",
                 "def plot_single(ctx, training):",
@@ -1571,7 +1587,7 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
             figures_path.write_text(
                 "\n".join(
                     [
-                        "from pubify_pubs.decorators import data",
+                        "from pubify_data import data",
                         "from helpers import compute_summary, plot_single",
                         "",
                         "@data('dataset.npy')",
@@ -1589,7 +1605,7 @@ def test_cli_shell_update_reloads_publication_local_helpers_after_loader_rename(
                         "import matplotlib",
                         "matplotlib.use('Agg')",
                         "import matplotlib.pyplot as plt",
-                        "from pubify_pubs.decorators import figure, stat",
+                        "from pubify_data import figure, stat",
                         "",
                         "@figure",
                         "def plot_single(ctx, dataset):",
@@ -1661,7 +1677,7 @@ def test_cli_shell_user_code_exception_keeps_session_alive(
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import figure",
+                "from pubify_data import figure",
                 "",
                 "@figure",
                 "def plot_single(ctx):",
@@ -1696,7 +1712,7 @@ def test_cli_figure_update_fails_cleanly_for_tuple_returning_loader(
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs.decorators import data, figure",
+                "from pubify_data import data, figure",
                 "",
                 "@data('training.npy')",
                 "def load_training(ctx, path):",
@@ -1730,7 +1746,7 @@ def test_cli_figure_update_fails_cleanly_for_none_returning_loader(
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs.decorators import data, figure",
+                "from pubify_data import data, figure",
                 "",
                 "@data('training.npy')",
                 "def load_training(ctx, path):",
@@ -1764,7 +1780,7 @@ def test_cli_shell_loader_tuple_return_keeps_session_alive(
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs.decorators import data, figure",
+                "from pubify_data import data, figure",
                 "",
                 "@data('training.npy', nocache=True)",
                 "def load_training(ctx, path):",
@@ -1804,7 +1820,7 @@ def test_cli_shell_loader_none_return_keeps_session_alive(
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
-                "from pubify_pubs.decorators import data, figure",
+                "from pubify_data import data, figure",
                 "",
                 "@data('training.npy', nocache=True)",
                 "def load_training(ctx, path):",
@@ -1842,7 +1858,7 @@ def test_cli_shell_update_recomputes_loader_data(
         "\n".join(
             [
                 "from pathlib import Path",
-                "from pubify_pubs.decorators import data, stat",
+                "from pubify_data import data, stat",
                 "",
                 "@data('training.txt')",
                 "def load_training(ctx, path):",
@@ -1887,7 +1903,7 @@ def test_cli_shell_preloads_normal_loaders_once_and_reuses_them_across_commands(
         "\n".join(
             [
                 "from pathlib import Path",
-                "from pubify_pubs.decorators import data, stat",
+                "from pubify_data import data, stat",
                 "",
                 "@data('training.txt')",
                 "def load_training(ctx, path):",
@@ -1929,7 +1945,7 @@ def test_cli_shell_nocache_loader_runs_once_per_command(
         "\n".join(
             [
                 "from pathlib import Path",
-                "from pubify_pubs.decorators import data, stat",
+                "from pubify_data import data, stat",
                 "",
                 "@data('training.txt', nocache=True)",
                 "def load_training(ctx, path):",
@@ -2437,7 +2453,7 @@ def test_cli_shell_build_reloads_publication_when_imported_module_changes(
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import figure",
+                "from pubify_data import figure",
                 "from support_plotting import add_title",
                 "import matplotlib",
                 "matplotlib.use('Agg')",
@@ -2502,7 +2518,7 @@ def test_collect_shell_method_state_tracks_figures_py_helpers_only_for_dependent
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import figure",
+                "from pubify_data import figure",
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
@@ -2564,7 +2580,7 @@ def test_collect_shell_method_state_tracks_figures_py_constants_only_for_depende
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs.decorators import figure",
+                "from pubify_data import figure",
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
@@ -2643,7 +2659,7 @@ def test_collect_shell_method_state_tracks_external_editable_submodules(
         "\n".join(
             [
                 "from external_tools import helper",
-                "from pubify_pubs.decorators import figure",
+                "from pubify_data import figure",
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
@@ -2699,7 +2715,7 @@ def test_figure_output_matching_does_not_cross_match_shared_suffix_names(
         "\n".join(
             [
                 "from pubify_pubs import FigureExport",
-                "from pubify_pubs.decorators import figure",
+                "from pubify_data import figure",
                 "import matplotlib",
                 "matplotlib.use('Agg')",
                 "import matplotlib.pyplot as plt",
@@ -2942,7 +2958,7 @@ def test_cli_table_update_writes_autotables_and_prints_table_block(
         publication_id="tablesdemo",
         figures_lines=[
             "from pubify_pubs import TableResult",
-            "from pubify_pubs.decorators import table",
+            "from pubify_data import table",
             "",
             "@table",
             "def tabulate_summary(ctx):",
@@ -2976,7 +2992,7 @@ def test_cli_table_latex_emits_single_body_scaffold(
         publication_id="tablelatex",
         figures_lines=[
             "from pubify_pubs import TableResult",
-            "from pubify_pubs.decorators import table",
+            "from pubify_data import table",
             "",
             "@table",
             "def tabulate_summary(ctx):",
@@ -3012,7 +3028,7 @@ def test_cli_table_latex_emits_grouped_multi_body_scaffold(
         publication_id="tablelatexmulti",
         figures_lines=[
             "from pubify_pubs import TableResult",
-            "from pubify_pubs.decorators import table",
+            "from pubify_data import table",
             "",
             "@table",
             "def tabulate_summary(ctx):",
@@ -3045,7 +3061,7 @@ def test_cli_table_latex_emits_missing_autotables_input_when_needed(
         publication_id="tablelatexinput",
         figures_lines=[
             "from pubify_pubs import TableResult",
-            "from pubify_pubs.decorators import table",
+            "from pubify_data import table",
             "",
             "@table",
             "def tabulate_summary(ctx):",
@@ -3070,7 +3086,7 @@ def test_cli_update_validates_tables(repo: Path) -> None:
         publication_id="tablecheck",
         figures_lines=[
             "from pubify_pubs import TableResult",
-            "from pubify_pubs.decorators import table",
+            "from pubify_data import table",
             "",
             "@table",
             "def tabulate_summary(ctx):",
@@ -3098,7 +3114,7 @@ def test_cli_tables_alias_maps_to_table(repo: Path, capsys: pytest.CaptureFixtur
         publication_id="tablesalias",
         figures_lines=[
             "from pubify_pubs import TableResult",
-            "from pubify_pubs.decorators import table",
+            "from pubify_data import table",
             "",
             "@table",
             "def tabulate_summary(ctx):",
@@ -3231,8 +3247,9 @@ def test_init_without_publication_id_is_idempotent_and_preserves_existing_config
     (workspace_root / "pubify.yaml").write_text(
         "\n".join(
             [
-                "publications_root: manuscripts",
-                "data_root: shared-data",
+                "pubify-pubs:",
+                "  publications_root: manuscripts",
+                "  data_root: shared-data",
             ]
         )
         + "\n",
@@ -3252,8 +3269,9 @@ def test_init_without_publication_id_is_idempotent_and_preserves_existing_config
 
     assert (workspace_root / "pubify.yaml").read_text(encoding="utf-8") == "\n".join(
         [
-            "publications_root: manuscripts",
-            "data_root: shared-data",
+            "pubify-pubs:",
+            "  publications_root: manuscripts",
+            "  data_root: shared-data",
             "",
         ]
     )
@@ -3271,8 +3289,9 @@ def test_init_without_publication_id_creates_agents_in_configured_publications_r
     (workspace_root / "pubify.yaml").write_text(
         "\n".join(
             [
-                "publications_root: manuscripts",
-                'data_root: ""',
+                "pubify-pubs:",
+                "  publications_root: manuscripts",
+                '  data_root: ""',
             ]
         )
         + "\n",
@@ -3430,7 +3449,7 @@ def test_data_list_shows_external_rows_and_does_not_validate_paths(
         publication_id="datalist",
         external_root_lines=[f"  scratch: {scratch_root}"],
         figure_lines=[
-            "from pubify_pubs.decorators import data, external_data, figure",
+            "from pubify_data import data, external_data, figure",
             "",
             "@data('training.npy')",
             "def load_training(ctx, path):",
@@ -3478,7 +3497,7 @@ def test_data_list_repeats_loader_id_for_multi_path_rows_and_keeps_per_loader_ro
         publication_id="datadedupe",
         external_root_lines=[f"  scratch: {scratch_root}"],
         figure_lines=[
-            "from pubify_pubs.decorators import external_data, figure",
+            "from pubify_data import external_data, figure",
             "",
             "@external_data('scratch', model_dir='models', tiptop_dir='tiptop')",
             "def load_one(ctx, model_dir, tiptop_dir):",
@@ -3521,7 +3540,7 @@ def test_data_list_colors_status_only_on_tty(
         publication_id="datacolor",
         external_root_lines=[f"  scratch: {scratch_root}"],
         figure_lines=[
-            "from pubify_pubs.decorators import data, external_data, figure",
+            "from pubify_data import data, external_data, figure",
             "",
             "@data('training.npy')",
             "def load_training(ctx, path):",
@@ -3560,7 +3579,7 @@ def test_data_list_empty_state_is_clear(
         publication_id="nodata",
         external_root_lines=[],
         figure_lines=[
-            "from pubify_pubs.decorators import figure",
+            "from pubify_data import figure",
             "",
             "@figure",
             "def plot_unused(ctx):",
@@ -3584,7 +3603,7 @@ def test_external_data_single_path_resolves_from_configured_root(repo: Path) -> 
             "import matplotlib",
             "matplotlib.use('Agg')",
             "import matplotlib.pyplot as plt",
-            "from pubify_pubs.decorators import external_data, figure",
+            "from pubify_data import external_data, figure",
             "",
             "@external_data('scratch', 'training.npy')",
             "def load_training(ctx, path):",
@@ -3618,7 +3637,7 @@ def test_external_data_multi_path_resolves_named_paths_from_configured_root(repo
             "import matplotlib",
             "matplotlib.use('Agg')",
             "import matplotlib.pyplot as plt",
-            "from pubify_pubs.decorators import external_data, figure",
+            "from pubify_data import external_data, figure",
             "",
             "@external_data('shared', model='bundle/model.txt', meta='bundle/meta.txt')",
             "def load_bundle(ctx, model, meta):",
@@ -3644,7 +3663,7 @@ def test_check_fails_when_external_root_config_is_missing(repo: Path) -> None:
         publication_id="missingrootconfig",
         external_root_lines=[],
         figure_lines=[
-            "from pubify_pubs.decorators import external_data",
+            "from pubify_data import external_data",
             "",
             "@external_data('scratch', 'training.npy')",
             "def load_training(ctx, path):",
@@ -3667,7 +3686,7 @@ def test_check_fails_when_external_root_path_is_missing(repo: Path) -> None:
         publication_id="missingrootpath",
         external_root_lines=[f"  scratch: {missing_root}"],
         figure_lines=[
-            "from pubify_pubs.decorators import external_data",
+            "from pubify_data import external_data",
             "",
             "@external_data('scratch', 'training.npy')",
             "def load_training(ctx, path):",
@@ -3691,7 +3710,7 @@ def test_check_fails_when_external_data_path_is_missing(repo: Path) -> None:
         publication_id="missingexternalfile",
         external_root_lines=[f"  scratch: {scratch_root}"],
         figure_lines=[
-            "from pubify_pubs.decorators import external_data",
+            "from pubify_data import external_data",
             "",
             "@external_data('scratch', 'training.npy')",
             "def load_training(ctx, path):",
@@ -3722,7 +3741,7 @@ def test_external_data_relative_root_is_resolved_from_workspace_root(
             "import matplotlib",
             "matplotlib.use('Agg')",
             "import matplotlib.pyplot as plt",
-            "from pubify_pubs.decorators import external_data, figure",
+            "from pubify_data import external_data, figure",
             "",
             "@external_data('scratch', 'training.npy')",
             "def load_training(ctx, path):",
@@ -3756,7 +3775,7 @@ def test_external_data_absolute_root_is_kept_unchanged(repo: Path) -> None:
             "import matplotlib",
             "matplotlib.use('Agg')",
             "import matplotlib.pyplot as plt",
-            "from pubify_pubs.decorators import external_data, figure",
+            "from pubify_data import external_data, figure",
             "",
             "@external_data('scratch', 'training.npy')",
             "def load_training(ctx, path):",

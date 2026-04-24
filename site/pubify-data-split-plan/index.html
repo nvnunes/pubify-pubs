@@ -230,8 +230,8 @@ be delegated during later phases:</p>
 <span class="w">  </span><span class="nt">data_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">output/papers</span>
 </code></pre></div>
 <ul>
-<li><code>src/pubify_pubs/config.py</code> still supports legacy top-level
-  <code>publications_root</code> and <code>data_root</code> as a temporary migration fallback.</li>
+<li><code>src/pubify_pubs/config.py</code> requires roots under the <code>pubify-pubs</code> section;
+  legacy top-level <code>publications_root</code> and <code>data_root</code> are no longer accepted.</li>
 <li><code>src/pubify_pubs/assets/init/figures.py</code> imports decorators from
   <code>pubify_data</code>.</li>
 <li><code>src/pubify_pubs/stubs.py</code> adds new decorators from <code>pubify_data</code>.</li>
@@ -321,8 +321,8 @@ be delegated during later phases:</p>
 </ul>
 <h2 id="phase-4-complete-the-hard-migration">Phase 4: Complete The Hard Migration</h2>
 <ul>
-<li>Remove public authoring re-export shims from <code>pubify-pubs</code>.</li>
-<li>Update tests and templates so publication authoring imports use:</li>
+<li>Public authoring re-export shims from <code>pubify-pubs</code> have been removed.</li>
+<li>Tests and templates now require publication authoring imports to use:</li>
 </ul>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pubify_data</span><span class="w"> </span><span class="kn">import</span> <span class="n">data</span><span class="p">,</span> <span class="n">external_data</span><span class="p">,</span> <span class="n">figure</span><span class="p">,</span> <span class="n">stat</span><span class="p">,</span> <span class="n">table</span>
 </code></pre></div>
@@ -332,15 +332,15 @@ be delegated during later phases:</p>
 <div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">pubify_pubs</span><span class="w"> </span><span class="kn">import</span> <span class="n">FigureExport</span><span class="p">,</span> <span class="n">TableResult</span>
 </code></pre></div>
 <ul>
-<li>Remove legacy top-level <code>pubify.yaml</code> root fallback after tests and docs are
-  migrated to:</li>
+<li>Legacy top-level <code>pubify.yaml</code> root fallback has been removed; workspace
+  roots must be declared as:</li>
 </ul>
 <div class="highlight"><pre><span></span><code><span class="nt">pubify-pubs</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">publications_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">papers</span>
 <span class="w">  </span><span class="nt">data_root</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">output/papers</span>
 </code></pre></div>
 <ul>
-<li>Update migration notes to mark the import/config changes as breaking.</li>
+<li>Migration notes mark the import/config changes as breaking.</li>
 </ul>
 <h2 id="phase-5-docs-and-integration">Phase 5: Docs And Integration</h2>
 <ul>
