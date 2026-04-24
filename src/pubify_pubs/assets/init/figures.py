@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from pubify_pubs import FigureExport, TableResult
-from pubify_pubs.decorators import data, figure, stat, table
+from pubify_data import data, figure, stat, table
 
 # Data
 

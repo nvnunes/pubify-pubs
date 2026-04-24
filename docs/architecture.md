@@ -18,7 +18,8 @@ truth for this repo.
 
 ## Package Role
 
-`pubify-pubs` is the package-owned publication engine.
+`pubify-pubs` is the LaTeX-oriented downstream publication engine layered on
+the TeX-agnostic `pubify-data` runtime.
 
 It owns the generic workflow around:
 
@@ -38,7 +39,7 @@ It does not own publication content. A host workspace does.
 
 Package-owned:
 
-- workspace discovery through `pubify.yaml`
+- the `pubify-pubs` section in `pubify.yaml`
 - publication folders as workflow targets rather than as package-owned content
 - package-managed TeX support files
 - generated outputs under `tex/autofigures/`, `tex/autostats.tex`, and
@@ -53,12 +54,14 @@ Host-owned:
 - pinned and external scientific data
 - host-specific integration tests
 
-The workspace contract is intentionally small:
+The workspace contract is intentionally small and downstream-owned. `pubify-data`
+loads shared config files, but `pubify-pubs` owns these roots under the
+`pubify-pubs` section:
 
-- `publications_root` points at host-owned publication directories
-- blank `data_root` means pinned publication-local data defaults to
+- `pubify-pubs.publications_root` points at host-owned publication directories
+- blank `pubify-pubs.data_root` means pinned publication-local data defaults to
   `papers/<publication-id>/data/`
-- non-empty `data_root` points at a shared host-owned pinned-data root
+- non-empty `pubify-pubs.data_root` points at a shared host-owned pinned-data root
 - package code must not depend on additional host-repo layout beyond that
   config contract
 
@@ -66,7 +69,8 @@ The workspace contract is intentionally small:
 
 Keep the public surface conservative.
 
-- Keep imports and docs on the `pubify_pubs.*` namespace.
+- Keep LaTeX/export imports and docs on the `pubify_pubs.*` namespace.
+- Keep reusable authoring decorators on the upstream `pubify_data.*` namespace.
 - Keep the CLI name `pubs` stable.
 - Keep the CLI as a thin wrapper over the Python API.
 - Keep the public Python API intentionally small and explicit.
@@ -77,7 +81,8 @@ Keep the public surface conservative.
 Primary supported Python entrypoints are:
 
 - `find_workspace_root(...)`
-- `figure`, `stat`, `table`, `data`, `external_data`
+- `pubify_data.figure`, `pubify_data.stat`, `pubify_data.table`,
+  `pubify_data.data`, `pubify_data.external_data`
 - `publication_data_path(...)`
 - `save_publication_data_npz(...)`
 - `load_publication_data_npz(...)`

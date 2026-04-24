@@ -11,6 +11,7 @@ from pubify_pubs.stubs import render_init_figures_module
 
 SYNC_STATE_FILENAME = ".pubs-sync.yaml"
 WORKSPACE_CONFIG_FILENAME = "pubify.yaml"
+WORKSPACE_CONFIG_SECTION = "pubify-pubs"
 DEFAULT_PUBIFY_DEFAULTS = {
     "layout": "one",
 }
@@ -163,9 +164,14 @@ def load_workspace_config(workspace_root: Path) -> WorkspaceConfig:
         raise FileNotFoundError(f"Missing workspace config: {config_path}")
 
     raw = _parse_simple_yaml(config_path.read_text(encoding="utf-8"))
-    publications_root = _require_workspace_relative_root(raw, config_path, "publications_root")
-    data_root = _optional_workspace_relative_root(raw, config_path, "data_root")
-    preview = _load_preview_config(raw, config_path)
+    section = _workspace_config_section(raw, config_path)
+    publications_root = _require_workspace_relative_root(
+        section,
+        config_path,
+        "publications_root",
+    )
+    data_root = _optional_workspace_relative_root(section, config_path, "data_root")
+    preview = _load_preview_config(section, config_path)
     return WorkspaceConfig(
         workspace_root=root,
         publications_root=publications_root,
@@ -324,14 +330,27 @@ def _validate_preview_backend(value: object, config_path: Path, key: str) -> str
 def _render_default_workspace_config() -> str:
     return "\n".join(
         [
-            "publications_root: papers",
-            'data_root: ""',
-            "preview:",
-            "  publication: preview",
-            "  figure: preview",
+            f"{WORKSPACE_CONFIG_SECTION}:",
+            "  publications_root: papers",
+            '  data_root: ""',
+            "  preview:",
+            "    publication: preview",
+            "    figure: preview",
             "",
         ]
     )
+
+
+def _workspace_config_section(
+    raw: dict[str, object],
+    config_path: Path,
+) -> dict[str, object]:
+    if WORKSPACE_CONFIG_SECTION not in raw:
+        return raw
+    section = raw[WORKSPACE_CONFIG_SECTION]
+    if not isinstance(section, dict):
+        raise ValueError(f"{config_path}: {WORKSPACE_CONFIG_SECTION} must be a mapping")
+    return section
 
 
 def _parse_simple_yaml(text: str) -> dict[str, object]:

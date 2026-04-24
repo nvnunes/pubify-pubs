@@ -96,15 +96,15 @@
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#pubify_pubs.data.load_publication_data_npz" class="nav-link">load_publication_data_npz</a>
+            <li class="nav-item" data-bs-level="2"><a href="#pubify_data.data.load_publication_data_npz" class="nav-link">load_publication_data_npz</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#pubify_pubs.data.publication_data_path" class="nav-link">publication_data_path</a>
+            <li class="nav-item" data-bs-level="2"><a href="#pubify_data.data.publication_data_path" class="nav-link">publication_data_path</a>
               <ul class="nav flex-column">
               </ul>
             </li>
-            <li class="nav-item" data-bs-level="2"><a href="#pubify_pubs.data.save_publication_data_npz" class="nav-link">save_publication_data_npz</a>
+            <li class="nav-item" data-bs-level="2"><a href="#pubify_data.data.save_publication_data_npz" class="nav-link">save_publication_data_npz</a>
               <ul class="nav flex-column">
               </ul>
             </li>
@@ -160,7 +160,7 @@
 
     <div class="doc doc-contents first">
 
-        <p>Mark a callable as an exported publication figure entrypoint.</p>
+        <p>Mark a callable as a computed figure entrypoint.</p>
 
 
     </div>
@@ -175,7 +175,7 @@
 
     <div class="doc doc-contents first">
 
-        <p>Mark a callable as a computed publication stat entrypoint.</p>
+        <p>Mark a callable as a computed stat entrypoint.</p>
 
 
     </div>
@@ -190,7 +190,7 @@
 
     <div class="doc doc-contents first">
 
-        <p>Mark a callable as a generated publication table entrypoint.</p>
+        <p>Mark a callable as a computed table entrypoint.</p>
 
 
     </div>
@@ -228,7 +228,7 @@
 <div class="doc doc-object doc-function">
 
 
-<h2 id="pubify_pubs.data.load_publication_data_npz" class="doc doc-heading">
+<h2 id="pubify_data.data.load_publication_data_npz" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">load_publication_data_npz</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
 
 </h2>
@@ -246,15 +246,15 @@
 <div class="doc doc-object doc-function">
 
 
-<h2 id="pubify_pubs.data.publication_data_path" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">publication_data_path</span><span class="p">(</span><span class="n">publication_id</span><span class="p">,</span> <span class="n">relative_path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">workspace_root</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+<h2 id="pubify_data.data.publication_data_path" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">publication_data_path</span><span class="p">(</span><span class="n">publication_id</span><span class="p">,</span> <span class="n">relative_path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">workspace_root</span><span class="p">,</span> <span class="n">data_root_resolver</span><span class="p">)</span></code>
 
 </h2>
 
 
     <div class="doc doc-contents ">
 
-        <p>Resolve one pinned publication-data path under the configured workspace <code>data_root</code>.</p>
+        <p>Resolve one pinned publication-data path through a downstream data-root resolver.</p>
 
 
     </div>
@@ -264,15 +264,15 @@
 <div class="doc doc-object doc-function">
 
 
-<h2 id="pubify_pubs.data.save_publication_data_npz" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">save_publication_data_npz</span><span class="p">(</span><span class="n">publication_id</span><span class="p">,</span> <span class="n">relative_path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">workspace_root</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">)</span></code>
+<h2 id="pubify_data.data.save_publication_data_npz" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">save_publication_data_npz</span><span class="p">(</span><span class="n">publication_id</span><span class="p">,</span> <span class="n">relative_path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">workspace_root</span><span class="p">,</span> <span class="n">data_root_resolver</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="o">**</span><span class="n">arrays</span><span class="p">)</span></code>
 
 </h2>
 
 
     <div class="doc doc-contents ">
 
-        <p>Save arrays as a pinned <code>.npz</code> file under a publication's data root.</p>
+        <p>Save arrays as a pinned <code>.npz</code> file using a downstream data-root resolver.</p>
 
 
     </div>
@@ -295,7 +295,7 @@
 
     <div class="doc doc-contents first">
 
-        <p>Declare a loader that reads from one configured external data root.</p>
+        <p>Declare a loader that reads from a downstream-configured external data root.</p>
 
 
     </div>

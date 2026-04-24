@@ -14,31 +14,31 @@ This page is generated from the public Python docstrings.
 
 ### figure
 
-::: pubify_pubs.figure
+::: pubify_data.figure
     options:
       show_source: false
 
 ### stat
 
-::: pubify_pubs.stat
+::: pubify_data.stat
     options:
       show_source: false
 
 ### table
 
-::: pubify_pubs.table
+::: pubify_data.table
     options:
       show_source: false
 
 ### data
 
-::: pubify_pubs.data
+::: pubify_data.data
     options:
       show_source: false
 
 ### external_data
 
-::: pubify_pubs.external_data
+::: pubify_data.external_data
     options:
       show_source: false
 

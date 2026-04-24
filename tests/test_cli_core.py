@@ -1177,7 +1177,8 @@ def test_cli_figure_add_appends_stub_and_adds_missing_imports(
     assert "- sample_plot: added" in _strip_ansi(captured.out)
     assert "import matplotlib.pyplot as plt" in figures_text
     assert "from pubify_pubs import FigureExport" in figures_text
-    assert "from pubify_pubs.decorators import data, figure" in figures_text
+    assert "from pubify_pubs.decorators import data" in figures_text
+    assert "from pubify_data import figure" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
             [
@@ -1219,7 +1220,8 @@ def test_cli_stat_add_appends_stub_and_adds_missing_imports(
     assert "Stats" in captured.out
     assert "- sample_stat: added" in _strip_ansi(captured.out)
     assert "import numpy as np" in figures_text
-    assert "from pubify_pubs.decorators import data, stat" in figures_text
+    assert "from pubify_pubs.decorators import data" in figures_text
+    assert "from pubify_data import stat" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
             [
@@ -1260,7 +1262,8 @@ def test_cli_table_add_appends_stub_and_adds_missing_imports(
     assert "- sample_table: added" in _strip_ansi(captured.out)
     assert "import numpy as np" in figures_text
     assert "from pubify_pubs import TableResult" in figures_text
-    assert "from pubify_pubs.decorators import data, table" in figures_text
+    assert "from pubify_pubs.decorators import data" in figures_text
+    assert "from pubify_data import table" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
             [
@@ -3149,7 +3152,7 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     assert "import matplotlib.pyplot as plt" in figures_py
     assert "import numpy as np" in figures_py
     assert "from pubify_pubs import FigureExport, TableResult" in figures_py
-    assert "from pubify_pubs.decorators import data, figure, stat, table" in figures_py
+    assert "from pubify_data import data, figure, stat, table" in figures_py
     assert "# Data" in figures_py
     assert "# Figures, Stats & Tables" in figures_py
     assert "def load_example_data(ctx, file_path):" in figures_py
@@ -3207,11 +3210,12 @@ def test_init_without_publication_id_initializes_workspace(
     assert not (workspace_root / "output" / "papers").exists()
     assert (workspace_root / "pubify.yaml").read_text(encoding="utf-8") == "\n".join(
         [
-            "publications_root: papers",
-            'data_root: ""',
-            "preview:",
-            "  publication: preview",
-            "  figure: preview",
+            "pubify-pubs:",
+            "  publications_root: papers",
+            '  data_root: ""',
+            "  preview:",
+            "    publication: preview",
+            "    figure: preview",
             "",
         ]
     )

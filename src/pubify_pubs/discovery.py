@@ -310,6 +310,8 @@ def _discover_loaders(module: ModuleType) -> dict[str, LoaderSpec]:
     for _, member in module.__dict__.items():
         metadata = getattr(member, "__pubs_loader__", None)
         if metadata is None:
+            metadata = getattr(member, "__pubify_data_loader__", None)
+        if metadata is None:
             continue
         loader_id = _strip_prefix(member.__name__, "load_")
         if loader_id in loaders:
@@ -330,7 +332,11 @@ def _discover_loaders(module: ModuleType) -> dict[str, LoaderSpec]:
 def _discover_figures(module: ModuleType) -> dict[str, FigureSpec]:
     figures: dict[str, FigureSpec] = {}
     for _, member in inspect.getmembers(module):
-        if not getattr(member, "__pubs_figure__", False):
+        if not getattr(member, "__pubs_figure__", False) and not getattr(
+            member,
+            "__pubify_data_figure__",
+            False,
+        ):
             continue
         figure_id = _strip_prefix(member.__name__, "plot_")
         if figure_id in figures:
@@ -346,7 +352,11 @@ def _discover_figures(module: ModuleType) -> dict[str, FigureSpec]:
 def _discover_stats(module: ModuleType) -> dict[str, StatSpec]:
     stats: dict[str, StatSpec] = {}
     for _, member in inspect.getmembers(module):
-        if not getattr(member, "__pubs_stat__", False):
+        if not getattr(member, "__pubs_stat__", False) and not getattr(
+            member,
+            "__pubify_data_stat__",
+            False,
+        ):
             continue
         stat_id = _strip_prefix(member.__name__, "compute_")
         if stat_id in stats:
@@ -362,7 +372,11 @@ def _discover_stats(module: ModuleType) -> dict[str, StatSpec]:
 def _discover_tables(module: ModuleType) -> dict[str, TableSpec]:
     tables: dict[str, TableSpec] = {}
     for _, member in inspect.getmembers(module):
-        if not getattr(member, "__pubs_table__", False):
+        if not getattr(member, "__pubs_table__", False) and not getattr(
+            member,
+            "__pubify_data_table__",
+            False,
+        ):
             continue
         table_id = _strip_prefix(member.__name__, "tabulate_")
         if table_id in tables:

@@ -106,7 +106,7 @@ def _ensure_required_imports(text: str, kind: str) -> str:
         lines = _ensure_from_import(lines, "pubify_pubs", "FigureExport")
     if kind == "table":
         lines = _ensure_from_import(lines, "pubify_pubs", "TableResult")
-    lines = _ensure_from_import(lines, "pubify_pubs.decorators", kind)
+    lines = _ensure_from_import(lines, "pubify_data", kind)
     return "\n".join(lines) + ("\n" if lines else "")
 
 

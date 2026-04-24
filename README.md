@@ -28,7 +28,7 @@ The build command runs `latexmk` against the publication-local TeX tree. If expo
 
 `pubify-pubs` treats a configured host workspace as the source of truth.
 
-- `pubify.yaml` defines where publications live and where pinned publication data is stored
+- `pubify.yaml` contains a `pubify-pubs` section that defines where publications live and where pinned publication data is stored
 - each publication lives under `papers/<publication-id>/`
 - `figures.py` declares loaders, figures, stats, and tables
 - generated figures are exported into `tex/autofigures/`
@@ -49,11 +49,12 @@ pubs init
 That writes `pubify.yaml` like:
 
 ```yaml
-publications_root: papers
-data_root: ""
-preview:
-  publication: preview
-  figure: preview
+pubify-pubs:
+  publications_root: papers
+  data_root: ""
+  preview:
+    publication: preview
+    figure: preview
 ```
 
 Then initialize a new publication:
@@ -88,7 +89,7 @@ pubs my-paper build
 
 A host workspace is rooted by `pubify.yaml`. The package discovers that file by walking upward from the current working directory.
 
-`publications_root` contains publication directories. When `data_root` is blank, pinned publication-local data defaults to:
+`pubify-pubs.publications_root` contains publication directories. When `pubify-pubs.data_root` is blank, pinned publication-local data defaults to:
 
 ```text
 papers/<publication-id>/data/...
@@ -97,7 +98,9 @@ papers/<publication-id>/data/...
 If you want a shared workspace-level data area instead, set `data_root` explicitly, for example:
 
 ```yaml
-data_root: output/papers
+pubify-pubs:
+  publications_root: papers
+  data_root: output/papers
 ```
 
 Then pinned publication-local data resolves under:
@@ -115,9 +118,12 @@ This flexibility is intentional:
 `pubify.yaml` can also configure preview backends independently for publication PDFs and exported figure PDFs:
 
 ```yaml
-preview:
-  publication: vscode
-  figure: preview
+pubify-pubs:
+  publications_root: papers
+  data_root: ""
+  preview:
+    publication: vscode
+    figure: preview
 ```
 
 Supported backend values are:
@@ -178,11 +184,11 @@ To scaffold starter entrypoints directly into `figures.py`:
 
 ## Figures, Tables, And Loaders
 
-Prefer `@data(...)` for pinned publication-local inputs under the configured `data_root`. Use `@external_data(...)` only for explicit external roots declared in `pub.yaml`.
+Prefer `@data(...)` for pinned publication-local inputs under the configured `pubify-pubs.data_root`. Use `@external_data(...)` only for explicit external roots declared in `pub.yaml`.
 
 Both data decorators require relative paths. They reject absolute paths and path traversal.
 
-Host publications import from the extracted package namespace directly:
+Host publications import decorators from the upstream `pubify_data` namespace and LaTeX/export helpers from `pubify_pubs`:
 
 ```python
 from pubify_pubs import TableResult
@@ -191,7 +197,7 @@ from pubify_pubs.data import (
     publication_data_path,
     save_publication_data_npz,
 )
-from pubify_pubs.decorators import data, external_data, figure, stat, table
+from pubify_data import data, external_data, figure, stat, table
 from pubify_pubs.export import FigureExport, panel
 ```
 
@@ -328,7 +334,7 @@ The `latex` commands are read-only convenience helpers. They never edit manuscri
 
 ## Python API Overview
 
-The public Python API is intentionally small. Host publications import from the `pubify_pubs.*` namespace directly:
+The public Python API is intentionally small. Host publications import reusable authoring decorators from `pubify_data` and LaTeX/export helpers from `pubify_pubs`:
 
 ```python
 from pubify_pubs import TableResult
@@ -337,7 +343,7 @@ from pubify_pubs.data import (
     publication_data_path,
     save_publication_data_npz,
 )
-from pubify_pubs.decorators import data, external_data, figure, stat, table
+from pubify_data import data, external_data, figure, stat, table
 from pubify_pubs.export import FigureExport, panel
 from pubify_pubs.discovery import find_workspace_root
 ```

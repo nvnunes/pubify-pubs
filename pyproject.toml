@@ -12,6 +12,7 @@ license = "MIT"
 dependencies = [
   "matplotlib>=3.8",
   "numpy>=1.26",
+  "pubify-data>=0.1.0",
   "pubify-mpl>=1.0.0",
 ]
 

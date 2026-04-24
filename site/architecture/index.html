@@ -138,12 +138,13 @@ publication-workflow rules that must remain stable.</p>
 and publication-workflow conventions in this document remain the source of
 truth for this repo.</p>
 <h2 id="package-role">Package Role</h2>
-<p><code>pubify-pubs</code> is the package-owned publication engine.</p>
-<p>It owns the generic workflow around:</p>
+<p><code>pubify-pubs</code> is the LaTeX-oriented downstream publication engine layered on
+the TeX-agnostic <code>pubify-data</code> runtime.</p>
+<p>It adapts the upstream runtime into the downstream workflow around:</p>
 <ul>
 <li>workspace discovery through <code>pubify.yaml</code></li>
-<li>publication discovery and validation</li>
-<li>CLI behavior and shell behavior</li>
+<li>publication path resolution, validation, and LaTeX readiness checks</li>
+<li>the <code>pubs</code> CLI, shell behavior, and downstream-only commands</li>
 <li>export, build, and runtime orchestration</li>
 <li>conservative mirror sync and diff logic</li>
 <li>pinned publication-data helpers</li>
@@ -155,7 +156,7 @@ truth for this repo.</p>
 <h2 id="workspace-and-ownership-boundaries">Workspace And Ownership Boundaries</h2>
 <p>Package-owned:</p>
 <ul>
-<li>workspace discovery through <code>pubify.yaml</code></li>
+<li>the <code>pubify-pubs</code> section in <code>pubify.yaml</code></li>
 <li>publication folders as workflow targets rather than as package-owned content</li>
 <li>package-managed TeX support files</li>
 <li>generated outputs under <code>tex/autofigures/</code>, <code>tex/autostats.tex</code>, and
@@ -170,21 +171,26 @@ truth for this repo.</p>
 <li>pinned and external scientific data</li>
 <li>host-specific integration tests</li>
 </ul>
-<p>The workspace contract is intentionally small:</p>
+<p>The workspace contract is intentionally small and downstream-owned. <code>pubify-data</code>
+loads shared config files, but <code>pubify-pubs</code> owns these roots under the
+<code>pubify-pubs</code> section:</p>
 <ul>
-<li><code>publications_root</code> points at host-owned publication directories</li>
-<li>blank <code>data_root</code> means pinned publication-local data defaults to
+<li><code>pubify-pubs.publications_root</code> points at host-owned publication directories</li>
+<li>blank <code>pubify-pubs.data_root</code> means pinned publication-local data defaults to
   <code>papers/&lt;publication-id&gt;/data/</code></li>
-<li>non-empty <code>data_root</code> points at a shared host-owned pinned-data root</li>
+<li>non-empty <code>pubify-pubs.data_root</code> points at a shared host-owned pinned-data root</li>
 <li>package code must not depend on additional host-repo layout beyond that
   config contract</li>
 </ul>
 <h2 id="public-package-surface">Public Package Surface</h2>
 <p>Keep the public surface conservative.</p>
 <ul>
-<li>Keep imports and docs on the <code>pubify_pubs.*</code> namespace.</li>
+<li>Keep LaTeX/export imports and docs on the <code>pubify_pubs.*</code> namespace.</li>
+<li>Keep reusable authoring decorators on the upstream <code>pubify_data.*</code> namespace.</li>
 <li>Keep the CLI name <code>pubs</code> stable.</li>
 <li>Keep the CLI as a thin wrapper over the Python API.</li>
+<li>Compose neutral list/update command routing through <code>pubify_data.CommandRegistry</code>;
+  keep build, preview, LaTeX snippet, sync, and shell-specific behavior here.</li>
 <li>Keep the public Python API intentionally small and explicit.</li>
 <li>New generic workflow behavior belongs here; publication-specific figure logic
   does not.</li>
@@ -193,7 +199,8 @@ truth for this repo.</p>
 <p>Primary supported Python entrypoints are:</p>
 <ul>
 <li><code>find_workspace_root(...)</code></li>
-<li><code>figure</code>, <code>stat</code>, <code>table</code>, <code>data</code>, <code>external_data</code></li>
+<li><code>pubify_data.figure</code>, <code>pubify_data.stat</code>, <code>pubify_data.table</code>,
+  <code>pubify_data.data</code>, <code>pubify_data.external_data</code></li>
 <li><code>publication_data_path(...)</code></li>
 <li><code>save_publication_data_npz(...)</code></li>
 <li><code>load_publication_data_npz(...)</code></li>
