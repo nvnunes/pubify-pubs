@@ -64,7 +64,9 @@ def _coerce_stat_value(stat_id: str, value: object, *, key: str | None = None) -
 def compute_resolved_stat(stat_id: str, result: object) -> ComputedStat:
     """Resolve one stat return value into final macro names and TeX payloads."""
 
-    values = normalize_stat_result(stat_id, result)
+    values = _neutral_stat_values(result)
+    if values is None:
+        values = normalize_stat_result(stat_id, result)
     resolved_values = tuple(
         ResolvedStat(
             macro_name=macro_name_for_stat(stat_id, key),
@@ -74,6 +76,20 @@ def compute_resolved_stat(stat_id: str, result: object) -> ComputedStat:
         for key, value in values
     )
     return ComputedStat(stat_id=stat_id, values=resolved_values)
+
+
+def _neutral_stat_values(result: object) -> tuple[tuple[str | None, str], ...] | None:
+    values = getattr(result, "values", None)
+    if values is None or callable(values):
+        return None
+    normalized: list[tuple[str | None, str]] = []
+    for value in values:
+        key = getattr(value, "key", None)
+        text = getattr(value, "value", None)
+        if text is None:
+            return None
+        normalized.append((key, str(text)))
+    return tuple(normalized)
 
 
 def ensure_unique_macro_names(stats: tuple[ComputedStat, ...]) -> None:

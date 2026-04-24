@@ -10,6 +10,8 @@ import subprocess
 import traceback
 
 import pubify_mpl
+import pubify_data
+import pubify_data.runtime as pubify_data_runtime
 from pubify_mpl import pubify_rc_context as publication_rc_context
 
 from pubify_pubs.config import (
@@ -28,7 +30,7 @@ from pubify_pubs.discovery import (
     build_publication_paths,
     validate_publication_definition,
 )
-from pubify_pubs.export import export_figure, normalize_figure_result
+from pubify_pubs.export import FigureExport, FigurePanel, export_figure, normalize_figure_result
 from pubify_pubs.stats import (
     ComputedStat,
     autostats_path,
@@ -79,12 +81,7 @@ class PublicationRcContext(AbstractContextManager[None]):
         return active.__exit__(exc_type, exc_value, traceback)
 
 
-class UserCodeExecutionError(RuntimeError):
-    """Raised when publication-defined Python code fails during execution."""
-
-    def __init__(self, lines: list[str]) -> None:
-        self.lines = tuple(lines)
-        super().__init__(lines[-1] if lines else "Publication code execution failed")
+UserCodeExecutionError = pubify_data.UserCodeExecutionError
 
 
 def check_publication(publication: PublicationDefinition) -> None:
@@ -210,13 +207,12 @@ def inspect_figure(
     if figure_id not in publication.figures:
         raise KeyError(f"Unknown figure '{figure_id}'")
     run_ctx = ctx or build_run_context(publication)
-    figure = publication.figures[figure_id]
-    resolved_args = [_resolve_loader(run_ctx, dep_id) for dep_id in figure.dependency_ids]
-    result = normalize_figure_result(
-        _capture_dynamic_output(run_ctx, "figure", figure.func, run_ctx, *resolved_args),
-        publication.config,
-    )
-    return result
+    _, result = pubify_data_runtime.run_figures(
+        publication.upstream,
+        figure_id,
+        ctx=_upstream_context(run_ctx),
+    )[0]
+    return _figure_export_from_neutral(result, publication.config)
 
 
 def run_stats(
@@ -233,12 +229,12 @@ def run_stats(
             f"Publication '{publication.publication_id}' failed validation:\n{joined}"
         )
     run_ctx = ctx or build_run_context(publication)
-    stat_ids = [stat_id] if stat_id is not None else sorted(publication.stats)
-    computed: list[ComputedStat] = []
-    for current_id in stat_ids:
-        if current_id not in publication.stats:
-            raise KeyError(f"Unknown stat '{current_id}'")
-        computed.append(_run_one_stat(run_ctx, publication.stats[current_id]))
+    neutral_stats = pubify_data_runtime.run_stats(
+        publication.upstream,
+        stat_id,
+        ctx=_upstream_context(run_ctx),
+    )
+    computed = [compute_resolved_stat(stat.stat_id, stat) for stat in neutral_stats]
     result = tuple(computed)
     ensure_unique_macro_names(result)
     return result
@@ -271,12 +267,12 @@ def run_tables(
             f"Publication '{publication.publication_id}' failed validation:\n{joined}"
         )
     run_ctx = ctx or build_run_context(publication)
-    table_ids = [table_id] if table_id is not None else sorted(publication.tables)
-    computed: list[ComputedTable] = []
-    for current_id in table_ids:
-        if current_id not in publication.tables:
-            raise KeyError(f"Unknown table '{current_id}'")
-        computed.append(_run_one_table(run_ctx, publication.tables[current_id]))
+    neutral_tables = pubify_data_runtime.run_tables(
+        publication.upstream,
+        table_id,
+        ctx=_upstream_context(run_ctx),
+    )
+    computed = [compute_table(table.table_id, table) for table in neutral_tables]
     return tuple(computed)
 
 
@@ -348,6 +344,19 @@ def build_run_context(
     )
 
 
+def _upstream_context(ctx: RunContext) -> pubify_data.RunContext:
+    upstream = pubify_data.build_run_context(
+        ctx.publication.upstream,
+        loader_cache=ctx.loader_cache,
+        rc=ctx.rc,
+    )
+    upstream.command_loader_cache = ctx.command_loader_cache
+    upstream.updated_loader_ids = ctx.updated_loader_ids
+    upstream.captured_data_output = ctx.captured_data_output
+    upstream.captured_output = ctx.captured_output
+    return upstream
+
+
 def preload_loaders(
     ctx: RunContext,
     loader_ids: tuple[str, ...],
@@ -360,13 +369,13 @@ def preload_loaders(
         loader = ctx.publication.loaders[loader_id]
         if loader.nocache and not include_nocache:
             continue
-        _resolve_loader(ctx, loader_id)
+        pubify_data_runtime.resolve_loader(_upstream_context(ctx), loader_id)
 
 
 def resolve_loader(ctx: RunContext, loader_id: str) -> object:
     """Resolve one loader and return its computed value."""
 
-    return _resolve_loader(ctx, loader_id)
+    return pubify_data_runtime.resolve_loader(_upstream_context(ctx), loader_id)
 
 
 def build_publication(
@@ -516,40 +525,95 @@ def _run_one_figure(
     figure: FigureSpec,
     subfigure_index: int | None,
 ) -> list[Path]:
-    resolved_args = [_resolve_loader(ctx, dep_id) for dep_id in figure.dependency_ids]
-    output_dir = ctx.publication.paths.autofigures_root
-    result = normalize_figure_result(
-        _capture_dynamic_output(ctx, "figure", figure.func, ctx, *resolved_args),
-        ctx.publication.config,
-    )
-    return _capture_dynamic_output(
-        ctx,
-        "figure",
-        export_figure,
-        ctx.publication.config,
-        ctx.publication.paths.tex_root,
-        output_dir,
+    _, neutral_result = pubify_data_runtime.run_figures(
+        ctx.publication.upstream,
         figure.figure_id,
-        result,
-        ".pdf",
-        subfigure_index=subfigure_index,
+        ctx=_upstream_context(ctx),
+    )[0]
+    result = _figure_export_from_neutral(neutral_result, ctx.publication.config)
+    return _capture_export_output(ctx, figure, result, subfigure_index)
+
+
+def _figure_export_from_neutral(
+    result: pubify_data.FigureResult,
+    config: object,
+) -> FigureExport:
+    if len(result.panels) == 1 and isinstance(result.panels[0].payload, FigureExport):
+        return normalize_figure_result(result.panels[0].payload, config)
+    panels: list[FigurePanel] = []
+    for panel in result.panels:
+        metadata = dict(panel.metadata)
+        subcaption_lines = metadata.pop("subcaption_lines", None)
+        panels.append(
+            FigurePanel(
+                panel.payload,
+                subcaption_lines=subcaption_lines,
+                overrides=metadata,
+            )
+        )
+    metadata = dict(result.metadata)
+    caption_lines = metadata.pop("caption_lines", None)
+    subcaption_lines = metadata.pop("subcaption_lines", None)
+    return normalize_figure_result(
+        FigureExport(
+            panels,
+            layout=result.layout,
+            caption_lines=caption_lines,
+            subcaption_lines=subcaption_lines,
+            kwargs=metadata,
+        ),
+        config,
     )
+
+
+def _capture_export_output(
+    ctx: RunContext,
+    figure: FigureSpec,
+    result: FigureExport,
+    subfigure_index: int | None,
+) -> list[Path]:
+    stream = io.StringIO()
+    try:
+        with redirect_stdout(stream), redirect_stderr(stream):
+            exported = export_figure(
+                ctx.publication.config,
+                ctx.publication.paths.tex_root,
+                ctx.publication.paths.autofigures_root,
+                figure.figure_id,
+                result,
+                ".pdf",
+                subfigure_index=subfigure_index,
+            )
+    except Exception as exc:
+        lines = stream.getvalue().splitlines()
+        lines.extend(
+            line.rstrip("\n")
+            for line in traceback.format_exception_only(type(exc), exc)
+            if line.rstrip("\n")
+        )
+        raise UserCodeExecutionError(lines) from exc
+    output = stream.getvalue()
+    if output:
+        ctx.captured_output["figure"].extend(output.splitlines())
+    return exported
 
 
 def _run_one_stat(ctx: RunContext, stat: StatSpec) -> ComputedStat:
-    resolved_args = [_resolve_loader(ctx, dep_id) for dep_id in stat.dependency_ids]
-    return compute_resolved_stat(
+    neutral_stat = pubify_data_runtime.run_stats(
+        ctx.publication.upstream,
         stat.stat_id,
-        _capture_dynamic_output(ctx, "stat", stat.func, ctx, *resolved_args),
-    )
+        ctx=_upstream_context(ctx),
+    )[0]
+    return compute_resolved_stat(neutral_stat.stat_id, neutral_stat)
 
 
 def _run_one_table(ctx: RunContext, table: TableSpec) -> ComputedTable:
-    resolved_args = [_resolve_loader(ctx, dep_id) for dep_id in table.dependency_ids]
-    return compute_table(
+    neutral_table = pubify_data_runtime.run_tables(
+        ctx.publication.upstream,
         table.table_id,
-        _capture_dynamic_output(ctx, "table", table.func, ctx, *resolved_args),
-    )
+        ctx=_upstream_context(ctx),
+    )[0]
+    return compute_table(neutral_table.table_id, neutral_table)
 
 
 def _clear_output_directory(path: Path) -> None:
@@ -562,128 +626,4 @@ def _clear_output_directory(path: Path) -> None:
 
 
 def _resolve_loader(ctx: RunContext, loader_id: str) -> object:
-    loader = ctx.publication.loaders[loader_id]
-    if loader.nocache:
-        if loader_id in ctx.command_loader_cache:
-            return ctx.command_loader_cache[loader_id]
-    elif loader_id in ctx.loader_cache:
-        return ctx.loader_cache[loader_id]
-
-    if loader.kind == "data":
-        root = ctx.publication.paths.data_root
-    elif loader.kind == "external_data":
-        if loader.root_name is None:
-            raise ValueError(f"Loader '{loader_id}' is missing external data root metadata")
-        if loader.root_name not in ctx.publication.config.external_data_roots:
-            raise ValueError(
-                f"Loader '{loader_id}' references undefined external data root "
-                f"'{loader.root_name}'"
-            )
-        root = Path(ctx.publication.config.external_data_roots[loader.root_name]).expanduser()
-    else:
-        raise ValueError(f"Unsupported loader kind '{loader.kind}'")
-
-    if loader.style == "single":
-        relative_path = next(iter(loader.relative_paths.values()))
-        resolved = _capture_loader_output(
-            ctx,
-            loader_id,
-            loader.func,
-            ctx,
-            _resolve_loader_path(root, relative_path, loader_id),
-        )
-    elif loader.style == "named":
-        resolved = _capture_loader_output(
-            ctx,
-            loader_id,
-            loader.func,
-            ctx,
-            **{
-                name: _resolve_loader_path(root, relative_path, loader_id)
-                for name, relative_path in loader.relative_paths.items()
-            },
-        )
-    else:
-        raise ValueError(f"Unsupported loader style '{loader.style}'")
-
-    if loader.nocache:
-        ctx.command_loader_cache[loader_id] = resolved
-    else:
-        ctx.loader_cache[loader_id] = resolved
-    ctx.updated_loader_ids.add(loader_id)
-    return resolved
-
-
-def _resolve_loader_path(root: Path, relative_path: str, loader_id: str) -> Path:
-    candidate = Path(relative_path)
-    if candidate.is_absolute():
-        raise ValueError(f"Loader '{loader_id}' path must be relative, not absolute: {relative_path}")
-    if any(part == ".." for part in candidate.parts):
-        raise ValueError(
-            f"Loader '{loader_id}' path must stay under its configured root: {relative_path}"
-        )
-    normalized = candidate.as_posix()
-    if normalized in {"", "."}:
-        raise ValueError(f"Loader '{loader_id}' path must be a non-empty relative path")
-    return root / candidate
-
-
-def _capture_dynamic_output(
-    ctx: RunContext,
-    group: str,
-    func: Callable[..., object],
-    *args: object,
-    **kwargs: object,
-) -> object:
-    stream = io.StringIO()
-    try:
-        with redirect_stdout(stream), redirect_stderr(stream):
-            result = func(*args, **kwargs)
-    except Exception as exc:
-        lines = stream.getvalue().splitlines()
-        lines.extend(
-            line.rstrip("\n")
-            for line in traceback.format_exception_only(type(exc), exc)
-            if line.rstrip("\n")
-        )
-        raise UserCodeExecutionError(lines) from exc
-    output = stream.getvalue()
-    if output:
-        ctx.captured_output[group].extend(output.splitlines())
-    return result
-
-
-def _capture_loader_output(
-    ctx: RunContext,
-    loader_id: str,
-    func: Callable[..., object],
-    *args: object,
-    **kwargs: object,
-) -> object:
-    stream = io.StringIO()
-    try:
-        with redirect_stdout(stream), redirect_stderr(stream):
-            result = func(*args, **kwargs)
-    except Exception as exc:
-        lines = stream.getvalue().splitlines()
-        lines.extend(
-            line.rstrip("\n")
-            for line in traceback.format_exception_only(type(exc), exc)
-            if line.rstrip("\n")
-        )
-        raise UserCodeExecutionError(lines) from exc
-    if result is None:
-        lines = stream.getvalue().splitlines()
-        lines.append(f"Loader '{loader_id}' returned None. Loaders must return one object.")
-        raise UserCodeExecutionError(lines)
-    if isinstance(result, tuple):
-        lines = stream.getvalue().splitlines()
-        lines.append(
-            f"Loader '{loader_id}' returned a tuple. Loaders must return one object; "
-            "wrap multiple values in a dict, dataclass, or other single container."
-        )
-        raise UserCodeExecutionError(lines)
-    output = stream.getvalue()
-    if output:
-        ctx.captured_data_output.setdefault(loader_id, []).extend(output.splitlines())
-    return result
+    return pubify_data_runtime.resolve_loader(_upstream_context(ctx), loader_id)

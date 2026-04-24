@@ -21,6 +21,7 @@ class TableResult:
     formats: tuple[str | None, ...] | None = None
     tex_wrappers: tuple[str | None, ...] | None = None
     multicolumns: tuple[tuple[object, ...], ...] = field(default_factory=tuple)
+    metadata: dict[str, object] = field(default_factory=dict)
 
     def __init__(
         self,
@@ -42,6 +43,15 @@ class TableResult:
             self,
             "multicolumns",
             tuple(tuple(spec) for spec in (multicolumns or ())),
+        )
+        object.__setattr__(
+            self,
+            "metadata",
+            {
+                "formats": self.formats,
+                "tex_wrappers": self.tex_wrappers,
+                "multicolumns": self.multicolumns,
+            },
         )
         self.__post_init__()
 
@@ -93,6 +103,14 @@ class ComputedTable:
 
 
 def compute_table(table_id: str, result: object) -> ComputedTable:
+    if hasattr(result, "bodies") and hasattr(result, "metadata") and not isinstance(result, TableResult):
+        metadata = getattr(result, "metadata") or {}
+        result = TableResult(
+            getattr(result, "bodies"),
+            formats=metadata.get("formats"),
+            tex_wrappers=metadata.get("tex_wrappers"),
+            multicolumns=metadata.get("multicolumns"),
+        )
     if not isinstance(result, TableResult):
         raise ValueError(f"Table '{table_id}' must return TableResult(...)")
     body_texts = tuple(_render_body(result, body) for body in result.bodies)

@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib import invalidate_caches
-from importlib.util import module_from_spec, spec_from_file_location
-import inspect
 from pathlib import Path
-import sys
 from types import ModuleType
+
+import pubify_data
 
 from pubify_pubs.config import (
     PublicationConfig,
@@ -22,45 +20,10 @@ PUBLICATION_CONFIG = "pub.yaml"
 PUBIFY_STYLE = "pubify.sty"
 PUBIFY_TEMPLATE = "pubify-template.tex"
 
-
-@dataclass(frozen=True)
-class LoaderSpec:
-    """Discovered loader metadata derived from one decorated loader function."""
-
-    loader_id: str
-    func: object
-    kind: str
-    root_name: str | None
-    style: str
-    relative_paths: dict[str, str]
-    nocache: bool
-
-
-@dataclass(frozen=True)
-class FigureSpec:
-    """Discovered figure metadata derived from one decorated figure function."""
-
-    figure_id: str
-    func: object
-    dependency_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class StatSpec:
-    """Discovered stat metadata derived from one decorated stat function."""
-
-    stat_id: str
-    func: object
-    dependency_ids: tuple[str, ...]
-
-
-@dataclass(frozen=True)
-class TableSpec:
-    """Discovered table metadata derived from one decorated table function."""
-
-    table_id: str
-    func: object
-    dependency_ids: tuple[str, ...]
+LoaderSpec = pubify_data.LoaderSpec
+FigureSpec = pubify_data.FigureSpec
+StatSpec = pubify_data.StatSpec
+TableSpec = pubify_data.TableSpec
 
 
 @dataclass(frozen=True)
@@ -89,11 +52,27 @@ class PublicationDefinition:
     publication_id: str
     paths: PublicationPaths
     config: PublicationConfig
-    module: ModuleType
-    loaders: dict[str, LoaderSpec]
-    figures: dict[str, FigureSpec]
-    stats: dict[str, StatSpec]
-    tables: dict[str, TableSpec]
+    upstream: pubify_data.PublicationDefinition
+
+    @property
+    def module(self) -> ModuleType:
+        return self.upstream.module
+
+    @property
+    def loaders(self) -> dict[str, LoaderSpec]:
+        return self.upstream.loaders
+
+    @property
+    def figures(self) -> dict[str, FigureSpec]:
+        return self.upstream.figures
+
+    @property
+    def stats(self) -> dict[str, StatSpec]:
+        return self.upstream.stats
+
+    @property
+    def tables(self) -> dict[str, TableSpec]:
+        return self.upstream.tables
 
 
 def find_workspace_root(start: Path | None = None) -> Path:
@@ -123,20 +102,20 @@ def load_publication_definition(workspace_root: Path, publication_id: str) -> Pu
         raise FileNotFoundError(f"Missing publication config: {paths.config_path}")
 
     config = load_publication_config(paths.config_path, publication_id)
-    module = _import_publication_module(publication_id, paths.entrypoint)
-    loaders = _discover_loaders(module)
-    figures = _discover_figures(module)
-    stats = _discover_stats(module)
-    tables = _discover_tables(module)
+    adapter = pubify_data.PublicationAdapter(
+        publication_id=publication_id,
+        publication_root=paths.publication_root,
+        entrypoint=paths.entrypoint,
+        data_root=paths.data_root,
+        external_data_roots=config.external_data_roots,
+        workspace=pubify_data.WorkspaceAdapter(paths.workspace_root),
+    )
+    upstream = pubify_data.load_publication_from_entrypoint(publication_id, adapter=adapter)
     return PublicationDefinition(
         publication_id=publication_id,
         paths=paths,
         config=config,
-        module=module,
-        loaders=loaders,
-        figures=figures,
-        stats=stats,
-        tables=tables,
+        upstream=upstream,
     )
 
 
@@ -184,26 +163,7 @@ def validate_publication_definition(
 
             errors.append(f"Unsupported loader kind for loader '{loader.loader_id}': {loader.kind}")
 
-    for figure in publication.figures.values():
-        for dep in figure.dependency_ids:
-            if dep not in publication.loaders:
-                errors.append(
-                    f"Figure '{figure.figure_id}' depends on unknown loader '{dep}'"
-                )
-
-    for stat in publication.stats.values():
-        for dep in stat.dependency_ids:
-            if dep not in publication.loaders:
-                errors.append(
-                    f"Stat '{stat.stat_id}' depends on unknown loader '{dep}'"
-                )
-
-    for table in publication.tables.values():
-        for dep in table.dependency_ids:
-            if dep not in publication.loaders:
-                errors.append(
-                    f"Table '{table.table_id}' depends on unknown loader '{dep}'"
-                )
+    errors.extend(pubify_data.validate_dependencies(publication.upstream))
 
     if not publication.paths.tex_root.exists():
         errors.append(f"Missing tex directory: {publication.paths.tex_root}")
@@ -248,183 +208,3 @@ def build_publication_paths(workspace_root: Path, publication_id: str) -> Public
         entrypoint=publication_root / PUBLICATION_ENTRYPOINT,
         config_path=publication_root / PUBLICATION_CONFIG,
     )
-
-
-def _import_publication_module(publication_id: str, entrypoint: Path) -> ModuleType:
-    module_name = f"pubify_pubs_publication_{publication_id}"
-    publication_root = entrypoint.parent
-    _purge_publication_modules(publication_root)
-    invalidate_caches()
-
-    publication_root_str = str(publication_root)
-    added_path = False
-    if publication_root_str not in sys.path:
-        sys.path.insert(0, publication_root_str)
-        added_path = True
-
-    spec = spec_from_file_location(module_name, entrypoint)
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Could not build import spec for {entrypoint}")
-    module = module_from_spec(spec)
-    sys.modules[module_name] = module
-    try:
-        spec.loader.exec_module(module)
-    finally:
-        sys.modules.pop(module_name, None)
-        if added_path and sys.path and sys.path[0] == publication_root_str:
-            sys.path.pop(0)
-    return module
-
-
-def _purge_publication_modules(publication_root: Path) -> None:
-    resolved_root = publication_root.resolve()
-    for module_name, module in list(sys.modules.items()):
-        if _module_lives_under_root(module, resolved_root):
-            sys.modules.pop(module_name, None)
-
-
-def _module_lives_under_root(module: object, root: Path) -> bool:
-    module_file = getattr(module, "__file__", None)
-    if module_file is not None and _path_lives_under_root(module_file, root):
-        return True
-
-    module_paths = getattr(module, "__path__", None)
-    if module_paths is None:
-        return False
-    try:
-        return any(_path_lives_under_root(path, root) for path in module_paths)
-    except TypeError:
-        return False
-
-
-def _path_lives_under_root(path_like: str | Path, root: Path) -> bool:
-    try:
-        resolved_path = Path(path_like).resolve()
-    except OSError:
-        return False
-    return resolved_path == root or root in resolved_path.parents
-
-
-def _discover_loaders(module: ModuleType) -> dict[str, LoaderSpec]:
-    loaders: dict[str, LoaderSpec] = {}
-    for _, member in module.__dict__.items():
-        metadata = getattr(member, "__pubs_loader__", None)
-        if metadata is None:
-            metadata = getattr(member, "__pubify_data_loader__", None)
-        if metadata is None:
-            continue
-        loader_id = _strip_prefix(member.__name__, "load_")
-        if loader_id in loaders:
-            raise ValueError(f"Duplicate loader id '{loader_id}'")
-        _validate_loader_signature(loader_id, member, metadata["style"], dict(metadata["paths"]))
-        loaders[loader_id] = LoaderSpec(
-            loader_id=loader_id,
-            func=member,
-            kind=metadata["kind"],
-            root_name=metadata.get("root_name"),
-            style=metadata["style"],
-            relative_paths=dict(metadata["paths"]),
-            nocache=bool(metadata["nocache"]),
-        )
-    return loaders
-
-
-def _discover_figures(module: ModuleType) -> dict[str, FigureSpec]:
-    figures: dict[str, FigureSpec] = {}
-    for _, member in inspect.getmembers(module):
-        if not getattr(member, "__pubs_figure__", False) and not getattr(
-            member,
-            "__pubify_data_figure__",
-            False,
-        ):
-            continue
-        figure_id = _strip_prefix(member.__name__, "plot_")
-        if figure_id in figures:
-            raise ValueError(f"Duplicate figure id '{figure_id}'")
-        figures[figure_id] = FigureSpec(
-            figure_id=figure_id,
-            func=member,
-            dependency_ids=_dependency_ids(member, kind="Figure"),
-        )
-    return figures
-
-
-def _discover_stats(module: ModuleType) -> dict[str, StatSpec]:
-    stats: dict[str, StatSpec] = {}
-    for _, member in inspect.getmembers(module):
-        if not getattr(member, "__pubs_stat__", False) and not getattr(
-            member,
-            "__pubify_data_stat__",
-            False,
-        ):
-            continue
-        stat_id = _strip_prefix(member.__name__, "compute_")
-        if stat_id in stats:
-            raise ValueError(f"Duplicate stat id '{stat_id}'")
-        stats[stat_id] = StatSpec(
-            stat_id=stat_id,
-            func=member,
-            dependency_ids=_dependency_ids(member, kind="Stat"),
-        )
-    return stats
-
-
-def _discover_tables(module: ModuleType) -> dict[str, TableSpec]:
-    tables: dict[str, TableSpec] = {}
-    for _, member in inspect.getmembers(module):
-        if not getattr(member, "__pubs_table__", False) and not getattr(
-            member,
-            "__pubify_data_table__",
-            False,
-        ):
-            continue
-        table_id = _strip_prefix(member.__name__, "tabulate_")
-        if table_id in tables:
-            raise ValueError(f"Duplicate table id '{table_id}'")
-        tables[table_id] = TableSpec(
-            table_id=table_id,
-            func=member,
-            dependency_ids=_dependency_ids(member, kind="Table"),
-        )
-    return tables
-
-
-def _validate_loader_signature(
-    loader_id: str,
-    func: object,
-    style: str,
-    paths: dict[str, str],
-) -> None:
-    params = tuple(inspect.signature(func).parameters.values())
-    if not params or params[0].name != "ctx":
-        raise ValueError(f"Loader '{func.__name__}' must accept ctx as its first parameter")
-
-    resolved_params = params[1:]
-    if style == "single":
-        if len(resolved_params) != 1:
-            raise ValueError(
-                f"Loader '{loader_id}' must accept exactly one resolved path parameter after ctx"
-            )
-        return
-
-    if style == "named":
-        expected_names = tuple(paths)
-        param_names = tuple(param.name for param in resolved_params)
-        if param_names != expected_names:
-            raise ValueError(
-                f"Loader '{loader_id}' must accept named path parameters {expected_names} after ctx"
-            )
-        return
-
-    raise ValueError(f"Unsupported loader style for loader '{loader_id}': {style}")
-
-
-def _dependency_ids(func: object, *, kind: str) -> tuple[str, ...]:
-    params = tuple(inspect.signature(func).parameters.values())
-    if not params or params[0].name != "ctx":
-        raise ValueError(f"{kind} '{func.__name__}' must accept ctx as its first parameter")
-    return tuple(param.name for param in params[1:])
-
-
-def _strip_prefix(name: str, prefix: str) -> str:
-    return name[len(prefix) :] if name.startswith(prefix) else name
