@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 import re
 import subprocess
 import sys
+
+import pubify_data
 
 from pubify_pubs.config import load_workspace_config
 from pubify_pubs.discovery import PublicationDefinition
@@ -60,6 +63,193 @@ from pubify_pubs.commands.common import (
 )
 
 
+@dataclass(frozen=True)
+class PubifyPubsCoreCommandContext:
+    publication: PublicationDefinition
+    command: PublicationCommand
+    error: Callable[[str], None]
+    use_color: bool
+    loader_cache: dict[str, object] | None
+    pending_data_output: dict[str, list[str]] | None
+    shell_session: PublicationShellSession | None
+
+
+def dispatch_core_registry(context: PubifyPubsCoreCommandContext) -> int | None:
+    """Dispatch neutral list/update commands through the shared command registry."""
+
+    argv = core_registry_argv(context.command)
+    if argv is None:
+        return None
+    return build_core_command_registry().dispatch(context, argv)
+
+
+def build_core_command_registry() -> pubify_data.CommandRegistry:
+    registry = pubify_data.CommandRegistry()
+    registry.register(("update",), registry_update_all)
+    registry.register(("data", "list"), registry_list_data)
+    registry.register(("figure", "list"), registry_list_figures)
+    registry.register(("figure", "update"), registry_update_figures)
+    registry.register(("stat", "list"), registry_list_stats)
+    registry.register(("stat", "update"), registry_update_stats)
+    registry.register(("table", "list"), registry_list_tables)
+    registry.register(("table", "update"), registry_update_tables)
+    return registry
+
+
+def core_registry_argv(command: PublicationCommand) -> tuple[str, ...] | None:
+    args = tuple(value for value in (command.arg3, command.arg4, command.arg5) if value is not None)
+    if command.command == "update":
+        return ("update", *args)
+    if command.command in {"data", "figure", "stat", "table"}:
+        if command.arg3 is None:
+            return (command.command, "list")
+        if command.arg3 in {"list", "update"}:
+            return (command.command, *args)
+    return None
+
+
+def registry_update_all(context: PubifyPubsCoreCommandContext, args: tuple[str, ...]) -> int:
+    command = context.command
+    reject_build_flags_from_command(command, context.error)
+    if command.force:
+        context.error("update does not accept --force")
+    reject_registry_args(context, "update", args)
+    run_full_refresh(
+        context.publication,
+        use_color=context.use_color,
+        loader_cache=context.loader_cache,
+        pending_data_output=context.pending_data_output,
+        shell_session=context.shell_session,
+        refresh_support=True,
+    )
+    return 0
+
+
+def registry_list_data(context: PubifyPubsCoreCommandContext, args: tuple[str, ...]) -> int:
+    command = context.command
+    reject_build_flags_from_command(command, context.error)
+    if command.force:
+        context.error("data does not accept --force")
+    reject_registry_args(context, "data list", args)
+    rows = build_data_inventory_rows(context.publication)
+    if not rows:
+        print(f"{context.publication.publication_id}: no declared data")
+        return 0
+    loader_width = max(len(row.loader_id) for row in rows)
+    for row in rows:
+        print(render_data_inventory_line(row, loader_width=loader_width, use_color=context.use_color))
+    return 0
+
+
+def registry_list_figures(context: PubifyPubsCoreCommandContext, args: tuple[str, ...]) -> int:
+    command = context.command
+    reject_build_flags_from_command(command, context.error)
+    if command.force:
+        context.error("figure does not accept --force")
+    reject_registry_args(context, "figure list", args)
+    rows = build_figure_inventory_rows(context.publication)
+    if not rows:
+        print(f"{context.publication.publication_id}: no figures")
+        return 0
+    figure_id_width = max(len(row.figure_id) for row in rows)
+    for row in rows:
+        print(render_figure_inventory_line(row, figure_id_width=figure_id_width, use_color=context.use_color))
+    return 0
+
+
+def registry_update_figures(context: PubifyPubsCoreCommandContext, args: tuple[str, ...]) -> int:
+    command = context.command
+    reject_build_flags_from_command(command, context.error)
+    if command.force:
+        context.error("figure does not accept --force")
+    reject_registry_args(context, "figure update", args)
+    ctx = command_run_context(
+        context.publication,
+        loader_cache=context.loader_cache,
+        pending_data_output=context.pending_data_output,
+    )
+    run_data_updates(ctx, figure_loader_ids(context.publication), use_color=context.use_color, include_nocache=True)
+    run_figure_updates(
+        context.publication,
+        ctx,
+        selected_figure_ids(context.publication),
+        use_color=context.use_color,
+        clear_existing=True,
+    )
+    return 0
+
+
+def registry_list_stats(context: PubifyPubsCoreCommandContext, args: tuple[str, ...]) -> int:
+    command = context.command
+    reject_build_flags_from_command(command, context.error)
+    if command.force:
+        context.error("stat does not accept --force")
+    reject_registry_args(context, "stat list", args)
+    rows = build_stat_inventory_rows(context.publication)
+    if not rows:
+        print(f"{context.publication.publication_id}: no stats")
+        return 0
+    for row in rows:
+        print(row.stat_id)
+    return 0
+
+
+def registry_update_stats(context: PubifyPubsCoreCommandContext, args: tuple[str, ...]) -> int:
+    command = context.command
+    reject_build_flags_from_command(command, context.error)
+    if command.force:
+        context.error("stat does not accept --force")
+    reject_registry_args(context, "stat update", args)
+    ctx = command_run_context(
+        context.publication,
+        loader_cache=context.loader_cache,
+        pending_data_output=context.pending_data_output,
+    )
+    run_data_updates(ctx, stat_loader_ids(context.publication), use_color=context.use_color, include_nocache=True)
+    run_stat_updates(context.publication, ctx, tuple(sorted(context.publication.stats)), use_color=context.use_color)
+    return 0
+
+
+def registry_list_tables(context: PubifyPubsCoreCommandContext, args: tuple[str, ...]) -> int:
+    command = context.command
+    reject_build_flags_from_command(command, context.error)
+    if command.force:
+        context.error("table does not accept --force")
+    reject_registry_args(context, "table list", args)
+    rows = build_table_inventory_rows(context.publication)
+    if not rows:
+        print(f"{context.publication.publication_id}: no tables")
+        return 0
+    for row in rows:
+        print(row.table_id)
+    return 0
+
+
+def registry_update_tables(context: PubifyPubsCoreCommandContext, args: tuple[str, ...]) -> int:
+    command = context.command
+    reject_build_flags_from_command(command, context.error)
+    if command.force:
+        context.error("table does not accept --force")
+    reject_registry_args(context, "table update", args)
+    ctx = command_run_context(
+        context.publication,
+        loader_cache=context.loader_cache,
+        pending_data_output=context.pending_data_output,
+    )
+    run_data_updates(ctx, table_loader_ids(context.publication), use_color=context.use_color, include_nocache=True)
+    run_table_updates(context.publication, ctx, tuple(sorted(context.publication.tables)), use_color=context.use_color)
+    return 0
+
+
+def reject_registry_args(
+    context: PubifyPubsCoreCommandContext,
+    command_name: str,
+    args: tuple[str, ...],
+) -> None:
+    if args:
+        context.error(f"{command_name} does not accept additional arguments")
+
+
 def handle_command(
     publication: PublicationDefinition,
     command: PublicationCommand,
@@ -70,37 +260,24 @@ def handle_command(
     pending_data_output: dict[str, list[str]] | None = None,
     shell_session: PublicationShellSession | None = None,
 ) -> int | None:
-    if command.command == "update":
-        reject_build_flags_from_command(command, error)
-        if command.force:
-            error("update does not accept --force")
-        if command.arg3 is not None or command.arg4 is not None or command.arg5 is not None:
-            error("update does not accept additional arguments")
-        run_full_refresh(
+    registry_result = dispatch_core_registry(
+        PubifyPubsCoreCommandContext(
             publication,
-            use_color=use_color,
-            loader_cache=loader_cache,
-            pending_data_output=pending_data_output,
-            shell_session=shell_session,
-            refresh_support=True,
+            command,
+            error,
+            use_color,
+            loader_cache,
+            pending_data_output,
+            shell_session,
         )
-        return 0
+    )
+    if registry_result is not None:
+        return registry_result
 
     if command.command == "data":
         reject_build_flags_from_command(command, error)
         if command.force:
             error("data does not accept --force")
-        if command.arg3 in {None, "list"}:
-            if command.arg4 is not None or command.arg5 is not None:
-                error("data list does not accept additional arguments")
-            rows = build_data_inventory_rows(publication)
-            if not rows:
-                print(f"{publication.publication_id}: no declared data")
-                return 0
-            loader_width = max(len(row.loader_id) for row in rows)
-            for row in rows:
-                print(render_data_inventory_line(row, loader_width=loader_width, use_color=use_color))
-            return 0
         if command.arg3 == "add":
             if command.arg4 is None:
                 error("data add requires <data-id>")
@@ -115,17 +292,6 @@ def handle_command(
         reject_build_flags_from_command(command, error)
         if command.force:
             error("figure does not accept --force")
-        if command.arg3 in {None, "list"}:
-            if command.arg4 is not None or command.arg5 is not None:
-                error("figure list does not accept additional arguments")
-            rows = build_figure_inventory_rows(publication)
-            if not rows:
-                print(f"{publication.publication_id}: no figures")
-                return 0
-            figure_id_width = max(len(row.figure_id) for row in rows)
-            for row in rows:
-                print(render_figure_inventory_line(row, figure_id_width=figure_id_width, use_color=use_color))
-            return 0
         if command.arg3 == "add":
             if command.arg4 is None:
                 error("figure add requires <figure-id>")
@@ -133,13 +299,6 @@ def handle_command(
                 error("figure add accepts only <figure-id>")
             add_publication_stub(publication, kind="figure", stub_id=command.arg4)
             print_added_stub("Figures", command.arg4, use_color=use_color)
-            return 0
-        if command.arg3 == "update":
-            if command.arg4 is not None or command.arg5 is not None:
-                error("figure update does not accept additional arguments")
-            ctx = command_run_context(publication, loader_cache=loader_cache, pending_data_output=pending_data_output)
-            run_data_updates(ctx, figure_loader_ids(publication), use_color=use_color, include_nocache=True)
-            run_figure_updates(publication, ctx, selected_figure_ids(publication), use_color=use_color, clear_existing=True)
             return 0
         if command.arg4 == "update":
             if command.arg5 is not None:
@@ -188,16 +347,6 @@ def handle_command(
         reject_build_flags_from_command(command, error)
         if command.force:
             error("stat does not accept --force")
-        if command.arg3 in {None, "list"}:
-            if command.arg4 is not None or command.arg5 is not None:
-                error("stat list does not accept additional arguments")
-            rows = build_stat_inventory_rows(publication)
-            if not rows:
-                print(f"{publication.publication_id}: no stats")
-                return 0
-            for row in rows:
-                print(row.stat_id)
-            return 0
         if command.arg3 == "add":
             if command.arg4 is None:
                 error("stat add requires <stat-id>")
@@ -205,13 +354,6 @@ def handle_command(
                 error("stat add accepts only <stat-id>")
             add_publication_stub(publication, kind="stat", stub_id=command.arg4)
             print_added_stub("Stats", command.arg4, use_color=use_color)
-            return 0
-        if command.arg3 == "update":
-            if command.arg4 is not None or command.arg5 is not None:
-                error("stat update does not accept additional arguments")
-            ctx = command_run_context(publication, loader_cache=loader_cache, pending_data_output=pending_data_output)
-            run_data_updates(ctx, stat_loader_ids(publication), use_color=use_color, include_nocache=True)
-            run_stat_updates(publication, ctx, tuple(sorted(publication.stats)), use_color=use_color)
             return 0
         if is_latex_alias(command.arg4):
             if command.arg5 is not None:
@@ -242,16 +384,6 @@ def handle_command(
         reject_build_flags_from_command(command, error)
         if command.force:
             error("table does not accept --force")
-        if command.arg3 in {None, "list"}:
-            if command.arg4 is not None or command.arg5 is not None:
-                error("table list does not accept additional arguments")
-            rows = build_table_inventory_rows(publication)
-            if not rows:
-                print(f"{publication.publication_id}: no tables")
-                return 0
-            for row in rows:
-                print(row.table_id)
-            return 0
         if command.arg3 == "add":
             if command.arg4 is None:
                 error("table add requires <table-id>")
@@ -259,13 +391,6 @@ def handle_command(
                 error("table add accepts only <table-id>")
             add_publication_stub(publication, kind="table", stub_id=command.arg4)
             print_added_stub("Tables", command.arg4, use_color=use_color)
-            return 0
-        if command.arg3 == "update":
-            if command.arg4 is not None or command.arg5 is not None:
-                error("table update does not accept additional arguments")
-            ctx = command_run_context(publication, loader_cache=loader_cache, pending_data_output=pending_data_output)
-            run_data_updates(ctx, table_loader_ids(publication), use_color=use_color, include_nocache=True)
-            run_table_updates(publication, ctx, tuple(sorted(publication.tables)), use_color=use_color)
             return 0
         if is_latex_alias(command.arg4):
             if command.arg5 is not None:

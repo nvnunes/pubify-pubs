@@ -21,11 +21,11 @@ truth for this repo.
 `pubify-pubs` is the LaTeX-oriented downstream publication engine layered on
 the TeX-agnostic `pubify-data` runtime.
 
-It owns the generic workflow around:
+It adapts the upstream runtime into the downstream workflow around:
 
 - workspace discovery through `pubify.yaml`
-- publication discovery and validation
-- CLI behavior and shell behavior
+- publication path resolution, validation, and LaTeX readiness checks
+- the `pubs` CLI, shell behavior, and downstream-only commands
 - export, build, and runtime orchestration
 - conservative mirror sync and diff logic
 - pinned publication-data helpers
@@ -73,6 +73,8 @@ Keep the public surface conservative.
 - Keep reusable authoring decorators on the upstream `pubify_data.*` namespace.
 - Keep the CLI name `pubs` stable.
 - Keep the CLI as a thin wrapper over the Python API.
+- Compose neutral list/update command routing through `pubify_data.CommandRegistry`;
+  keep build, preview, LaTeX snippet, sync, and shell-specific behavior here.
 - Keep the public Python API intentionally small and explicit.
 - New generic workflow behavior belongs here; publication-specific figure logic
   does not.
