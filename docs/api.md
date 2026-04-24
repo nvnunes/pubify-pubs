@@ -10,7 +10,9 @@ This page is generated from the public Python docstrings.
     options:
       show_source: false
 
-## Decorators
+## Authoring Decorators
+
+Reusable authoring decorators come from the upstream `pubify_data` namespace.
 
 ### figure
 

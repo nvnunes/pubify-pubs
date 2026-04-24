@@ -192,8 +192,9 @@ loads shared config files, but <code>pubify-pubs</code> owns these roots under t
 <li>Compose neutral list/update command routing through <code>pubify_data.CommandRegistry</code>;
   keep build, preview, LaTeX snippet, sync, and shell-specific behavior here.</li>
 <li>Keep the public Python API intentionally small and explicit.</li>
-<li>New generic workflow behavior belongs here; publication-specific figure logic
-  does not.</li>
+<li>New generic discovery, runtime, and neutral command behavior belongs upstream
+  in <code>pubify-data</code>; LaTeX/export workflow behavior belongs here.</li>
+<li>Publication-specific figure logic does not belong in the package.</li>
 <li>Prefer small explicit helpers over broad generic escape hatches.</li>
 </ul>
 <p>Primary supported Python entrypoints are:</p>

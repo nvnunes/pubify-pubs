@@ -2,7 +2,11 @@
 
 `pubify-pubs` is a local-first publication workflow package built around `pubify-mpl`.
 
-It is meant for host workspaces that keep publications, publication-local TeX sources, and pinned inputs under version control, while the package owns the generic workflow around publication discovery, figure export, LaTeX builds, and publication bootstrapping.
+It is the LaTeX-oriented downstream package for the TeX-agnostic `pubify-data`
+runtime. It is meant for host workspaces that keep publications,
+publication-local TeX sources, and pinned inputs under version control, while
+`pubify-pubs` owns the LaTeX, `pubify-mpl`, preview, build, sync, and
+publication-bootstrapping workflow.
 
 This package does not own your publications. A host workspace does.
 
@@ -26,7 +30,9 @@ The build command runs `latexmk` against the publication-local TeX tree. If expo
 
 ## How It Works
 
-`pubify-pubs` treats a configured host workspace as the source of truth.
+`pubify-pubs` treats a configured host workspace as the source of truth and
+uses `pubify-data` for reusable decorator discovery, loader execution, neutral
+runtime results, and neutral list/update command dispatch.
 
 - `pubify.yaml` contains a `pubify-pubs` section that defines where publications live and where pinned publication data is stored
 - each publication lives under `papers/<publication-id>/`
@@ -334,7 +340,9 @@ The `latex` commands are read-only convenience helpers. They never edit manuscri
 
 ## Python API Overview
 
-The public Python API is intentionally small. Host publications import reusable authoring decorators from `pubify_data` and LaTeX/export helpers from `pubify_pubs`:
+The public Python API is intentionally small. Host publications import reusable
+authoring decorators from `pubify_data` and LaTeX/export helpers from
+`pubify_pubs`:
 
 ```python
 from pubify_pubs import TableResult

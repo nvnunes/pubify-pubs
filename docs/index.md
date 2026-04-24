@@ -3,10 +3,11 @@
 `pubify-pubs` is a local-first publication workflow package built around
 `pubify-mpl`.
 
-It is meant for host workspaces that keep publications, publication-local TeX
-sources, and pinned inputs under version control, while the package owns the
-generic workflow around publication discovery, figure export, LaTeX builds, and
-publication bootstrapping.
+It is the LaTeX-oriented downstream package for the TeX-agnostic `pubify-data`
+runtime. It is meant for host workspaces that keep publications,
+publication-local TeX sources, and pinned inputs under version control, while
+`pubify-pubs` owns the LaTeX, `pubify-mpl`, preview, build, sync, and
+publication-bootstrapping workflow.
 
 This package does not own your publications. A host workspace does.
 

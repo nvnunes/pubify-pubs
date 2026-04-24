@@ -225,11 +225,11 @@ pubify-pubs:
 
 ## Phase 5: Docs And Integration
 
-- Expand `pubify-data` docs to explain downstream adapter implementation and
-  reusable CLI composition.
-- Update `pubify-pubs` docs to describe itself as the LaTeX downstream of
+- `pubify-data` docs explain downstream adapter implementation and reusable CLI
+  composition.
+- `pubify-pubs` docs describe the package as the LaTeX downstream of
   `pubify-data`, not the owner of generic runtime behavior.
-- Run final verification:
+- Final verification has been run:
   - both package test suites
   - both docs builds
   - `pubify-pubs` pre-commit hook

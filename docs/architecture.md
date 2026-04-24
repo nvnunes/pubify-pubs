@@ -76,8 +76,9 @@ Keep the public surface conservative.
 - Compose neutral list/update command routing through `pubify_data.CommandRegistry`;
   keep build, preview, LaTeX snippet, sync, and shell-specific behavior here.
 - Keep the public Python API intentionally small and explicit.
-- New generic workflow behavior belongs here; publication-specific figure logic
-  does not.
+- New generic discovery, runtime, and neutral command behavior belongs upstream
+  in `pubify-data`; LaTeX/export workflow behavior belongs here.
+- Publication-specific figure logic does not belong in the package.
 - Prefer small explicit helpers over broad generic escape hatches.
 
 Primary supported Python entrypoints are:
