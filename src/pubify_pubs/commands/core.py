@@ -11,7 +11,7 @@ import pubify_data
 
 from pubify_pubs.config import load_workspace_config
 from pubify_pubs.discovery import PublicationDefinition
-from pubify_pubs.export import close_figure_export_sources
+from pubify_pubs.export import close_figure_result_sources
 from pubify_pubs.latex_bootstrap import (
     build_figure_latex_spec,
     render_figure_latex,
@@ -327,7 +327,7 @@ def handle_command(
                     subcaption=command.arg5 == "subcaption",
                 )
             finally:
-                close_figure_export_sources(export)
+                close_figure_result_sources(export)
             print_emitted_latex(with_main_tex_prelude(publication, "figure", snippet))
             return 0
         if command.arg4 != "preview":

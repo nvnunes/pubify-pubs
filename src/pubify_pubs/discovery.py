@@ -113,6 +113,7 @@ def load_publication_definition(workspace_root: Path, publication_id: str) -> Pu
         entrypoint=paths.entrypoint,
         data_root=paths.data_root,
         external_data_roots=config.external_data_roots,
+        source_roots=config.sources,
         workspace=pubify_data.WorkspaceAdapter(paths.workspace_root),
     )
     upstream = pubify_data.load_publication_from_entrypoint(publication_id, adapter=adapter)

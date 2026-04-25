@@ -81,6 +81,9 @@ Keep the public surface conservative.
   in `pubify-data`; LaTeX/export workflow behavior belongs here.
 - Publication-specific figure logic does not belong in the package.
 - Prefer small explicit helpers over broad generic escape hatches.
+- Source publications declared in `pub.yaml` are code dependencies. A paper's
+  `figures.py` owns remapping from `ctx.source("<source-id>")` to local
+  figure/stat/table IDs; TeX-facing references should stay local.
 
 Primary supported Python entrypoints are:
 
@@ -90,7 +93,8 @@ Primary supported Python entrypoints are:
 - `publication_data_path(...)`
 - `save_publication_data_npz(...)`
 - `load_publication_data_npz(...)`
-- `FigureExport`
+- `FigureResult`
+- `StatResult`
 - `TableResult`
 
 ## Publication Workflow Contracts

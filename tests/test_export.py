@@ -9,7 +9,7 @@ import pytest
 
 from pubify_pubs.config import PublicationConfig, PubifyMplConfig, load_publication_config
 from pubify_pubs.export import (
-    FigureExport,
+    FigureResult,
     export_figure,
     normalize_figure_result,
     panel,
@@ -114,7 +114,7 @@ def test_export_figure_sets_skip_clone_by_default(
         tex_root=tmp_path / "tex",
         output_dir=tmp_path / "out",
         figure_id="demo",
-        result=FigureExport(panels=(panel(fig),)),
+        result=FigureResult(panels=(panel(fig),)),
         mode_extension=".pdf",
         backend=backend,
     )
@@ -134,7 +134,7 @@ def test_export_figure_allows_skip_clone_override(
         tex_root=tmp_path / "tex",
         output_dir=tmp_path / "out",
         figure_id="demo",
-        result=FigureExport(panels=(panel(fig, skip_clone=False),)),
+        result=FigureResult(panels=(panel(fig, skip_clone=False),)),
         mode_extension=".pdf",
         backend=backend,
     )
@@ -157,7 +157,7 @@ def test_export_figure_forwards_prepare_export_callback(
         tex_root=tmp_path / "tex",
         output_dir=tmp_path / "out",
         figure_id="demo",
-        result=FigureExport(
+        result=FigureResult(
             panels=(panel(fig),),
             kwargs={"prepare_export": prepare_export},
         ),
@@ -222,7 +222,7 @@ def test_normalize_explicit_figure_export_uses_publication_default_layout_when_o
     paper_config: PublicationConfig,
 ) -> None:
     fig = plt.figure()
-    explicit = FigureExport(fig)
+    explicit = FigureResult(fig)
 
     result = normalize_figure_result(explicit, paper_config)
 
@@ -240,8 +240,8 @@ def test_figure_export_accepts_single_raw_figure_or_axes() -> None:
     fig = plt.figure()
     axes_figure, ax = plt.subplots()
 
-    figure_export = FigureExport(fig, layout="onewide")
-    axes_export = FigureExport(ax, layout="onewide")
+    figure_export = FigureResult(fig, layout="onewide")
+    axes_export = FigureResult(ax, layout="onewide")
 
     assert len(figure_export.panels) == 1
     assert figure_export.panels[0].figure is fig
@@ -256,8 +256,8 @@ def test_figure_export_accepts_list_or_tuple_of_raw_targets_and_panels() -> None
     fig2 = plt.figure()
     fig3 = plt.figure()
 
-    list_export = FigureExport([fig1, fig2], layout="twowide")
-    mixed_export = FigureExport((panel(fig1), fig3), layout="twowide")
+    list_export = FigureResult([fig1, fig2], layout="twowide")
+    mixed_export = FigureResult((panel(fig1), fig3), layout="twowide")
 
     assert [item.figure for item in list_export.panels] == [fig1, fig2]
     assert [item.figure for item in mixed_export.panels] == [fig1, fig3]
@@ -270,16 +270,16 @@ def test_figure_export_rejects_missing_or_invalid_panel_payload() -> None:
     fig = plt.figure()
 
     with pytest.raises(ValueError, match="requires at least one panel"):
-        FigureExport()
+        FigureResult()
 
     with pytest.raises(ValueError, match="requires at least one panel"):
-        FigureExport([])
+        FigureResult([])
 
     with pytest.raises(ValueError, match="either a positional panel payload or panels="):
-        FigureExport(fig, panels=(panel(fig),))
+        FigureResult(fig, panels=(panel(fig),))
 
     with pytest.raises(ValueError, match="Matplotlib Figure or Axes"):
-        FigureExport([fig, UnsupportedObject()])
+        FigureResult([fig, UnsupportedObject()])
 
     plt.close(fig)
 
@@ -293,7 +293,7 @@ def test_export_figure_single_panel_uses_shared_layout_and_kwargs(
     output_dir = tmp_path / "png-output"
     fig = plt.figure()
     fig._pubs_name = "single"
-    result = FigureExport(
+    result = FigureResult(
         panels=(panel(fig),),
         layout="twowide",
         caption_lines=2,
@@ -325,7 +325,7 @@ def test_export_figure_uses_publication_default_layout_when_explicit_layout_is_o
     backend = FakePubifyBackend()
     fig = plt.figure()
     fig._pubs_name = "single"
-    result = FigureExport(
+    result = FigureResult(
         panels=(panel(fig),),
         caption_lines=2,
     )
@@ -352,7 +352,7 @@ def test_export_figure_multi_panel_shared_metadata_only(
     fig1._pubs_name = "left"
     fig2 = plt.figure()
     fig2._pubs_name = "right"
-    result = FigureExport(
+    result = FigureResult(
         panels=(panel(fig1), panel(fig2)),
         layout="twowide",
         kwargs={"hide_annotations": True},
@@ -380,7 +380,7 @@ def test_export_figure_allows_generic_kwargs_alongside_first_class_caption_field
     backend = FakePubifyBackend()
     fig = plt.figure()
     fig._pubs_name = "single"
-    result = FigureExport(
+    result = FigureResult(
         panels=(panel(fig),),
         layout="twowide",
         caption_lines=2,
@@ -415,7 +415,7 @@ def test_export_figure_multi_panel_supports_per_panel_overrides(
     fig1._pubs_name = "left"
     fig2 = plt.figure()
     fig2._pubs_name = "right"
-    result = FigureExport(
+    result = FigureResult(
         panels=(
             panel(fig1, hide_labels=False),
             panel(fig2, hide_cbar=True, subcaption_lines=2),
@@ -458,7 +458,7 @@ def test_typed_export_accepts_axes_panel(
 ) -> None:
     backend = FakePubifyBackend()
     fig, ax = plt.subplots()
-    result = FigureExport(
+    result = FigureResult(
         panels=(panel(ax),),
         layout="twowide",
     )
@@ -482,21 +482,21 @@ def test_typed_export_rejects_non_positive_caption_line_counts() -> None:
     fig = plt.figure()
 
     with pytest.raises(ValueError, match="caption_lines must be >= 1"):
-        FigureExport(
+        FigureResult(
             panels=(panel(fig),),
             layout="twowide",
             caption_lines=0,
         )
 
     with pytest.raises(ValueError, match="subcaption_lines must be >= 1"):
-        FigureExport(
+        FigureResult(
             panels=(panel(fig),),
             layout="twowide",
             subcaption_lines=0,
         )
 
     with pytest.raises(ValueError, match="FigurePanel subcaption_lines must be >= 1"):
-        FigureExport(
+        FigureResult(
             panels=(panel(fig, subcaption_lines=0),),
             layout="twowide",
         )
@@ -508,7 +508,7 @@ def test_typed_export_rejects_empty_explicit_layout() -> None:
     fig = plt.figure()
 
     with pytest.raises(ValueError, match="requires a non-empty layout"):
-        FigureExport(
+        FigureResult(
             panels=(panel(fig),),
             layout="",
         )
@@ -526,12 +526,12 @@ def test_png_and_pdf_exports_share_pubify_inputs_except_destination_and_extensio
     png_fig._pubs_name = "single"
     export_fig = plt.figure()
     export_fig._pubs_name = "single"
-    png_result = FigureExport(
+    png_result = FigureResult(
         panels=(panel(png_fig),),
         layout="twowide",
         caption_lines=2,
     )
-    export_result = FigureExport(
+    export_result = FigureResult(
         panels=(panel(export_fig),),
         layout="twowide",
         caption_lines=2,
@@ -577,7 +577,7 @@ def test_export_figure_closes_real_matplotlib_figures(
     initial_numbers = {fig1.number, fig2.number}
     assert initial_numbers.issubset(set(plt.get_fignums()))
 
-    result = FigureExport(
+    result = FigureResult(
         panels=(panel(fig1), panel(fig2)),
         layout="twowide",
     )

@@ -196,14 +196,14 @@ Both data decorators require relative paths. They reject absolute paths and path
 Host publications import decorators from the upstream `pubify_data` namespace and LaTeX/export helpers from `pubify_pubs`:
 
 ```python
-from pubify_pubs import TableResult
+from pubify_pubs import FigureResult, StatResult, TableResult
 from pubify_pubs.data import (
     load_publication_data_npz,
     publication_data_path,
     save_publication_data_npz,
 )
 from pubify_data import data, external_data, figure, stat, table
-from pubify_pubs.export import FigureExport, panel
+from pubify_pubs.export import panel
 ```
 
 `@figure` marks a callable as a logical publication figure. Exported figure functions may return:
@@ -211,15 +211,15 @@ from pubify_pubs.export import FigureExport, panel
 - a Matplotlib `Figure`
 - a Matplotlib `Axes`
 - a sequence of figures or axes
-- a `FigureExport` value for explicit multi-panel control
+- a `FigureResult` value for explicit multi-panel control
 
-`FigureExport` accepts a single Matplotlib `Figure` or `Axes`, a list or tuple of them, one `panel(...)`, or a list or tuple of `panel(...)` values.
+`FigureResult` accepts a single Matplotlib `Figure` or `Axes`, a list or tuple of them, one `panel(...)`, or a list or tuple of `panel(...)` values.
 
-Exported figure functions commonly return `FigureExport` values built from one or more panels:
+Exported figure functions commonly return `FigureResult` values built from one or more panels:
 
 ```python
-return FigureExport(fig, layout="onewide")
-return FigureExport([fig1, fig2], layout="twowide")
+return FigureResult(fig, layout="onewide")
+return FigureResult([fig1, fig2], layout="twowide")
 ```
 
 Use `panel(...)` only when one panel needs extra pubify export metadata beyond the figure or axes itself, such as `subcaption_lines` or per-panel export overrides.
@@ -234,7 +234,41 @@ def custom_map(ctx):
     return fig
 ```
 
-For figure-specific cleanup that pubify still cannot discover generically, pass `prepare_export(...)` through `FigureExport(..., kwargs={...})`.
+For figure-specific cleanup that pubify still cannot discover generically, pass `prepare_export(...)` through `FigureResult(..., kwargs={...})`.
+
+### Reusing Outputs From Another Pubify Publication
+
+A publication can reuse code from another pubify publication by declaring a
+source in `pub.yaml`:
+
+```yaml
+sources:
+  talk: slides/test
+```
+
+The source root uses the conventional pubify layout with `figures.py` and
+`data/`. Source outputs are available inside local wrapper functions through
+`ctx.source(...)`:
+
+```python
+from pubify_data import figure, stat
+from pubify_pubs import FigureResult, StatResult
+
+
+@figure
+def plot_reused_slide_figure(ctx):
+    panel = ctx.source("talk").figure("summary_plot").panel(1)
+    return FigureResult(panel, layout="onewide", caption_lines=2)
+
+
+@stat
+def compute_reused_slide_count(ctx):
+    source_stat = ctx.source("talk").stat("summary_count")
+    return StatResult(source_stat.values[0].value)
+```
+
+Manuscripts should reference the local wrapper IDs, not source-qualified IDs.
+This keeps TeX stable when the source publication is reorganized.
 
 `@table` marks a callable as a logical publication table. Table functions return `TableResult(...)`, which owns logical table data and simple rendering while LaTeX keeps ownership of headers, captions, labels, rules, and layout.
 
@@ -344,14 +378,14 @@ authoring decorators from `pubify_data` and LaTeX/export helpers from
 `pubify_pubs`:
 
 ```python
-from pubify_pubs import TableResult
+from pubify_pubs import FigureResult, StatResult, TableResult
 from pubify_pubs.data import (
     load_publication_data_npz,
     publication_data_path,
     save_publication_data_npz,
 )
 from pubify_data import data, external_data, figure, stat, table
-from pubify_pubs.export import FigureExport, panel
+from pubify_pubs.export import panel
 from pubify_pubs.discovery import find_workspace_root
 ```
 

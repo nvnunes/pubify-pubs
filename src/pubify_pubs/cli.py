@@ -11,7 +11,7 @@ import sys
 
 from pubify_pubs.commands import run_publication_command as _dispatch_publication_command
 from pubify_pubs.commands.registry import build_cli_description, build_shell_help_text
-from pubify_pubs.export import close_figure_export_sources
+from pubify_pubs.export import close_figure_result_sources
 from pubify_pubs.config import WORKSPACE_CONFIG_FILENAME, load_workspace_config, write_default_workspace_config
 from pubify_pubs.discovery import (
     PublicationDefinition,
@@ -554,7 +554,7 @@ def _run_publication_command(
                     subcaption=command.arg5 == "subcaption",
                 )
             finally:
-                close_figure_export_sources(export)
+                close_figure_result_sources(export)
             _print_emitted_latex(_with_main_tex_prelude(publication, "figure", snippet))
             return 0
         if command.arg4 != "preview":

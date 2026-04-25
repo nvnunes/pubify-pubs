@@ -103,7 +103,9 @@ def _ensure_required_imports(text: str, kind: str) -> str:
         lines = _ensure_plain_import(lines, "import numpy as np")
     if kind == "figure":
         lines = _ensure_plain_import(lines, "import matplotlib.pyplot as plt")
-        lines = _ensure_from_import(lines, "pubify_pubs", "FigureExport")
+        lines = _ensure_from_import(lines, "pubify_pubs", "FigureResult")
+    if kind == "stat":
+        lines = _ensure_from_import(lines, "pubify_pubs", "StatResult")
     if kind == "table":
         lines = _ensure_from_import(lines, "pubify_pubs", "TableResult")
     lines = _ensure_from_import(lines, "pubify_data", kind)

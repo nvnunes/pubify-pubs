@@ -6,6 +6,8 @@ import math
 from pathlib import Path
 import re
 
+import pubify_data
+
 
 AUTOTABLES_FILENAME = "autotables.tex"
 _MACRO_NAME_PART = re.compile(r"[A-Za-z0-9]+")
@@ -14,7 +16,7 @@ _TABLE_ENV_RE = re.compile(r"\\(begin|end)\{(tabular\*|tabular|tabularx|longtabl
 
 
 @dataclass(frozen=True, init=False)
-class TableResult:
+class TableResult(pubify_data.BaseTableResult):
     """Normalized logical-table payload for the publication runtime."""
 
     bodies: tuple[tuple[tuple[object, ...], ...], ...]
@@ -32,27 +34,24 @@ class TableResult:
         multicolumns: Sequence[Sequence[object]] | None = None,
     ) -> None:
         bodies = _normalize_table_data(data)
+        metadata = {
+            "formats": tuple(formats) if formats is not None else None,
+            "tex_wrappers": tuple(tex_wrappers) if tex_wrappers is not None else None,
+            "multicolumns": tuple(tuple(spec) for spec in (multicolumns or ())),
+        }
         object.__setattr__(self, "bodies", bodies)
-        object.__setattr__(self, "formats", tuple(formats) if formats is not None else None)
+        object.__setattr__(self, "formats", metadata["formats"])
         object.__setattr__(
             self,
             "tex_wrappers",
-            tuple(tex_wrappers) if tex_wrappers is not None else None,
+            metadata["tex_wrappers"],
         )
         object.__setattr__(
             self,
             "multicolumns",
-            tuple(tuple(spec) for spec in (multicolumns or ())),
+            metadata["multicolumns"],
         )
-        object.__setattr__(
-            self,
-            "metadata",
-            {
-                "formats": self.formats,
-                "tex_wrappers": self.tex_wrappers,
-                "multicolumns": self.multicolumns,
-            },
-        )
+        object.__setattr__(self, "metadata", metadata)
         self.__post_init__()
 
     def __post_init__(self) -> None:

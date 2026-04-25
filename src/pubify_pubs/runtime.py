@@ -24,7 +24,6 @@ from pubify_pubs.config import (
     write_skeleton_figures_module,
 )
 from pubify_pubs.discovery import (
-    FigureSpec,
     PublicationDefinition,
     PublicationPaths,
     StatSpec,
@@ -32,7 +31,7 @@ from pubify_pubs.discovery import (
     build_publication_paths,
     validate_publication_definition,
 )
-from pubify_pubs.export import FigureExport, FigurePanel, export_figure, normalize_figure_result
+from pubify_pubs.export import FigureResult, FigurePanel, export_figure, normalize_figure_result
 from pubify_pubs.stats import (
     ComputedStat,
     compute_resolved_stat,
@@ -256,18 +255,19 @@ def run_figures(
         )
     ensure_generated_artifact_paths(publication)
     run_ctx = ctx or build_run_context(publication)
-    figure_ids = [figure_id] if figure_id is not None else sorted(publication.figures)
+    available_figure_ids = set(pubify_data.figure_ids(publication.upstream))
+    figure_ids = [figure_id] if figure_id is not None else sorted(available_figure_ids)
     outputs: list[Path] = []
 
     if figure_id is None:
         _clear_output_directory(publication.paths.autofigures_root)
 
     for current_id in figure_ids:
-        if current_id not in publication.figures:
+        if current_id not in available_figure_ids:
             raise KeyError(f"Unknown figure '{current_id}'")
         figure_outputs = _run_one_figure(
             run_ctx,
-            publication.figures[current_id],
+            current_id,
             subfigure_index,
         )
         outputs.extend(figure_outputs)
@@ -279,8 +279,8 @@ def inspect_figure(
     publication: PublicationDefinition,
     figure_id: str,
     ctx: RunContext | None = None,
-) -> FigureExport:
-    """Resolve one figure to its normalized ``FigureExport`` without exporting files."""
+) -> FigureResult:
+    """Resolve one figure to its normalized ``FigureResult`` without exporting files."""
 
     errors = validate_publication_definition(publication, require_tex_support=False)
     if errors:
@@ -288,7 +288,7 @@ def inspect_figure(
         raise ValueError(
             f"Publication '{publication.publication_id}' failed validation:\n{joined}"
         )
-    if figure_id not in publication.figures:
+    if figure_id not in pubify_data.figure_ids(publication.upstream):
         raise KeyError(f"Unknown figure '{figure_id}'")
     run_ctx = ctx or build_run_context(publication)
     _, result = pubify_data_runtime.run_figures(
@@ -296,7 +296,7 @@ def inspect_figure(
         figure_id,
         ctx=_upstream_context(run_ctx),
     )[0]
-    return _figure_export_from_neutral(result, publication.config)
+    return _figure_result_from_neutral(result, publication.config)
 
 
 def run_stats(
@@ -613,24 +613,24 @@ def _is_stale_latexmk_failure(exc: subprocess.CalledProcessError) -> bool:
 
 def _run_one_figure(
     ctx: RunContext,
-    figure: FigureSpec,
+    figure_id: str,
     subfigure_index: int | None,
 ) -> list[Path]:
     _, neutral_result = pubify_data_runtime.run_figures(
         ctx.publication.upstream,
-        figure.figure_id,
+        figure_id,
         ctx=_upstream_context(ctx),
     )[0]
-    result = _figure_export_from_neutral(neutral_result, ctx.publication.config)
-    return _capture_export_output(ctx, figure, result, subfigure_index)
+    result = _figure_result_from_neutral(neutral_result, ctx.publication.config)
+    return _capture_export_output(ctx, figure_id, result, subfigure_index)
 
 
-def _figure_export_from_neutral(
-    result: pubify_data.FigureResult,
+def _figure_result_from_neutral(
+    result: pubify_data.BaseFigureResult,
     config: object,
-) -> FigureExport:
-    if len(result.panels) == 1 and isinstance(result.panels[0].payload, FigureExport):
-        return normalize_figure_result(result.panels[0].payload, config)
+) -> FigureResult:
+    if isinstance(result, FigureResult):
+        return normalize_figure_result(result, config)
     panels: list[FigurePanel] = []
     for panel in result.panels:
         metadata = dict(panel.metadata)
@@ -646,7 +646,7 @@ def _figure_export_from_neutral(
     caption_lines = metadata.pop("caption_lines", None)
     subcaption_lines = metadata.pop("subcaption_lines", None)
     return normalize_figure_result(
-        FigureExport(
+        FigureResult(
             panels,
             layout=result.layout,
             caption_lines=caption_lines,
@@ -659,8 +659,8 @@ def _figure_export_from_neutral(
 
 def _capture_export_output(
     ctx: RunContext,
-    figure: FigureSpec,
-    result: FigureExport,
+    figure_id: str,
+    result: FigureResult,
     subfigure_index: int | None,
 ) -> list[Path]:
     stream = io.StringIO()
@@ -670,7 +670,7 @@ def _capture_export_output(
                 ctx.publication.config,
                 ctx.publication.paths.tex_root,
                 ctx.publication.paths.autofigures_root,
-                figure.figure_id,
+                figure_id,
                 result,
                 ".pdf",
                 subfigure_index=subfigure_index,

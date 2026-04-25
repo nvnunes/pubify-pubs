@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from string import ascii_lowercase
 
-from pubify_pubs.export import FigureExport
+from pubify_pubs.export import FigureResult
 from pubify_pubs.stats import ComputedStat
 from pubify_pubs.tables import ComputedTable, macro_name_for_table
 
@@ -68,7 +68,7 @@ def render_table_latex(table: ComputedTable) -> str:
     return "\n".join(lines)
 
 
-def build_figure_latex_spec(figure_id: str, export: FigureExport) -> FigureLatexSpec:
+def build_figure_latex_spec(figure_id: str, export: FigureResult) -> FigureLatexSpec:
     panel_count = len(export.panels)
     return FigureLatexSpec(
         figure_id=figure_id,

@@ -3,7 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
-from pubify_pubs import FigureExport, TableResult
+from pubify_pubs import FigureResult, StatResult, TableResult
 from pubify_data import data, figure, stat, table
 
 # Data
@@ -25,7 +25,7 @@ def load_<data-id>(ctx, file_path):
 def plot_<figure-id>(ctx, example_data):
     fig, ax = plt.subplots()
     ax.scatter(example_data["x"], example_data["y"])
-    return FigureExport(
+    return FigureResult(
         fig,
         layout="one",
     )
@@ -35,10 +35,10 @@ def plot_<figure-id>(ctx, example_data):
 # pubs:stat-stub:start
 @stat
 def compute_<stat-id>(ctx, example_data):
-    return {
+    return StatResult({
         "Count": str(example_data["x"].size),
         "Mean": str(example_data["y"].mean()),
-    }
+    })
 # pubs:stat-stub:end
 
 

@@ -43,6 +43,7 @@ class PublicationConfig:
     main_tex: str = "main.tex"
     mirror_root: str | None = None
     external_data_roots: dict[str, str] = field(default_factory=dict)
+    sources: dict[str, str] = field(default_factory=dict)
     sync_excludes: tuple[str, ...] = field(default_factory=tuple)
     pubify_mpl: PubifyMplConfig = field(default_factory=lambda: PubifyMplConfig(template={}, defaults={}))
 
@@ -117,6 +118,22 @@ def load_publication_config(path: Path, folder_publication_id: str) -> Publicati
             resolved_root = (workspace_root / resolved_root).resolve()
         normalized_external_roots[root_name] = str(resolved_root)
 
+    sources = raw.get("sources", {})
+    if not isinstance(sources, dict):
+        raise ValueError(f"{path}: sources must be a mapping when set")
+    normalized_sources: dict[str, str] = {}
+    if sources and workspace_root is None:
+        workspace_root = find_workspace_root(path.parent)
+    for source_name, source_path in sources.items():
+        if not isinstance(source_name, str) or not source_name:
+            raise ValueError(f"{path}: sources keys must be non-empty strings")
+        if not isinstance(source_path, str) or not source_path:
+            raise ValueError(f"{path}: sources.{source_name} must be a non-empty string")
+        resolved_source = Path(source_path).expanduser()
+        if not resolved_source.is_absolute():
+            resolved_source = (workspace_root / resolved_source).resolve()
+        normalized_sources[source_name] = str(resolved_source)
+
     title = raw.get("title")
     if title is not None and not isinstance(title, str):
         raise ValueError(f"{path}: title must be a string when set")
@@ -136,6 +153,7 @@ def load_publication_config(path: Path, folder_publication_id: str) -> Publicati
         main_tex=main_tex,
         mirror_root=mirror_root,
         external_data_roots=normalized_external_roots,
+        sources=normalized_sources,
         sync_excludes=tuple(sync_excludes),
         pubify_mpl=PubifyMplConfig(
             template=dict(template),

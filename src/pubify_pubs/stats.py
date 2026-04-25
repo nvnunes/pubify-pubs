@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 
+import pubify_data
+
 
 AUTOSTATS_FILENAME = "autostats.tex"
 _MACRO_NAME_PART = re.compile(r"[A-Za-z0-9]+")
@@ -31,6 +33,10 @@ class ComputedStat:
 
     stat_id: str
     values: tuple[ResolvedStat, ...]
+
+
+class StatResult(pubify_data.BaseStatResult):
+    """Publication stat result with TeX-facing metadata reserved for pubify-pubs."""
 
 
 def normalize_stat_result(stat_id: str, result: object) -> tuple[tuple[str | None, str], ...]:

@@ -1195,7 +1195,7 @@ def test_cli_figure_add_appends_stub_and_adds_missing_imports(
     assert "Figures" in captured.out
     assert "- sample_plot: added" in _strip_ansi(captured.out)
     assert "import matplotlib.pyplot as plt" in figures_text
-    assert "from pubify_pubs import FigureExport" in figures_text
+    assert "from pubify_pubs import FigureResult" in figures_text
     assert "from pubify_data import data, figure" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
@@ -1204,7 +1204,7 @@ def test_cli_figure_add_appends_stub_and_adds_missing_imports(
                 "def plot_sample_plot(ctx, example_data):",
                 "    fig, ax = plt.subplots()",
                 '    ax.scatter(example_data["x"], example_data["y"])',
-                "    return FigureExport(",
+                "    return FigureResult(",
                 "        fig,",
                 '        layout="one",',
                 "    )",
@@ -1239,15 +1239,16 @@ def test_cli_stat_add_appends_stub_and_adds_missing_imports(
     assert "- sample_stat: added" in _strip_ansi(captured.out)
     assert "import numpy as np" in figures_text
     assert "from pubify_data import data, stat" in figures_text
+    assert "from pubify_pubs import StatResult" in figures_text
     assert figures_text.rstrip().endswith(
         "\n".join(
             [
                 "@stat",
                 "def compute_sample_stat(ctx, example_data):",
-                "    return {",
+                "    return StatResult({",
                 '        "Count": str(example_data["x"].size),',
                 '        "Mean": str(example_data["y"].mean()),',
-                "    }",
+                "    })",
             ]
         )
     )
@@ -2714,7 +2715,7 @@ def test_figure_output_matching_does_not_cross_match_shared_suffix_names(
     figures_path.write_text(
         "\n".join(
             [
-                "from pubify_pubs import FigureExport",
+                "from pubify_pubs import FigureResult",
                 "from pubify_data import figure",
                 "import matplotlib",
                 "matplotlib.use('Agg')",
@@ -2724,12 +2725,12 @@ def test_figure_output_matching_does_not_cross_match_shared_suffix_names(
                 "def plot_field_ee_maps(ctx):",
                 "    fig1, _ax1 = plt.subplots()",
                 "    fig2, _ax2 = plt.subplots()",
-                "    return FigureExport([fig1, fig2], layout='twowide')",
+                "    return FigureResult([fig1, fig2], layout='twowide')",
                 "",
                 "@figure",
                 "def plot_field_ee_maps_shared(ctx):",
                 "    fig, _ax = plt.subplots()",
-                "    return FigureExport(fig, layout='onewide')",
+                "    return FigureResult(fig, layout='onewide')",
                 "",
             ]
         )
@@ -3167,7 +3168,7 @@ def test_init_bootstraps_missing_publication_root_and_skeleton_yaml(
     assert '"""Figures entrypoint for publication figures."""' in figures_py
     assert "import matplotlib.pyplot as plt" in figures_py
     assert "import numpy as np" in figures_py
-    assert "from pubify_pubs import FigureExport, TableResult" in figures_py
+    assert "from pubify_pubs import FigureResult, StatResult, TableResult" in figures_py
     assert "from pubify_data import data, figure, stat, table" in figures_py
     assert "# Data" in figures_py
     assert "# Figures, Stats & Tables" in figures_py

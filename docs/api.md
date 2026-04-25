@@ -72,9 +72,9 @@ Reusable authoring decorators come from the upstream `pubify_data` namespace.
     options:
       show_source: false
 
-### FigureExport
+### FigureResult
 
-::: pubify_pubs.export.FigureExport
+::: pubify_pubs.export.FigureResult
     options:
       show_source: false
 
@@ -85,6 +85,12 @@ Reusable authoring decorators come from the upstream `pubify_data` namespace.
       show_source: false
 
 ## Table Model
+
+### StatResult
+
+::: pubify_pubs.StatResult
+    options:
+      show_source: false
 
 ### TableResult
 
