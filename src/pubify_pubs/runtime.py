@@ -199,16 +199,34 @@ def _relative_symlink_target(link_path: Path, target_path: Path) -> Path:
 
 def _migrate_generated_artifact(source: Path, destination: Path) -> None:
     if source.is_dir():
+        _assert_can_merge_generated_artifact_directory(source, destination)
         _merge_generated_artifact_directory(source, destination)
         shutil.rmtree(source)
         return
-    if destination.exists() and destination.read_bytes() != source.read_bytes():
-        raise ValueError(f"Generated artifact migration conflict: {source} -> {destination}")
+    _assert_can_migrate_generated_artifact_file(source, destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if not destination.exists():
         shutil.move(str(source), str(destination))
     else:
         source.unlink()
+
+
+def _assert_can_migrate_generated_artifact_file(source: Path, destination: Path) -> None:
+    if not destination.exists():
+        return
+    if destination.is_dir() or destination.read_bytes() != source.read_bytes():
+        raise ValueError(f"Generated artifact migration conflict: {source} -> {destination}")
+
+
+def _assert_can_merge_generated_artifact_directory(source: Path, destination: Path) -> None:
+    if destination.exists() and not destination.is_dir():
+        raise ValueError(f"Generated artifact migration conflict: {source} -> {destination}")
+    for child in source.iterdir():
+        target = destination / child.name
+        if child.is_dir():
+            _assert_can_merge_generated_artifact_directory(child, target)
+            continue
+        _assert_can_migrate_generated_artifact_file(child, target)
 
 
 def _merge_generated_artifact_directory(source: Path, destination: Path) -> None:

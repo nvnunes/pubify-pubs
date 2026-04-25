@@ -14,6 +14,7 @@ import pytest
 from conftest import FakePubifyBackend, FakeReadline, _hash_text, _strip_ansi, _write_external_paper, _write_table_paper
 from pubify_pubs.cli import build_parser, main
 import pubify_pubs.cli as core_cli
+import pubify_pubs.commands.common as commands_common
 import pubify_pubs.commands.core as commands_core
 import pubify_pubs.export as core_export
 import pubify_pubs.runtime as core_runtime
@@ -38,9 +39,17 @@ PUBLICATIONS_AGENTS_TEMPLATE = "\n".join(
         "# AGENTS.md",
         "",
         "## First Reads",
-        "- Read the `pubify-pubs` agent surface before making publication-workflow decisions:",
+        "- If this workspace includes a local `pubify-pubs` checkout, read:",
         "  - `pubify-pubs/AGENTS.md`",
         "  - `pubify-pubs/README.md`",
+        "- Otherwise, use the public `pubify-pubs` docs:",
+        "  - https://nvnunes.github.io/pubify-pubs/",
+        "  - https://nvnunes.github.io/pubify-pubs/architecture/",
+        "",
+        "## Working Rules",
+        "- Keep publication-specific science code, pinned scientific data, manuscript-local helpers, and TeX sources in the host publication workspace.",
+        "- Use `pubs init <publication-id>` to initialize or repair publication scaffolding.",
+        "- Generated TeX artifacts live under each publication's `data/tex-artifacts/` tree and are exposed to TeX through local symlinks.",
         "",
     ]
 )
@@ -50,7 +59,7 @@ def test_data_decorator_supports_single_path_form() -> None:
     def load_training(ctx, path):
         return path
 
-    assert load_training.__pubs_loader__ == {
+    assert load_training.__pubify_data_loader__ == {
         "kind": "data",
         "style": "single",
         "paths": {"path": "training.npy"},
@@ -62,7 +71,7 @@ def test_data_decorator_supports_named_multi_path_form() -> None:
     def load_bundle(ctx, model, meta):
         return model, meta
 
-    assert load_bundle.__pubs_loader__ == {
+    assert load_bundle.__pubify_data_loader__ == {
         "kind": "data",
         "style": "named",
         "paths": {"model": "bundle.pt", "meta": "bundle.json"},
@@ -414,7 +423,7 @@ def test_external_data_decorator_supports_single_path_form() -> None:
     def load_training(ctx, path):
         return path
 
-    assert load_training.__pubs_loader__ == {
+    assert load_training.__pubify_data_loader__ == {
         "kind": "external_data",
         "root_name": "scratch",
         "style": "single",
@@ -427,7 +436,7 @@ def test_external_data_decorator_supports_named_multi_path_form() -> None:
     def load_bundle(ctx, model, meta):
         return model, meta
 
-    assert load_bundle.__pubs_loader__ == {
+    assert load_bundle.__pubify_data_loader__ == {
         "kind": "external_data",
         "root_name": "shared",
         "style": "named",
@@ -451,7 +460,27 @@ def test_stat_decorator_marks_callable() -> None:
     def compute_sample_count(ctx):
         return "42"
 
-    assert getattr(compute_sample_count, "__pubs_stat__", False) is True
+    assert getattr(compute_sample_count, "__pubify_data_stat__", False) is True
+
+
+def test_core_registry_requires_upstream_core_command_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def register_incomplete_core_commands(registry):
+        registry.register(("update",), lambda context, args: 0)
+
+    monkeypatch.setattr(
+        commands_core.pubify_data,
+        "register_core_commands",
+        register_incomplete_core_commands,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="pubify-data did not register expected core command: data list",
+    ):
+        commands_core.build_core_command_registry()
+
 
 def test_parser_supports_documented_surface() -> None:
     parser = build_parser()
@@ -1005,7 +1034,7 @@ def test_open_publication_previews_uses_preview_backend_on_macos(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    core_cli._open_publication_previews([pdf_path], backend="preview")
+    commands_core.open_publication_previews([pdf_path], backend="preview")
 
     assert commands == [["open", "-a", "Preview", str(pdf_path.resolve())]]
 
@@ -1023,7 +1052,7 @@ def test_open_publication_previews_uses_vscode_backend(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    core_cli._open_publication_previews([pdf_path], backend="vscode")
+    commands_core.open_publication_previews([pdf_path], backend="vscode")
 
     assert commands == [["code", "-n", str(pdf_path.resolve())]]
 
@@ -1036,7 +1065,7 @@ def test_open_publication_previews_rejects_preview_backend_off_macos(
     monkeypatch.setattr(sys, "platform", "linux")
 
     with pytest.raises(RuntimeError, match="supported only on macOS"):
-        core_cli._open_publication_previews([pdf_path], backend="preview")
+        commands_core.open_publication_previews([pdf_path], backend="preview")
 
 def test_open_publication_previews_reports_missing_vscode_command(
     tmp_path: Path,
@@ -1051,7 +1080,7 @@ def test_open_publication_previews_reports_missing_vscode_command(
     monkeypatch.setattr(subprocess, "run", missing_code)
 
     with pytest.raises(RuntimeError, match="Could not find the VS Code `code` command on PATH"):
-        core_cli._open_publication_previews([pdf_path], backend="vscode")
+        commands_core.open_publication_previews([pdf_path], backend="vscode")
 
 def test_cli_shell_runs_paper_scoped_commands(
     repo: Path,
@@ -1500,7 +1529,7 @@ def test_reload_session_publication_keeps_unchanged_imports_on_build_style_reloa
     publication = load_publication_definition(repo, "demo")
     loader_cache, pending_data_output = core_cli._preload_shell_loader_cache(publication)
     method_state = core_shell_incremental.collect_shell_method_state(publication)
-    session = core_cli.PublicationShellSession(
+    session = commands_common.PublicationShellSession(
         workspace_root=repo,
         publication_id="demo",
         publication=publication,
@@ -2006,7 +2035,7 @@ def test_cli_shell_history_is_trimmed_to_recent_entries(
     history_path = repo / "papers" / "demo" / ".pubs-history"
     fake_readline = FakeReadline()
     history_path.write_text(
-        "\n".join(f"cmd-{idx}" for idx in range(core_cli.SHELL_HISTORY_LIMIT + 25)) + "\n",
+        "\n".join(f"cmd-{idx}" for idx in range(commands_common.SHELL_HISTORY_LIMIT + 25)) + "\n",
         encoding="utf-8",
     )
     commands = iter(["quit"])
@@ -2016,9 +2045,9 @@ def test_cli_shell_history_is_trimmed_to_recent_entries(
 
     assert main(["demo", "shell"]) == 0
     lines = history_path.read_text(encoding="utf-8").splitlines()
-    assert len(lines) == core_cli.SHELL_HISTORY_LIMIT
+    assert len(lines) == commands_common.SHELL_HISTORY_LIMIT
     assert lines[0] == "cmd-26"
-    assert lines[-2] == f"cmd-{core_cli.SHELL_HISTORY_LIMIT + 24}"
+    assert lines[-2] == f"cmd-{commands_common.SHELL_HISTORY_LIMIT + 24}"
     assert lines[-1] == "quit"
 
 def test_cli_shell_persists_history_when_readline_already_contains_latest_entry(
@@ -3236,6 +3265,29 @@ def test_force_init_migrates_legacy_direct_tex_artifacts(
     assert publication.paths.autostats_path.read_text(encoding="utf-8") == "% legacy stats\n"
     assert publication.paths.autotables_path.read_text(encoding="utf-8") == "% legacy tables\n"
 
+
+def test_force_init_preflights_legacy_artifact_conflicts(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    legacy_autofigures = repo / "papers" / "demo" / "tex" / "autofigures"
+    canonical_autofigures = repo / "papers" / "demo" / "data" / "tex-artifacts" / "autofigures"
+    legacy_autofigures.mkdir(parents=True, exist_ok=True)
+    canonical_autofigures.mkdir(parents=True, exist_ok=True)
+    (legacy_autofigures / "safe.pdf").write_text("legacy safe", encoding="utf-8")
+    (legacy_autofigures / "conflict.pdf").write_text("legacy conflict", encoding="utf-8")
+    (canonical_autofigures / "conflict.pdf").write_text("canonical conflict", encoding="utf-8")
+
+    assert main(["--force", "init", "demo"]) == 1
+
+    captured = capsys.readouterr()
+    assert "Generated artifact migration conflict" in captured.err
+    assert (legacy_autofigures / "safe.pdf").read_text(encoding="utf-8") == "legacy safe"
+    assert not (canonical_autofigures / "safe.pdf").exists()
+    assert (legacy_autofigures / "conflict.pdf").read_text(encoding="utf-8") == "legacy conflict"
+    assert (canonical_autofigures / "conflict.pdf").read_text(encoding="utf-8") == "canonical conflict"
+
+
 def test_init_without_publication_id_initializes_workspace(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -3895,6 +3947,23 @@ def test_list_requires_initialized_workspace(
 def test_prepare_is_unsupported(repo: Path) -> None:
     with pytest.raises(SystemExit):
         main(["demo", "prepare"])
+
+
+@pytest.mark.parametrize("command", ["push", "pull", "diff"])
+def test_sync_commands_are_deferred_not_unsupported(
+    repo: Path,
+    capsys: pytest.CaptureFixture[str],
+    command: str,
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["demo", command])
+
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert f"sync command '{command}' is temporarily unavailable" in captured.err
+    assert "mirror sync is being reintroduced" in captured.err
+    assert "unsupported command" not in captured.err
+
 
 def test_no_arg_invocation_prints_multiline_help_block(
     capsys: pytest.CaptureFixture[str],

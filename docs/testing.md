@@ -41,7 +41,8 @@ sh .githooks/pre-commit
 
 - `tests/test_cli_core.py`
   - main workflow contract suite covering config loading, init, check, export,
-    build, shell behavior, pinning, sync, and diff
+    build, shell behavior, pinning, deferred sync-command handling, and diff
+    when sync is enabled
 - `tests/test_export.py`
   - focused export and config-normalization coverage
 - `tests/test_release.py`

@@ -146,7 +146,8 @@ the TeX-agnostic <code>pubify-data</code> runtime.</p>
 <li>publication path resolution, validation, and LaTeX readiness checks</li>
 <li>the <code>pubs</code> CLI, shell behavior, and downstream-only commands</li>
 <li>export, build, and runtime orchestration</li>
-<li>conservative mirror sync and diff logic</li>
+<li>conservative mirror sync and diff logic, currently deferred on this branch
+  while the sync implementation is reintroduced</li>
 <li>pinned publication-data helpers</li>
 <li>publication bootstrap templates, including the shared publications-root
   <code>AGENTS.md</code> scaffold</li>
@@ -273,7 +274,11 @@ loads shared config files, but <code>pubify-pubs</code> owns these roots under t
   regenerate figures, stats, or tables.</li>
 <li>shell prompt, history, automatic pickup of publication changes, and shell
   <code>update</code> behavior remain part of the supported CLI contract.</li>
-<li>diff status names and meanings stay documented and tested together.</li>
+<li>when sync is enabled, diff status names and meanings stay documented and
+  tested together.</li>
+<li>while sync is deferred, <code>push</code>, <code>pull</code>, and <code>diff</code> fail with an explicit
+  temporary-unavailable message rather than falling through as unsupported
+  commands.</li>
 <li>data pinning behavior and helper semantics stay documented and tested
   together.</li>
 </ul>

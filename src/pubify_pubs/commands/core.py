@@ -62,6 +62,8 @@ from pubify_pubs.commands.common import (
     reject_build_flags_from_command,
 )
 
+DEFERRED_SYNC_COMMANDS = frozenset({"push", "pull", "diff"})
+
 
 @dataclass(frozen=True)
 class PubifyPubsCoreCommandContext:
@@ -85,15 +87,26 @@ def dispatch_core_registry(context: PubifyPubsCoreCommandContext) -> int | None:
 
 def build_core_command_registry() -> pubify_data.CommandRegistry:
     registry = pubify_data.CommandRegistry()
-    registry.register(("update",), registry_update_all)
-    registry.register(("data", "list"), registry_list_data)
-    registry.register(("figure", "list"), registry_list_figures)
-    registry.register(("figure", "update"), registry_update_figures)
-    registry.register(("stat", "list"), registry_list_stats)
-    registry.register(("stat", "update"), registry_update_stats)
-    registry.register(("table", "list"), registry_list_tables)
-    registry.register(("table", "update"), registry_update_tables)
+    pubify_data.register_core_commands(registry)
+    _replace_core_handler(registry, ("update",), registry_update_all)
+    _replace_core_handler(registry, ("data", "list"), registry_list_data)
+    _replace_core_handler(registry, ("figure", "list"), registry_list_figures)
+    _replace_core_handler(registry, ("figure", "update"), registry_update_figures)
+    _replace_core_handler(registry, ("stat", "list"), registry_list_stats)
+    _replace_core_handler(registry, ("stat", "update"), registry_update_stats)
+    _replace_core_handler(registry, ("table", "list"), registry_list_tables)
+    _replace_core_handler(registry, ("table", "update"), registry_update_tables)
     return registry
+
+
+def _replace_core_handler(
+    registry: pubify_data.CommandRegistry,
+    path: tuple[str, ...],
+    handler: Callable[[PubifyPubsCoreCommandContext, tuple[str, ...]], int],
+) -> None:
+    if path not in registry.handlers:
+        raise RuntimeError(f"pubify-data did not register expected core command: {' '.join(path)}")
+    registry.handlers[path] = handler
 
 
 def core_registry_argv(command: PublicationCommand) -> tuple[str, ...] | None:
@@ -447,6 +460,13 @@ def handle_command(
         open_publication_previews([pdf_path], backend=workspace.preview.publication)
         print(pdf_path)
         return 0
+
+    if command.command in DEFERRED_SYNC_COMMANDS:
+        error(
+            f"sync command '{command.command}' is temporarily unavailable on this branch; "
+            "mirror sync is being reintroduced"
+        )
+        return 2
 
     return None
 

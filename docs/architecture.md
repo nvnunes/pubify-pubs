@@ -27,7 +27,8 @@ It adapts the upstream runtime into the downstream workflow around:
 - publication path resolution, validation, and LaTeX readiness checks
 - the `pubs` CLI, shell behavior, and downstream-only commands
 - export, build, and runtime orchestration
-- conservative mirror sync and diff logic
+- conservative mirror sync and diff logic, currently deferred on this branch
+  while the sync implementation is reintroduced
 - pinned publication-data helpers
 - publication bootstrap templates, including the shared publications-root
   `AGENTS.md` scaffold
@@ -159,7 +160,11 @@ CLI lifecycle expectations that docs and tests must stay aligned on:
   regenerate figures, stats, or tables.
 - shell prompt, history, automatic pickup of publication changes, and shell
   `update` behavior remain part of the supported CLI contract.
-- diff status names and meanings stay documented and tested together.
+- when sync is enabled, diff status names and meanings stay documented and
+  tested together.
+- while sync is deferred, `push`, `pull`, and `diff` fail with an explicit
+  temporary-unavailable message rather than falling through as unsupported
+  commands.
 - data pinning behavior and helper semantics stay documented and tested
   together.
 

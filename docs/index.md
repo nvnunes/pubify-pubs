@@ -5,9 +5,9 @@
 
 It is the LaTeX-oriented downstream package for the TeX-agnostic `pubify-data`
 runtime. It is meant for host workspaces that keep publications,
-publication-local TeX sources, and pinned inputs under version control, while
-`pubify-pubs` owns the LaTeX, `pubify-mpl`, preview, build, sync, and
-publication-bootstrapping workflow.
+publication-local TeX sources, and pinned inputs, while `pubify-pubs` owns the
+LaTeX, `pubify-mpl`, preview, build, sync, and publication-bootstrapping
+workflow.
 
 This package does not own your publications. A host workspace does.
 
