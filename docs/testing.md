@@ -15,7 +15,7 @@ docs builds unless a task explicitly requires something else.
 
 Build and publication-validation workflows also expect a working LaTeX
 installation. If exported figures use LaTeX text rendering through
-`pubify-mpl`, LaTeX must be available during Python-side export as well.
+`pubify-tex`, LaTeX must be available during Python-side export as well.
 
 ## Canonical Verification Commands
 

@@ -10,10 +10,10 @@ import shutil
 import subprocess
 import traceback
 
-import pubify_mpl
+import pubify_tex
 import pubify_data
 import pubify_data.runtime as pubify_data_runtime
-from pubify_mpl import pubify_rc_context as publication_rc_context
+from pubify_tex import pubify_rc_context as publication_rc_context
 
 from pubify_pubs.config import (
     load_publication_config,
@@ -69,7 +69,7 @@ class PublicationRcContext(AbstractContextManager[None]):
         self._active: AbstractContextManager[None] | None = None
 
     def __enter__(self) -> None:
-        self._active = publication_rc_context(template=self._template)
+        self._active = publication_rc_context(style=self._template)
         return self._active.__enter__()
 
     def __exit__(self, exc_type, exc_value, traceback) -> bool | None:
@@ -101,7 +101,7 @@ def init_publication(
     """Prepare the publication TeX tree and refresh package-owned support files."""
 
     if backend is None:
-        backend = pubify_mpl
+        backend = pubify_tex
 
     publication.paths.tex_root.mkdir(parents=True, exist_ok=True)
     ensure_generated_artifact_paths(publication)
@@ -141,7 +141,7 @@ def init_publication_by_id(
     if not main_tex_path.exists():
         write_skeleton_main_tex(main_tex_path)
     if backend is None:
-        backend = pubify_mpl
+        backend = pubify_tex
     paths.tex_root.mkdir(parents=True, exist_ok=True)
     ensure_generated_artifact_paths(paths, force=force)
     paths.build_root.mkdir(parents=True, exist_ok=True)

@@ -1,12 +1,12 @@
 # pubify-pubs Docs
 
 `pubify-pubs` is a local-first publication workflow package built around
-`pubify-mpl`.
+`pubify-tex`.
 
 It is the LaTeX-oriented downstream package for the TeX-agnostic `pubify-data`
 runtime. It is meant for host workspaces that keep publications,
 publication-local TeX sources, and pinned inputs, while `pubify-pubs` owns the
-LaTeX, `pubify-mpl`, preview, build, sync, and publication-bootstrapping
+LaTeX, `pubify-tex`, preview, build, sync, and publication-bootstrapping
 workflow.
 
 This package does not own your publications. A host workspace does.

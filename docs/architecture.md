@@ -94,9 +94,12 @@ Primary supported Python entrypoints are:
 - `publication_data_path(...)`
 - `save_publication_data_npz(...)`
 - `load_publication_data_npz(...)`
+- `FigurePanel`
 - `FigureResult`
+- `panel(...)`
 - `StatResult`
 - `TableResult`
+- `main(...)`
 
 ## Publication Workflow Contracts
 

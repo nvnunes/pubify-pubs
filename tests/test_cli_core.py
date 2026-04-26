@@ -2789,6 +2789,7 @@ def test_collect_shell_method_state_skips_pubify_package_modules(
 
     assert all("pubify_pubs" not in str(path) for path in state.imported_module_paths)
     assert all("pubify-mpl" not in str(path) for path in state.imported_module_paths)
+    assert all("pubify-tex" not in str(path) for path in state.imported_module_paths)
 
 def test_cli_build_rejects_update_flag(repo: Path) -> None:
     with pytest.raises(SystemExit):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pubify-pubs"
-version = "1.0.3"
+version = "1.1.0"
 description = "Workspace-oriented publication workflow engine with the pubs CLI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -12,8 +12,8 @@ license = "MIT"
 dependencies = [
   "matplotlib>=3.8",
   "numpy>=1.26",
-  "pubify-data>=0.1.0",
-  "pubify-mpl>=1.0.0",
+  "pubify-data>=1.0.0",
+  "pubify-tex>=1.0.0",
 ]
 
 [project.urls]
@@ -40,7 +40,7 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-"pubify_pubs.assets.init" = ["*.py", "*.tex"]
+"pubify_pubs.assets.init" = ["*.py", "*.tex", "*.md"]
 
 [tool.setuptools.exclude-package-data]
 "*" = [".DS_Store"]

@@ -113,7 +113,7 @@ def load_publication_definition(workspace_root: Path, publication_id: str) -> Pu
         entrypoint=paths.entrypoint,
         data_root=paths.data_root,
         external_data_roots=config.external_data_roots,
-        source_roots=config.sources,
+        source_adapters=_build_source_adapters(paths.workspace_root, config.sources),
         workspace=pubify_data.WorkspaceAdapter(paths.workspace_root),
     )
     upstream = pubify_data.load_publication_from_entrypoint(publication_id, adapter=adapter)
@@ -220,3 +220,20 @@ def build_publication_paths(workspace_root: Path, publication_id: str) -> Public
         entrypoint=publication_root / PUBLICATION_ENTRYPOINT,
         config_path=publication_root / PUBLICATION_CONFIG,
     )
+
+
+def _build_source_adapters(workspace_root: Path, sources: dict[str, str]) -> dict[str, pubify_data.PublicationAdapter]:
+    adapters: dict[str, pubify_data.PublicationAdapter] = {}
+    for source_id, source_root in sources.items():
+        source_path = Path(source_root).expanduser()
+        if not source_path.is_absolute():
+            source_path = (workspace_root / source_path).resolve()
+        adapters[source_id] = pubify_data.PublicationAdapter(
+            publication_id=source_id,
+            publication_root=source_path,
+            entrypoint=source_path / PUBLICATION_ENTRYPOINT,
+            data_root=source_path / "data",
+            external_data_roots={},
+            workspace=pubify_data.WorkspaceAdapter(workspace_root),
+        )
+    return adapters

@@ -5,14 +5,19 @@ import sys
 
 import pytest
 
-import pubify_pubs.export as core_export
-import pubify_pubs.runtime as core_runtime
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+SIBLING_PUBIFY_DATA = ROOT.parent / "pubify-data" / "src"
+SIBLING_PUBIFY_TEX = ROOT.parent / "pubify-tex" / "src"
+SIBLING_PUBIFY_MPL = ROOT.parent / "pubify-mpl" / "src"
+
+for path in (SRC, SIBLING_PUBIFY_DATA, SIBLING_PUBIFY_TEX, SIBLING_PUBIFY_MPL):
+    if path.exists() and str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+import pubify_pubs.export as core_export
+import pubify_pubs.runtime as core_runtime
 
 
 class FakePubifyBackend:
@@ -88,8 +93,8 @@ class FakeReadline:
 @pytest.fixture(autouse=True)
 def fake_pubify(monkeypatch: pytest.MonkeyPatch) -> FakePubifyBackend:
     backend = FakePubifyBackend()
-    monkeypatch.setattr(core_export, "pubify_mpl", backend)
-    monkeypatch.setattr(core_runtime, "pubify_mpl", backend)
+    monkeypatch.setattr(core_export, "pubify_tex", backend)
+    monkeypatch.setattr(core_runtime, "pubify_tex", backend)
     return backend
 
 

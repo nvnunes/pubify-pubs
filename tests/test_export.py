@@ -102,6 +102,27 @@ def test_load_publication_config_parses_pubify_mpl_keys(tmp_path: Path) -> None:
     assert config.pubify_mpl.defaults["hide_labels"] is True
 
 
+def test_load_publication_config_rejects_unknown_top_level_keys(tmp_path: Path) -> None:
+    config_path = tmp_path / "pub.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "publication_id: demo",
+                "main_text: main.tex",
+                "pubify-mpl-template:",
+                "  textwidth_in: 6.75",
+                "pubify-mpl-defaults:",
+                "  layout: one",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=r"unknown pub\.yaml key\(s\): main_text"):
+        load_publication_config(config_path, "demo")
+
+
 def test_export_figure_sets_skip_clone_by_default(
     paper_config: PublicationConfig,
     tmp_path: Path,

@@ -68,13 +68,13 @@ Reusable authoring decorators come from the upstream `pubify_data` namespace.
 
 ### FigurePanel
 
-::: pubify_pubs.export.FigurePanel
+::: pubify_pubs.FigurePanel
     options:
       show_source: false
 
 ### FigureResult
 
-::: pubify_pubs.export.FigureResult
+::: pubify_pubs.FigureResult
     options:
       show_source: false
 

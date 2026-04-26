@@ -1,11 +1,11 @@
 # pubify-pubs
 
-`pubify-pubs` is a local-first publication workflow package built around `pubify-mpl`.
+`pubify-pubs` is a local-first publication workflow package built around `pubify-tex`.
 
 It is the LaTeX-oriented downstream package for the TeX-agnostic `pubify-data`
 runtime. It is meant for host workspaces that keep publications,
 publication-local TeX sources, and pinned inputs, while `pubify-pubs` owns the
-LaTeX, `pubify-mpl`, preview, build, sync, and publication-bootstrapping
+LaTeX, `pubify-tex`, preview, build, sync, and publication-bootstrapping
 workflow.
 
 This package does not own your publications. A host workspace does.
@@ -23,10 +23,10 @@ This package does not own your publications. A host workspace does.
 ## Requirements
 
 - Python 3.10+
-- `pubify-mpl`
+- `pubify-tex`
 - a working LaTeX installation for `pubs <publication-id> build`
 
-The build command runs `latexmk` against the publication-local TeX tree. If exported figures use LaTeX text rendering through `pubify-mpl`, LaTeX must also be available during Python-side figure export.
+The build command runs `latexmk` against the publication-local TeX tree. If exported figures use LaTeX text rendering through `pubify-tex`, LaTeX must also be available during Python-side figure export.
 
 ## How It Works
 

@@ -1,5 +1,7 @@
 from pathlib import Path
+import shutil
 import sys
+import zipfile
 
 import pytest
 
@@ -16,6 +18,7 @@ from release_support import (
     read_project_version,
     validate_changelog,
 )
+import release
 
 
 def test_repo_changelog_matches_current_project_version() -> None:
@@ -69,3 +72,22 @@ def test_dirty_paths_extracts_paths_from_porcelain_output() -> None:
         "dist/pubify_pubs-1.0.0-py3-none-any.whl",
         "new",
     ]
+
+
+def test_build_artifacts_cleans_stale_build_tree_and_includes_runtime_assets() -> None:
+    version = read_project_version(REPO_ROOT / "pyproject.toml")
+    stale_module = REPO_ROOT / "build" / "lib" / "pubify_pubs" / "decorators.py"
+    stale_module.parent.mkdir(parents=True, exist_ok=True)
+    stale_module.write_text("# stale\n", encoding="utf-8")
+
+    try:
+        artifacts = release._build_artifacts(version)
+        wheel_path = next(path for path in artifacts if path.suffix == ".whl")
+
+        with zipfile.ZipFile(wheel_path) as wheel:
+            names = set(wheel.namelist())
+
+        assert "pubify_pubs/assets/init/AGENTS.example.md" in names
+        assert "pubify_pubs/decorators.py" not in names
+    finally:
+        shutil.rmtree(REPO_ROOT / "build", ignore_errors=True)

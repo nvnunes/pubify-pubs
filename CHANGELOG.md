@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.1.0
 
 - Removed `pubify_pubs` authoring decorator re-exports; publication code must import `data`, `external_data`, `figure`, `stat`, and `table` from `pubify_data`.
 - Removed legacy top-level `pubify.yaml` root keys; workspace roots must live under the `pubify-pubs` section.
+- Switched LaTeX figure export and TeX support-file preparation to `pubify-tex`.
 
 ## 1.0.3
 

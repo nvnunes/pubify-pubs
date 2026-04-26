@@ -348,7 +348,7 @@ def _imported_module_names(module_ast: ast.Module) -> set[str]:
 
 def _should_track_imported_module_name(module_name: str) -> bool:
     top_level = module_name.split(".", 1)[0]
-    return top_level not in {"pubify_pubs", "pubify_mpl"}
+    return top_level not in {"pubify_pubs", "pubify_mpl", "pubify_tex"}
 
 
 def _looks_like_site_package(path: Path) -> bool:

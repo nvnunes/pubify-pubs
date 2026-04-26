@@ -8,7 +8,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import pubify_data
-import pubify_mpl
+import pubify_tex
 
 from pubify_pubs.config import PublicationConfig, PubifyMplConfig
 
@@ -135,10 +135,10 @@ def export_figure(
     subfigure_index: int | None = None,
     backend: object | None = None,
 ) -> list[Path]:
-    """Export one logical figure through ``pubify-mpl`` using framework-owned filenames."""
+    """Export one logical figure through ``pubify-tex`` using framework-owned filenames."""
 
     if backend is None:
-        backend = pubify_mpl
+        backend = pubify_tex
 
     if not mode_extension.startswith("."):
         raise ValueError(f"Invalid mode extension '{mode_extension}'")
@@ -194,10 +194,10 @@ def save_pubify_figure(
     backend: object | None = None,
     **kwargs: object,
 ) -> None:
-    """Export one figure directly through ``pubify-mpl`` with an absolute output path."""
+    """Export one figure directly through ``pubify-tex`` with an absolute output path."""
 
     if backend is None:
-        backend = pubify_mpl
+        backend = pubify_tex
 
     path = Path(filename).expanduser()
     if not path.is_absolute():

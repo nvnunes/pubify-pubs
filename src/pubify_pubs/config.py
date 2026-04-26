@@ -5,7 +5,7 @@ from importlib import resources
 from pathlib import Path
 import ast
 
-from pubify_mpl import DEFAULT_TEMPLATE as PUBIFY_DEFAULT_TEMPLATE
+from pubify_tex import DEFAULT_TEMPLATE as PUBIFY_DEFAULT_TEMPLATE
 from pubify_pubs.stubs import render_init_figures_module
 
 
@@ -17,11 +17,22 @@ DEFAULT_PUBIFY_DEFAULTS = {
 }
 DEFAULT_PREVIEW_BACKEND = "preview"
 ALLOWED_PREVIEW_BACKENDS = {"preview", "vscode"}
+ALLOWED_PUBLICATION_CONFIG_KEYS = {
+    "publication_id",
+    "title",
+    "main_tex",
+    "mirror_root",
+    "external_data_roots",
+    "sources",
+    "sync_excludes",
+    "pubify-mpl-template",
+    "pubify-mpl-defaults",
+}
 
 
 @dataclass(frozen=True)
 class PubifyMplConfig:
-    """Publication-scoped pubify-mpl template and default export options."""
+    """Publication-scoped legacy pubify-mpl keys for pubify-tex export options."""
 
     template: dict[str, object]
     defaults: dict[str, object] = field(default_factory=dict)
@@ -79,6 +90,7 @@ def load_publication_config(path: Path, folder_publication_id: str) -> Publicati
     """Load and validate one ``pub.yaml`` file for a publication folder."""
 
     raw = _parse_simple_yaml(path.read_text(encoding="utf-8"))
+    _reject_unknown_publication_config_keys(raw, path)
     declared_id = raw.get("publication_id", folder_publication_id)
     if declared_id != folder_publication_id:
         raise ValueError(
@@ -160,6 +172,15 @@ def load_publication_config(path: Path, folder_publication_id: str) -> Publicati
             defaults=dict(defaults),
         ),
     )
+
+
+def _reject_unknown_publication_config_keys(raw: dict[str, object], path: Path) -> None:
+    unknown = sorted(set(raw) - ALLOWED_PUBLICATION_CONFIG_KEYS)
+    if not unknown:
+        return
+    allowed = ", ".join(sorted(ALLOWED_PUBLICATION_CONFIG_KEYS))
+    observed = ", ".join(unknown)
+    raise ValueError(f"{path}: unknown pub.yaml key(s): {observed}. Allowed keys: {allowed}")
 
 
 def find_workspace_root(start: Path | None = None) -> Path:

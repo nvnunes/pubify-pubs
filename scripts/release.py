@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import shutil
 import shlex
 import subprocess
 import sys
@@ -62,8 +63,15 @@ def _restore_generated_artifacts() -> None:
     _run(["git", "checkout", "HEAD", "--", *GENERATED_ARTIFACT_PATHS])
 
 
+def _clean_build_tree() -> None:
+    build_root = REPO_ROOT / "build"
+    if build_root.exists():
+        shutil.rmtree(build_root)
+
+
 def _build_artifacts(version: str) -> list[Path]:
     out_dir = Path(tempfile.mkdtemp(prefix=f"pubify_release_{version.replace('.', '_')}_"))
+    _clean_build_tree()
     _run(
         [
             sys.executable,
