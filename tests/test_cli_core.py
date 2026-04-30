@@ -34,26 +34,6 @@ from pubify_pubs.runtime import (
 )
 from pubify_pubs.config import load_workspace_config
 
-PUBLICATIONS_AGENTS_TEMPLATE = "\n".join(
-    [
-        "# AGENTS.md",
-        "",
-        "## First Reads",
-        "- If this workspace includes a local `pubify-pubs` checkout, read:",
-        "  - `pubify-pubs/AGENTS.md`",
-        "  - `pubify-pubs/README.md`",
-        "- Otherwise, use the public `pubify-pubs` docs:",
-        "  - https://nvnunes.github.io/pubify-pubs/",
-        "  - https://nvnunes.github.io/pubify-pubs/architecture/",
-        "",
-        "## Working Rules",
-        "- Keep publication-specific science code, pinned scientific data, manuscript-local helpers, and TeX sources in the host publication workspace.",
-        "- Use `pubs init <publication-id>` to initialize or repair publication scaffolding.",
-        "- Generated TeX artifacts live under each publication's `data/tex-artifacts/` tree and are exposed to TeX through local symlinks.",
-        "",
-    ]
-)
-
 def test_data_decorator_supports_single_path_form() -> None:
     @data("training.npy")
     def load_training(ctx, path):
@@ -3304,7 +3284,7 @@ def test_init_without_publication_id_initializes_workspace(
     output = capsys.readouterr().out.strip()
     assert output == str(workspace_root)
     assert (workspace_root / "papers").exists()
-    assert (workspace_root / "papers" / "AGENTS.md").read_text(encoding="utf-8") == PUBLICATIONS_AGENTS_TEMPLATE
+    assert not (workspace_root / "papers" / "AGENTS.md").exists()
     assert not (workspace_root / "output" / "papers").exists()
     assert (workspace_root / "pubify.yaml").read_text(encoding="utf-8") == "\n".join(
         [
@@ -3355,8 +3335,6 @@ def test_init_without_publication_id_is_idempotent_and_preserves_existing_config
     assert main(["init"]) == 0
     capsys.readouterr()
     publications_root = workspace_root / "manuscripts"
-    agents_path = publications_root / "AGENTS.md"
-    agents_path.unlink()
     publications_root.rmdir()
 
     assert main(["init"]) == 0
@@ -3371,9 +3349,9 @@ def test_init_without_publication_id_is_idempotent_and_preserves_existing_config
         ]
     )
     assert publications_root.exists()
-    assert (publications_root / "AGENTS.md").read_text(encoding="utf-8") == PUBLICATIONS_AGENTS_TEMPLATE
+    assert not (publications_root / "AGENTS.md").exists()
 
-def test_init_without_publication_id_creates_agents_in_configured_publications_root(
+def test_init_without_publication_id_does_not_create_agents_in_configured_publications_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -3397,7 +3375,8 @@ def test_init_without_publication_id_creates_agents_in_configured_publications_r
     assert main(["init"]) == 0
     capsys.readouterr()
 
-    assert (workspace_root / "manuscripts" / "AGENTS.md").read_text(encoding="utf-8") == PUBLICATIONS_AGENTS_TEMPLATE
+    assert (workspace_root / "manuscripts").is_dir()
+    assert not (workspace_root / "manuscripts" / "AGENTS.md").exists()
     assert not (workspace_root / "papers" / "AGENTS.md").exists()
 
 def test_check_after_init_passes_when_mirror_root_is_blank(
@@ -3428,7 +3407,7 @@ def test_init_is_idempotent_and_recreates_missing_bootstrap_files(
     assert fake_pubify_mpl.prepare_calls[0][0] == fresh_root / "tex"
     assert fake_pubify_mpl.prepare_calls[1][0] == fresh_root / "tex"
 
-def test_init_publication_backfills_publications_agents_file_when_missing(
+def test_init_publication_does_not_backfill_publications_agents_file_when_missing(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -3438,9 +3417,9 @@ def test_init_publication_backfills_publications_agents_file_when_missing(
     assert main(["init", "fresh"]) == 0
     capsys.readouterr()
 
-    assert agents_path.read_text(encoding="utf-8") == PUBLICATIONS_AGENTS_TEMPLATE
+    assert not agents_path.exists()
 
-def test_init_publication_does_not_overwrite_existing_publications_agents_file(
+def test_init_publication_does_not_remove_existing_publications_agents_file(
     repo: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:

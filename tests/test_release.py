@@ -87,7 +87,7 @@ def test_build_artifacts_cleans_stale_build_tree_and_includes_runtime_assets() -
         with zipfile.ZipFile(wheel_path) as wheel:
             names = set(wheel.namelist())
 
-        assert "pubify_pubs/assets/init/AGENTS.example.md" in names
+        assert "pubify_pubs/assets/init/AGENTS.example.md" not in names
         assert "pubify_pubs/decorators.py" not in names
     finally:
         shutil.rmtree(REPO_ROOT / "build", ignore_errors=True)

@@ -30,8 +30,7 @@ It adapts the upstream runtime into the downstream workflow around:
 - conservative mirror sync and diff logic, currently deferred on this branch
   while the sync implementation is reintroduced
 - pinned publication-data helpers
-- publication bootstrap templates, including the shared publications-root
-  `AGENTS.md` scaffold
+- publication bootstrap templates
 - generic tests against temporary host workspaces
 
 It does not own publication content. A host workspace does.

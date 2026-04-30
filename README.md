@@ -94,9 +94,6 @@ pubs my-paper update
 pubs my-paper build
 ```
 
-`pubs init` also creates a minimal shared `AGENTS.md` under the configured
-`publications_root`, which is `papers/AGENTS.md` by default.
-
 ## Workspace Model
 
 A host workspace is rooted by `pubify.yaml`. The package discovers that file by walking upward from the current working directory.

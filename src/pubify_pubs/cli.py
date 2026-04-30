@@ -27,7 +27,6 @@ from pubify_pubs.discovery import (
 from pubify_pubs.runtime import (
     UserCodeExecutionError,
     build_run_context,
-    ensure_publications_agents_file,
     init_publication_by_id,
     preload_loaders,
 )
@@ -172,7 +171,6 @@ def _init_workspace(workspace_root: Path) -> Path:
         )
     workspace = load_workspace_config(resolved_root)
     workspace.publications_root.mkdir(parents=True, exist_ok=True)
-    ensure_publications_agents_file(resolved_root)
     return resolved_root
 
 

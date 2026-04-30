@@ -244,13 +244,6 @@ def write_skeleton_main_tex(path: Path) -> None:
     path.write_text(_load_init_asset_text("main.tex"), encoding="utf-8")
 
 
-def write_publications_agents_file(path: Path) -> None:
-    """Write the shared publications-root ``AGENTS.md`` scaffold for ``pubs init``."""
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_load_init_asset_text("AGENTS.example.md"), encoding="utf-8")
-
-
 def dump_sync_state(file_hashes: dict[str, str]) -> str:
     """Serialize the sync manifest stored in local and mirror TeX trees."""
 
