@@ -219,7 +219,7 @@ return FigureResult(fig, layout="onewide")
 return FigureResult([fig1, fig2], layout="twowide")
 ```
 
-Use `panel(...)` only when one panel needs extra pubify export metadata beyond the figure or axes itself, such as `subcaption_lines` or per-panel export overrides.
+Use `panel(...)` only when one panel needs extra pubify export metadata beyond the figure or axes itself, such as `subcaption_lines` or per-panel metadata.
 
 When a plotting library creates text artists during figure construction, use `ctx.rc` so those artists are born under the publication construction-time font defaults:
 
@@ -231,7 +231,7 @@ def custom_map(ctx):
     return fig
 ```
 
-For figure-specific cleanup that pubify still cannot discover generically, pass `prepare_export(...)` through `FigureResult(..., kwargs={...})`.
+For figure-specific cleanup that pubify still cannot discover generically, pass `prepare_export(...)` through `FigureResult(..., metadata={...})`.
 
 ### Reusing Outputs From Another Pubify Publication
 

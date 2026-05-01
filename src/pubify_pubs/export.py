@@ -15,25 +15,26 @@ from pubify_pubs.config import PublicationConfig, PubifyMplConfig
 
 @dataclass(frozen=True, init=False)
 class FigurePanel(pubify_data.FigurePanel):
-    """One exported panel plus optional per-panel export metadata and overrides."""
+    """One exported panel plus optional per-panel export metadata."""
 
     subcaption_lines: int | None = None
-    overrides: dict[str, object] = field(default_factory=dict)
 
     def __init__(
         self,
         figure: object,
         *,
         subcaption_lines: int | None = None,
-        overrides: dict[str, object] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> None:
-        metadata = dict(overrides or {})
+        panel_metadata = dict(metadata or {})
+        panel_subcaption_lines = subcaption_lines
+        if panel_subcaption_lines is None:
+            panel_subcaption_lines = panel_metadata.get("subcaption_lines")
         if subcaption_lines is not None:
-            metadata["subcaption_lines"] = subcaption_lines
+            panel_metadata["subcaption_lines"] = subcaption_lines
         object.__setattr__(self, "payload", figure)
-        object.__setattr__(self, "metadata", metadata)
-        object.__setattr__(self, "subcaption_lines", subcaption_lines)
-        object.__setattr__(self, "overrides", dict(overrides or {}))
+        object.__setattr__(self, "metadata", panel_metadata)
+        object.__setattr__(self, "subcaption_lines", panel_subcaption_lines)
 
     @property
     def figure(self) -> object:
@@ -48,7 +49,7 @@ class FigureResult(pubify_data.BaseFigureResult):
     layout: str | None = None
     caption_lines: int | None = None
     subcaption_lines: int | None = None
-    kwargs: dict[str, object] = field(default_factory=dict)
+    metadata: dict[str, object] = field(default_factory=dict)
 
     def __init__(
         self,
@@ -58,23 +59,28 @@ class FigureResult(pubify_data.BaseFigureResult):
         layout: str | None = None,
         caption_lines: int | None = None,
         subcaption_lines: int | None = None,
-        kwargs: dict[str, object] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> None:
         if panels_or_panel is not None and panels is not None:
             raise ValueError("FigureResult accepts either a positional panel payload or panels=, not both")
         payload = panels if panels is not None else panels_or_panel
         normalized_panels = _normalize_export_panels(payload)
-        metadata = dict(kwargs or {})
+        result_metadata = dict(metadata or {})
+        result_caption_lines = caption_lines
+        result_subcaption_lines = subcaption_lines
+        if result_caption_lines is None:
+            result_caption_lines = result_metadata.get("caption_lines")
+        if result_subcaption_lines is None:
+            result_subcaption_lines = result_metadata.get("subcaption_lines")
         if caption_lines is not None:
-            metadata["caption_lines"] = caption_lines
+            result_metadata["caption_lines"] = caption_lines
         if subcaption_lines is not None:
-            metadata["subcaption_lines"] = subcaption_lines
+            result_metadata["subcaption_lines"] = subcaption_lines
         object.__setattr__(self, "panels", normalized_panels)
         object.__setattr__(self, "layout", layout)
-        object.__setattr__(self, "metadata", metadata)
-        object.__setattr__(self, "caption_lines", caption_lines)
-        object.__setattr__(self, "subcaption_lines", subcaption_lines)
-        object.__setattr__(self, "kwargs", dict(kwargs or {}))
+        object.__setattr__(self, "metadata", result_metadata)
+        object.__setattr__(self, "caption_lines", result_caption_lines)
+        object.__setattr__(self, "subcaption_lines", result_subcaption_lines)
         self.__post_init__()
 
     def __post_init__(self) -> None:
@@ -97,14 +103,14 @@ def panel(
     figure: object,
     *,
     subcaption_lines: int | None = None,
-    **overrides: object,
+    **metadata: object,
 ) -> FigurePanel:
-    """Wrap one panel with optional per-panel subcaption sizing and overrides."""
+    """Wrap one panel with optional per-panel export metadata."""
 
     return FigurePanel(
         figure=figure,
         subcaption_lines=subcaption_lines,
-        overrides=dict(overrides),
+        metadata=dict(metadata),
     )
 
 
@@ -160,23 +166,17 @@ def export_figure(
     for idx in indices:
         current_panel = result.panels[idx]
         output_path = output_dir / output_filename(figure_id, panel_count, idx, mode_extension)
-        pubify_kwargs = dict(config.pubify_mpl.defaults)
-        pubify_kwargs.pop("layout", None)
-        if result.caption_lines is not None:
-            pubify_kwargs["caption_lines"] = result.caption_lines
-        if result.subcaption_lines is not None:
-            pubify_kwargs["subcaption_lines"] = result.subcaption_lines
-        pubify_kwargs.update(result.kwargs)
-        if current_panel.subcaption_lines is not None:
-            pubify_kwargs["subcaption_lines"] = current_panel.subcaption_lines
-        pubify_kwargs.update(current_panel.overrides)
-        pubify_kwargs.setdefault("skip_clone", True)
+        pubify_metadata = dict(config.pubify_mpl.defaults)
+        pubify_metadata.pop("layout", None)
+        pubify_metadata.update(result.metadata)
+        pubify_metadata.update(current_panel.metadata)
+        pubify_metadata.setdefault("skip_clone", True)
         backend.save_fig(
             current_panel.figure,
             layout,
             output_path,
             template=config.pubify_mpl.template,
-            **pubify_kwargs,
+            **pubify_metadata,
         )
         _close_export_source(current_panel.figure)
         paths.append(output_path)
@@ -235,7 +235,7 @@ def _with_default_layout(result: FigureResult, config: PublicationConfig) -> Fig
         layout=config.pubify_mpl.default_layout,
         caption_lines=result.caption_lines,
         subcaption_lines=result.subcaption_lines,
-        kwargs=result.kwargs,
+        metadata=result.metadata,
     )
 
 

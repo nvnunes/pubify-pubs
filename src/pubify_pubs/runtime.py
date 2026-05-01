@@ -640,7 +640,7 @@ def _figure_result_from_neutral(
             FigurePanel(
                 panel.payload,
                 subcaption_lines=subcaption_lines,
-                overrides=metadata,
+                metadata=metadata,
             )
         )
     metadata = dict(result.metadata)
@@ -652,7 +652,7 @@ def _figure_result_from_neutral(
             layout=result.layout,
             caption_lines=caption_lines,
             subcaption_lines=subcaption_lines,
-            kwargs=metadata,
+            metadata=metadata,
         ),
         config,
     )

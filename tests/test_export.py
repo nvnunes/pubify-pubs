@@ -9,6 +9,7 @@ import pytest
 
 from pubify_pubs.config import PublicationConfig, PubifyMplConfig, load_publication_config
 from pubify_pubs.export import (
+    FigurePanel,
     FigureResult,
     export_figure,
     normalize_figure_result,
@@ -180,7 +181,7 @@ def test_export_figure_forwards_prepare_export_callback(
         figure_id="demo",
         result=FigureResult(
             panels=(panel(fig),),
-            kwargs={"prepare_export": prepare_export},
+            metadata={"prepare_export": prepare_export},
         ),
         mode_extension=".pdf",
         backend=backend,
@@ -305,7 +306,7 @@ def test_figure_export_rejects_missing_or_invalid_panel_payload() -> None:
     plt.close(fig)
 
 
-def test_export_figure_single_panel_uses_shared_layout_and_kwargs(
+def test_export_figure_single_panel_uses_shared_layout_and_metadata(
     tmp_path: Path,
     paper_config: PublicationConfig,
 ) -> None:
@@ -376,7 +377,7 @@ def test_export_figure_multi_panel_shared_metadata_only(
     result = FigureResult(
         panels=(panel(fig1), panel(fig2)),
         layout="twowide",
-        kwargs={"hide_annotations": True},
+        metadata={"hide_annotations": True},
     )
 
     paths = export_figure(
@@ -394,7 +395,7 @@ def test_export_figure_multi_panel_shared_metadata_only(
     assert backend.save_calls[1][4]["hide_annotations"] is True
 
 
-def test_export_figure_allows_generic_kwargs_alongside_first_class_caption_fields(
+def test_export_figure_allows_generic_metadata_alongside_first_class_caption_fields(
     tmp_path: Path,
     paper_config: PublicationConfig,
 ) -> None:
@@ -405,7 +406,7 @@ def test_export_figure_allows_generic_kwargs_alongside_first_class_caption_field
         panels=(panel(fig),),
         layout="twowide",
         caption_lines=2,
-        kwargs={"hide_annotations": True},
+        metadata={"hide_annotations": True},
     )
 
     export_figure(
@@ -427,7 +428,41 @@ def test_export_figure_allows_generic_kwargs_alongside_first_class_caption_field
     }
 
 
-def test_export_figure_multi_panel_supports_per_panel_overrides(
+def test_export_figure_accepts_caption_fields_from_metadata(
+    tmp_path: Path,
+    paper_config: PublicationConfig,
+) -> None:
+    backend = FakePubifyBackend()
+    fig1 = plt.figure()
+    fig2 = plt.figure()
+    result = FigureResult(
+        panels=(
+            panel(fig1),
+            FigurePanel(fig2, metadata={"subcaption_lines": 2, "hide_cbar": True}),
+        ),
+        layout="twowide",
+        metadata={"caption_lines": 1, "subcaption_lines": 1},
+    )
+
+    export_figure(
+        paper_config,
+        tmp_path / "tex",
+        tmp_path / "pdf-output",
+        "summary",
+        result,
+        ".pdf",
+        backend=backend,
+    )
+
+    assert result.caption_lines == 1
+    assert result.subcaption_lines == 1
+    assert result.panels[1].subcaption_lines == 2
+    assert backend.save_calls[0][4]["subcaption_lines"] == 1
+    assert backend.save_calls[1][4]["subcaption_lines"] == 2
+    assert backend.save_calls[1][4]["hide_cbar"] is True
+
+
+def test_export_figure_multi_panel_supports_per_panel_metadata(
     tmp_path: Path,
     paper_config: PublicationConfig,
 ) -> None:
