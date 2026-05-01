@@ -4,13 +4,14 @@ This document is the source of truth for `pubify-pubs` package boundaries,
 public API and CLI contracts, generated-artifact ownership, and
 publication-workflow rules that must remain stable.
 
-## Shared Guidance
+## Shared Validation And Skills
 
-This repo adopts the shared guidance in:
+This project uses runtime-discovered `astro-agents` skills for shared review and authoring support:
 
-- `astro-agents/guidance/agent-surface.md`
-- `astro-agents/guidance/public-python-projects.md`
-- `astro-agents/guidance/python-development.md`
+- `$agent-surface-review`
+- `$documentation-surface-review` with the `public-python` profile
+- `$code-quality-review`
+- `$python-code-writing`
 
 Repo-local commands, package boundaries, persisted contracts, lifecycle rules,
 and publication-workflow conventions in this document remain the source of

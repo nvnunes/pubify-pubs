@@ -88,7 +88,7 @@
             
             <li class="nav-item" data-bs-level="1"><a href="#architecture" class="nav-link">Architecture</a>
               <ul class="nav flex-column">
-            <li class="nav-item" data-bs-level="2"><a href="#shared-guidance" class="nav-link">Shared Guidance</a>
+            <li class="nav-item" data-bs-level="2"><a href="#shared-validation-and-skills" class="nav-link">Shared Validation And Skills</a>
               <ul class="nav flex-column">
               </ul>
             </li>
@@ -127,12 +127,13 @@
 <p>This document is the source of truth for <code>pubify-pubs</code> package boundaries,
 public API and CLI contracts, generated-artifact ownership, and
 publication-workflow rules that must remain stable.</p>
-<h2 id="shared-guidance">Shared Guidance</h2>
-<p>This repo adopts the shared guidance in:</p>
+<h2 id="shared-validation-and-skills">Shared Validation And Skills</h2>
+<p>This project uses runtime-discovered <code>astro-agents</code> skills for shared review and authoring support:</p>
 <ul>
-<li><code>astro-agents/guidance/agent-surface.md</code></li>
-<li><code>astro-agents/guidance/public-python-projects.md</code></li>
-<li><code>astro-agents/guidance/python-development.md</code></li>
+<li><code>$agent-surface-review</code></li>
+<li><code>$documentation-surface-review</code> with the <code>public-python</code> profile</li>
+<li><code>$code-quality-review</code></li>
+<li><code>$python-code-writing</code></li>
 </ul>
 <p>Repo-local commands, package boundaries, persisted contracts, lifecycle rules,
 and publication-workflow conventions in this document remain the source of
@@ -149,8 +150,7 @@ the TeX-agnostic <code>pubify-data</code> runtime.</p>
 <li>conservative mirror sync and diff logic, currently deferred on this branch
   while the sync implementation is reintroduced</li>
 <li>pinned publication-data helpers</li>
-<li>publication bootstrap templates, including the shared publications-root
-  <code>AGENTS.md</code> scaffold</li>
+<li>publication bootstrap templates</li>
 <li>generic tests against temporary host workspaces</li>
 </ul>
 <p>It does not own publication content. A host workspace does.</p>

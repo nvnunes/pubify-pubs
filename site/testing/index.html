@@ -127,8 +127,14 @@
 <p>This document is the source of truth for local verification commands and
 completion expectations in <code>pubify-pubs</code>.</p>
 <h2 id="shared-validation">Shared Validation</h2>
-<p>Use the shared base testing guidance in
-<code>astro-agents/validation/base-testing.md</code>.</p>
+<p>Use this document as the source of truth for local verification commands and
+completion expectations.</p>
+<p>For shared review, use:</p>
+<ul>
+<li><code>$agent-surface-review</code> when agent-facing instructions, docs, or skill-selection context changes.</li>
+<li><code>$documentation-surface-review</code> when documentation surface behavior changes.</li>
+<li><code>$code-quality-review</code> for source-code quality review when requested or when the change needs review beyond tests.</li>
+</ul>
 <h2 id="environment">Environment</h2>
 <p>Use the repo-local <code>./.conda</code> environment for Python commands, test runs, and
 docs builds unless a task explicitly requires something else.</p>
