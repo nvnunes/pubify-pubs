@@ -33,4 +33,4 @@
 - Keep publication-specific science code, pinned scientific data, and manuscript-local helpers out of this package.
 
 ## Review Lens
-- Favor package/workspace ownership clarity, lifecycle clarity, conservative public-surface changes, and removal of stale abstractions over preserving weak indirection.
+- Favor conservative public-surface changes in review.
